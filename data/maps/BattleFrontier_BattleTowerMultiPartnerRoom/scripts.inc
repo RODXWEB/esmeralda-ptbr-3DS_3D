@@ -281,7 +281,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_PleaseFindPartner:
 	.string "the TRAINERS gathered here.$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_QuitLookingForPartner:
-	.string "{PLAYER}, you have not found a partner\n"
+	.string "{JOGADOR}, you have not found a partner\n"
 	.string "for your tag team.\p"
 	.string "Would you like to quit looking and\n"
 	.string "return to the reception counter?$"
@@ -313,7 +313,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_UnusedApprentice1Accept::
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_UnusedApprentice1Reject::
 	.string "I really wanted to form a tag team\n"
-	.string "with you, {PLAYER}…$"
+	.string "with you, {JOGADOR}…$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_UnusedApprentice2Intro::
 	.string "I am {STR_VAR_1}'s no. {STR_VAR_2} apprentice.\n"
@@ -332,7 +332,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_UnusedApprentice2Accept::
 	.string "I'll be done with registration quickly!$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_UnusedApprentice2Reject::
-	.string "{PLAYER}, I was hoping that I could\n"
+	.string "{JOGADOR}, I was hoping that I could\n"
 	.string "partner up with you…$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice1Intro::
@@ -383,7 +383,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice2Accept::
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice2Reject::
 	.string "Aww, why?\n"
-	.string "I wanted to team up, {PLAYER}!$"
+	.string "I wanted to team up, {JOGADOR}!$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice3Intro::
 	.string "I'm {STR_VAR_3}, the no. {STR_VAR_2} apprentice\n"
@@ -404,7 +404,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice3Accept::
 	.string "I'll register right away!$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice3Reject::
-	.string "{PLAYER}, I had been hoping to join\n"
+	.string "{JOGADOR}, I had been hoping to join\n"
 	.string "you in a tag team…$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice4Intro::
@@ -535,7 +535,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice8Accept::
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice8Reject::
 	.string "I had been hoping to join you,\n"
-	.string "{PLAYER}…$"
+	.string "{JOGADOR}…$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice9Intro::
 	.string "Eek! You spoke to me!\n"
@@ -583,7 +583,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice10Accept::
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice10Reject::
 	.string "Gwaaah!\n"
-	.string "You're a calculating one, {PLAYER}!$"
+	.string "You're a calculating one, {JOGADOR}!$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice11Intro::
 	.string "Hey! There's big trouble! This is\n"
@@ -640,7 +640,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice12Accept::
 	.string "Our registration, I will go file!$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice12Reject::
-	.string "Oh, hey, {PLAYER}, now that's cold!\n"
+	.string "Oh, hey, {JOGADOR}, now that's cold!\n"
 	.string "If I may be so bold!$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice13Intro::
@@ -669,7 +669,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice13Accept::
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice13Reject::
 	.string "You're turning me down?\n"
-	.string "{PLAYER}, you're making me frown!$"
+	.string "{JOGADOR}, you're making me frown!$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice14Intro::
 	.string "Cough!\p"
@@ -699,7 +699,7 @@ BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice14Accept::
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice14Reject::
 	.string "Oh, you won't?\n"
-	.string "{PLAYER}, I think we'd make a good pair.$"
+	.string "{JOGADOR}, I think we'd make a good pair.$"
 
 BattleFrontier_BattleTowerMultiPartnerRoom_Text_Apprentice15Intro::
 	.string "Oh, hello!\n"

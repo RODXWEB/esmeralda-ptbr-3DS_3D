@@ -486,7 +486,7 @@ BattleFrontier_BattleArenaBattleRoom_Movement_GretaWalkBackToCenter:
 	step_end
 
 BattleFrontier_BattleArenaBattleRoom_Text_PlayerStepForward:
-	.string "REFEREE: TRAINER {PLAYER}!\n"
+	.string "REFEREE: TRAINER {JOGADOR}!\n"
 	.string "Step forward, please!$"
 
 BattleFrontier_BattleArenaBattleRoom_Text_OpponentStepForward:
@@ -498,7 +498,7 @@ BattleFrontier_BattleArenaBattleRoom_Text_SetKOTourneyBegin:
 	.string "Begin!$"
 
 BattleFrontier_BattleArenaBattleRoom_Text_WinnerIsPlayer:
-	.string "REFEREE: The winner is {PLAYER}!$"
+	.string "REFEREE: The winner is {JOGADOR}!$"
 
 BattleFrontier_BattleArenaBattleRoom_Text_WinnerIsOpponent:
 	.string "REFEREE: The winner is {STR_VAR_1}!$"

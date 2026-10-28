@@ -836,12 +836,12 @@ Common_EventScript_PlayerHandedOverTheItem::
 
 /* The below and surf.inc could be split into some text/notices.inc*/
 gText_PokemartSign::
-	.string "“Selected items for your convenience!”\n"
-	.string "POKéMON MART$"
+	.string "“Itens selecionados para sua conveniência!”\n"
+	.string "POKéMART$"
 
 gText_PokemonCenterSign::
-	.string "“Rejuvenate your tired partners!”\n"
-	.string "POKéMON CENTER$"
+	.string "“Rejuvenesça seus parceiros cansados!”\n"
+	.string "CENTRO POKéMON$"
 
 gText_MomOrDadMightLikeThisProgram::
 	.string "{STR_VAR_1} might like this program.\n"
@@ -861,31 +861,33 @@ gText_SelectWithoutRegisteredItem::
 	.string "registered to SELECT for easy use.$"
 
 gText_PokemonTrainerSchoolEmail::
-	.string "There's an e-mail from POKéMON TRAINER\n"
-	.string "SCHOOL.\p"
+	.string "Tem um e-mail da ESCOLA DE TREINADORES\n"
+	.string "POKéMON.\p"
 	.string "… … … … … …\p"
-	.string "A POKéMON may learn up to four moves.\p"
-	.string "A TRAINER's expertise is tested on the\n"
-	.string "move sets chosen for POKéMON.\p"
+	.string "Um POKéMON pode aprender até\n"
+	.string "quatro movimentos.\p"
+	.string "A expertise de um TREINADOR é testada\n"
+	.string "nos move sets escolhidos\n"
+	.string "para os POKéMON.\p"
 	.string "… … … … … …$"
 
 gText_PlayerHouseBootPC::
-	.string "{PLAYER} booted up the PC.$"
+	.string "{JOGADOR} ligou o PC.$"
 
 gText_PokeblockLinkCanceled::
 	.string "The link was canceled.$"
 
 gText_UnusedNicknameReceivedPokemon::
-	.string "Want to give a nickname to\n"
-	.string "the {STR_VAR_2} you received?$"
+	.string "Quer dar um apelido\n"
+	.string "para o {STR_VAR_2} que você recebeu?$"
 
 gText_PlayerWhitedOut::
-	.string "{PLAYER} is out of usable\n"
-	.string "POKéMON!\p{PLAYER} whited out!$"
+	.string "{JOGADOR} näo tem mais nenhum\n"
+	.string "POKéMON!\p{JOGADOR} perdeu!$"
 
 gText_RegisteredTrainerinPokeNav::
-	.string "Registered {STR_VAR_1} {STR_VAR_2}\n"
-	.string "in the POKéNAV.$"
+	.string "Registrou {STR_VAR_1} {STR_VAR_2}\n"
+	.string "na POKéNAV.$"
 
 gText_ComeBackWithSecretPower::
 	.string "Do you know the TM SECRET POWER?\p"
@@ -897,8 +899,8 @@ gText_ComeBackWithSecretPower::
 	.string "you good stuff in secrecy.$"
 
 gText_PokerusExplanation::
-	.string "Your POKéMON may be infected with\n"
-	.string "POKéRUS.\p"
+	.string "Seu POKéMON pode estar infectado\n"
+	.string "com POKéRUS.\p"
 	.string "Little is known about the POKéRUS\n"
 	.string "except that they are microscopic life-\l"
 	.string "forms that attach to POKéMON.\p"
@@ -908,11 +910,11 @@ gText_PokerusExplanation::
 	.include "data/text/surf.inc"
 
 gText_DoorOpenedFarAway::
-	.string "It sounded as if a door opened\n"
-	.string "somewhere far away.$"
+	.string "Parece que uma porta se abriu\n"
+	.string "bem longe daqui.$"
 
 gText_BigHoleInTheWall::
-	.string "There is a big hole in the wall.$"
+	.string "Tem um buraco grande na parede.$"
 
 gText_SorryWirelessClubAdjustments::
 	.string "I'm terribly sorry.\n"
@@ -934,7 +936,7 @@ gText_SorryRecordCornerPreparation::
 	.string "is under preparation.$"
 
 gText_PlayerHandedOverTheItem::
-	.string "{PLAYER} handed over the\n"
+	.string "{JOGADOR} handed over the\n"
 	.string "{STR_VAR_1}.$"
 
 gText_ThankYouForAccessingMysteryGift::
@@ -942,7 +944,7 @@ gText_ThankYouForAccessingMysteryGift::
 	.string "MYSTERY GIFT System.$"
 
 gText_PlayerFoundOneTMHM::
-	.string "{PLAYER} found one {STR_VAR_1}\n"
+	.string "{JOGADOR} found one {STR_VAR_1}\n"
 	.string "{STR_VAR_2}!$"
 
 gText_Sudowoodo_Attacked::

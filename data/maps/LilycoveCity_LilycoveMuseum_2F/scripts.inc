@@ -259,7 +259,7 @@ LilycoveCity_LilycoveMuseum_2F_Text_ThanksAddedNewPainting:
 
 LilycoveCity_LilycoveMuseum_2F_Text_ItsYouPlayer:
 	.string "Ah! It's you!\n"
-	.string "{PLAYER}!$"
+	.string "{JOGADOR}!$"
 
 LilycoveCity_LilycoveMuseum_2F_Text_PaintingsAttractedMoreGuests:
 	.string "Isn't this marvelous?\n"
@@ -268,7 +268,7 @@ LilycoveCity_LilycoveMuseum_2F_Text_PaintingsAttractedMoreGuests:
 	.string "None better than another!\p"
 	.string "These paintings have attracted\n"
 	.string "more guests to our ART MUSEUM.\p"
-	.string "Sincerely, I thank you, {PLAYER}.\n"
+	.string "Sincerely, I thank you, {JOGADOR}.\n"
 	.string "This is my dream come true!$"
 
 LilycoveCity_LilycoveMuseum_2F_Text_TokenOfGratitude:
@@ -279,7 +279,7 @@ LilycoveCity_LilycoveMuseum_2F_Text_KeepThisForYou:
 	.string "meet again.$"
 
 LilycoveCity_LilycoveMuseum_2F_Text_HonorToHaveYouVisit:
-	.string "Ah, so good to see you, {PLAYER}!\p"
+	.string "Ah, so good to see you, {JOGADOR}!\p"
 	.string "It's an honor to have you visit us\n"
 	.string "on your busy journeys.\p"
 	.string "Please, relax and do enjoy your\n"

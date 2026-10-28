@@ -755,7 +755,7 @@ Route110_Text_AquaActionsBringSmiles:
 	.string "smiles to people's faces!$"
 
 Route110_Text_MayLetsBattle:
-	.string "MAY: Hi, {PLAYER}{KUN}, long time no see!\p"
+	.string "MAY: Hi, {JOGADOR}{KUN}, long time no see!\p"
 	.string "While I was searching for other\n"
 	.string "POKéMON, my POKéMON grew stronger.\p"
 	.string "So…\n"
@@ -766,7 +766,7 @@ Route110_Text_MayDefeated:
 	.string "You're better than I expected!$"
 
 Route110_Text_MayTakeThis:
-	.string "MAY: {PLAYER}{KUN}, you've been busy\n"
+	.string "MAY: {JOGADOR}{KUN}, you've been busy\n"
 	.string "training, too, haven't you?\p"
 	.string "I think you deserve a reward!\n"
 	.string "This is from me!$"
@@ -775,13 +775,13 @@ Route110_Text_MayExplainItemfinder:
 	.string "MAY: That's an ITEMFINDER.\p"
 	.string "Try it out. If there is an item that's\n"
 	.string "not visible, it emits a sound.\p"
-	.string "Okay, {PLAYER}{KUN}, let's meet again!\p"
+	.string "Okay, {JOGADOR}{KUN}, let's meet again!\p"
 	.string "I know it's a little silly coming from\n"
 	.string "me, but I think you should train a lot\l"
 	.string "harder for the next time.$"
 
 Route110_Text_BrendanLetsBattle:
-	.string "BRENDAN: Hey, {PLAYER}.\n"
+	.string "BRENDAN: Hey, {JOGADOR}.\n"
 	.string "So this is where you were.\l"
 	.string "How's it going?\p"
 	.string "Have you been raising your POKéMON?\n"
@@ -792,7 +792,7 @@ Route110_Text_BrendanDefeated:
 	.string "You're pretty good.$"
 
 Route110_Text_BrendanTakeThis:
-	.string "BRENDAN: {PLAYER}, you've trained\n"
+	.string "BRENDAN: {JOGADOR}, you've trained\n"
 	.string "without me noticing…\p"
 	.string "Good enough!\n"
 	.string "Here, take this.$"
@@ -960,7 +960,7 @@ Route110_Text_ThereIsNoRecord:
 	.string "challenge. There is no record…$"
 
 Route110_Text_ImagineSeeingYouHere:
-	.string "PROF. BIRCH: Oh, {PLAYER}{KUN}!\n"
+	.string "PROF. BIRCH: Oh, {JOGADOR}{KUN}!\n"
 	.string "Imagine seeing you here!\p"
 	.string "And where might my {RIVAL} be?$"
 
@@ -981,9 +981,9 @@ Route110_Text_RegisteredBirchInPokenav:
 	.string "in the POKéNAV.$"
 
 Route110_Text_KeepAnEyeOutForRival:
-	.string "PROF. BIRCH: {PLAYER}{KUN}…\p"
+	.string "PROF. BIRCH: {JOGADOR}{KUN}…\p"
 	.string "Please keep an eye out for my {RIVAL}.\n"
 	.string "… … … … … …\p"
 	.string "Well, I had better get going.\n"
-	.string "See you again, {PLAYER}{KUN}!$"
+	.string "See you again, {JOGADOR}{KUN}!$"
 

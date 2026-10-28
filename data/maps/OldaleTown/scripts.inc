@@ -345,11 +345,11 @@ OldaleTown_Text_SavingMyProgress:
 
 OldaleTown_Text_IWorkAtPokemonMart:
 	.string "Hi!\n"
-	.string "I work at a POKéMON MART.\p"
+	.string "I work at a POKéMART.\p"
 	.string "Can I get you to come with me?$"
 
 OldaleTown_Text_ThisIsAPokemonMart:
-	.string "This is a POKéMON MART.\n"
+	.string "This is a POKéMART.\n"
 	.string "Just look for our blue roof.\p"
 	.string "We sell a variety of goods including\n"
 	.string "POKé BALLS for catching POKéMON.\p"
@@ -382,14 +382,14 @@ OldaleTown_Text_FinishedSketchingFootprints:
 	.string "own footprints…$"
 
 OldaleTown_Text_MayLetsGoBack:
-	.string "MAY: {PLAYER}{KUN}!\n"
+	.string "MAY: {JOGADOR}{KUN}!\n"
 	.string "Over here!\l"
 	.string "Let's hurry home!$"
 
 OldaleTown_Text_BrendanLetsGoBack:
 	.string "BRENDAN: I'm heading back to my dad's\n"
 	.string "LAB now.\l"
-	.string "{PLAYER}, you should hustle back, too.$"
+	.string "{JOGADOR}, you should hustle back, too.$"
 
 OldaleTown_Text_TownSign:
 	.string "OLDALE TOWN\n"
