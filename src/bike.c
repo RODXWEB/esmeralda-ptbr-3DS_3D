@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "bike.h"
 #include "event_object_movement.h"
 #include "field_player_avatar.h"
@@ -1055,7 +1058,14 @@ void Bike_HandleBumpySlopeJump(void)
 
 bool32 IsRunningDisallowed(u8 metatile)
 {
+#ifdef PLATFORM_3DS
+    // Run indoors (OPTIONS, ENHANCEMENTS): a map's header no longer forbids
+    // running (houses, Pokemon Centers, caves...); the tiles that do still do.
+    if ((!gMapHeader.allowRunning && !CtrExtras_Get("run_indoors"))
+     || IsRunningDisallowedByMetatile(metatile) == TRUE)
+#else
     if (!gMapHeader.allowRunning || IsRunningDisallowedByMetatile(metatile) == TRUE)
+#endif
         return TRUE;
     else
         return FALSE;

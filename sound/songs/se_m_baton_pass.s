@@ -13,7 +13,7 @@
 	.global	se_m_baton_pass
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_baton_pass_1:
 	.byte	KEYSH , se_m_baton_pass_key+0
@@ -121,7 +121,7 @@ se_m_baton_pass_1:
 	.byte	W02
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_baton_pass_2:
 	.byte	KEYSH , se_m_baton_pass_key+0
@@ -152,18 +152,18 @@ se_m_baton_pass_2:
 	.byte	W03
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_baton_pass:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_baton_pass_pri	@ Priority
-	.byte	se_m_baton_pass_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_baton_pass_pri	/* Priority*/
+	.byte	se_m_baton_pass_rev	/* Reverb.*/
 
-	.word	se_m_baton_pass_grp
+	.int	se_m_baton_pass_grp
 
-	.word	se_m_baton_pass_1
-	.word	se_m_baton_pass_2
+	.int	se_m_baton_pass_1
+	.int	se_m_baton_pass_2
 
 	.end

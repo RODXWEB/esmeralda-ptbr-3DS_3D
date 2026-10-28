@@ -169,6 +169,10 @@ static void SafariBufferRunCommand(void)
 
 static void HandleInputChooseAction(void)
 {
+#ifdef PLATFORM_3DS
+    if (CtrBattleMenu_Active())
+        CtrBattleMenu_ActionInput(&gActionSelectionCursor[gActiveBattler], TRUE);
+#endif
     if (JOY_NEW(A_BUTTON))
     {
         PlaySE(SE_SELECT);
@@ -357,7 +361,7 @@ static void SafariHandleDrawTrainerPic(void)
     gBattlerSpriteIds[gActiveBattler] = CreateSprite(
       &gMultiuseSpriteTemplate,
       80,
-      (8 - gTrainerBackPicCoords[gSaveBlock2Ptr->playerGender].size) * 4 + 80,
+      (8 - gTrainerBackPicCoords[gSaveBlock2Ptr->playerGender].size) * 4 + 80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER),
       30);
     gSprites[gBattlerSpriteIds[gActiveBattler]].oam.paletteNum = gActiveBattler;
     gSprites[gBattlerSpriteIds[gActiveBattler]].x2 = DISPLAY_WIDTH;
@@ -442,6 +446,10 @@ static void HandleChooseActionAfterDma3(void)
     {
         gBattle_BG0_X = 0;
         gBattle_BG0_Y = DISPLAY_HEIGHT;
+#ifdef PLATFORM_3DS
+        if (CtrBattleMenu_Active())
+            gBattle_BG0_Y = 0;
+#endif
         gBattlerControllerFuncs[gActiveBattler] = HandleInputChooseAction;
     }
 }
@@ -451,6 +459,15 @@ static void SafariHandleChooseAction(void)
     s32 i;
 
     gBattlerControllerFuncs[gActiveBattler] = HandleChooseActionAfterDma3;
+#ifdef PLATFORM_3DS
+    if (CtrBattleMenu_Active())
+    {
+        CtrBattleMenu_Begin();
+        BattleStringExpandPlaceholdersToDisplayedString(gText_WhatWillPkmnDo2);
+        CtrBattleMenu_ShowPrompt();
+        return;
+    }
+#endif
     BattlePutTextOnWindow(gText_SafariZoneMenu, B_WIN_ACTION_MENU);
 
     for (i = 0; i < 4; i++)

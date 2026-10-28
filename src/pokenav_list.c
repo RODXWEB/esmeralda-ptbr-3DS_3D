@@ -1009,3 +1009,54 @@ static bool32 CopyPokenavListMenuTemplate(struct PokenavListSub *dest, const str
     dest->downArrow = NULL;
     return 1;
 }
+
+#ifdef PLATFORM_3DS
+bool8 CtrPokenav_IsOpen(void);
+
+// The list on show, for the 3DS bottom screen: its window in pixels (item i
+// on screen is 16 lines from y + (i - top) * 16), the item at the top, the
+// chosen one, how many fit and how many there are.
+bool8 CtrPokenavList_View(u8 *x, u8 *y, u8 *width, u16 *top, u16 *selected, u16 *shown, u16 *count)
+{
+    struct PokenavList *list = GetSubstructPtr(POKENAV_SUBSTRUCT_LIST);
+
+    if (list == NULL)
+        return FALSE;
+    *x = list->sub.listWindow.x * 8;
+    *y = list->sub.listWindow.y * 8;
+    *width = list->sub.listWindow.width * 8;
+    *top = list->windowState.windowTopIndex;
+    *selected = list->windowState.windowTopIndex + list->windowState.selectedIndexOffset;
+    *shown = list->windowState.entriesOnscreen;
+    *count = list->windowState.listLength;
+    return TRUE;
+}
+
+// The background the list is printed on, -1 without a list: it scrolls
+// behind the screen's frame, so the 3DS bottom screen does not carry it on
+// past the picture as it does the frame.
+int CtrPokenavList_Bg(void)
+{
+    struct PokenavList *list;
+
+    // Without the PokéNav there are no substructs to look in at all.
+    if (!CtrPokenav_IsOpen() || (list = GetSubstructPtr(POKENAV_SUBSTRUCT_LIST)) == NULL)
+        return -1;
+    return list->sub.listWindow.bg;
+}
+
+// Puts the selection on an item on show, for the D-pad press that follows to
+// move it on to the one tapped (CtrPokenavMenu_SetCursor).
+void CtrPokenavList_SetSelected(u16 selected)
+{
+    struct PokenavList *list = GetSubstructPtr(POKENAV_SUBSTRUCT_LIST);
+    struct PokenavListWindowState *windowState;
+
+    if (list == NULL)
+        return;
+    windowState = &list->windowState;
+    if (selected >= windowState->windowTopIndex && selected < windowState->listLength
+     && selected - windowState->windowTopIndex < windowState->entriesOnscreen)
+        windowState->selectedIndexOffset = selected - windowState->windowTopIndex;
+}
+#endif

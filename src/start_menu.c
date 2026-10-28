@@ -551,8 +551,23 @@ static bool8 FieldCB_ReturnToFieldStartMenu(void)
     return TRUE;
 }
 
+#ifdef PLATFORM_3DS
+static bool8 CtrStartMenu_IsReplaced(void);
+static bool8 CtrStartMenu_Divert(void);
+static bool8 CtrFieldCB_ReturnToField(void);
+#endif
+
 void ShowReturnToFieldStartMenu(void)
 {
+#ifdef PLATFORM_3DS
+    // The bottom screen is the start menu: coming back from one of its
+    // screens goes straight back to the field.
+    if (CtrStartMenu_IsReplaced())
+    {
+        gFieldCallback2 = CtrFieldCB_ReturnToField;
+        return;
+    }
+#endif
     sInitStartMenuData[0] = 0;
     sInitStartMenuData[1] = 0;
     gFieldCallback2 = FieldCB_ReturnToFieldStartMenu;
@@ -580,6 +595,10 @@ void Task_ShowStartMenu(u8 taskId)
 
 void ShowStartMenu(void)
 {
+#ifdef PLATFORM_3DS
+    if (CtrStartMenu_Divert())
+        return;
+#endif
     if (!IsOverworldLinkActive())
     {
         FreezeObjectEvents();
@@ -1200,6 +1219,12 @@ static void VBlankCB_LinkBattleSave(void)
     TransferPlttBuffer();
 }
 
+#ifdef PLATFORM_3DS
+// The 3DS port: a screen laid out for the GBA's, shown centred on the wide
+// top screen (3ds_game_full.c). Its box sat in the top left part of it.
+void CtrCentred_SetVBlankCallback(IntrCallback callback);
+#endif
+
 static bool32 InitSaveWindowAfterLinkBattle(u8 *state)
 {
     switch (*state)
@@ -1227,7 +1252,11 @@ static bool32 InitSaveWindowAfterLinkBattle(u8 *state)
     case 3:
         ShowBg(0);
         BlendPalettes(PALETTES_ALL, 16, RGB_BLACK);
+#ifdef PLATFORM_3DS
+        CtrCentred_SetVBlankCallback(VBlankCB_LinkBattleSave);
+#else
         SetVBlankCallback(VBlankCB_LinkBattleSave);
+#endif
         EnableInterrupts(1);
         break;
     case 4:
@@ -1437,3 +1466,130 @@ void AppendToList(u8 *list, u8 *pos, u8 newEntry)
     list[*pos] = newEntry;
     (*pos)++;
 }
+
+#ifdef PLATFORM_3DS
+// The 3DS bottom screen replaces the start menu. It asks for one of the
+// menu's actions and then presses START, so the request is served exactly
+// when and where the game would have opened the menu; the action then runs
+// as if chosen from it, without the menu ever being drawn.
+
+#define MENU_ACTION_NONE_CTR 0xFF
+static u8 sCtrRequest = MENU_ACTION_NONE_CTR;
+
+static bool8 CtrStartMenu_IsReplaced(void)
+{
+    return !IsOverworldLinkActive() && !InUnionRoom() && !GetSafariZoneFlag() && !InBattlePike()
+        && CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE && !InMultiPartnerRoom();
+}
+
+static bool8 CtrFieldCB_ReturnToField(void)
+{
+    FieldCB_ReturnToFieldNoScript();
+    return TRUE;
+}
+
+static bool8 CtrSaveCallback(void)
+{
+    switch (RunSaveCallback())
+    {
+    case SAVE_IN_PROGRESS:
+        return FALSE;
+    default:
+        ClearDialogWindowAndFrameToTransparent(0, TRUE);
+        ScriptUnfreezeObjectEvents();
+        UnlockPlayerFieldControls();
+        return TRUE;
+    }
+}
+
+static bool8 CtrSaveStartCallback(void)
+{
+    InitSave();
+    gMenuCallback = CtrSaveCallback;
+    return FALSE;
+}
+
+static void Task_CtrStartMenuAction(u8 taskId)
+{
+    if (gMenuCallback() == TRUE)
+        DestroyTask(taskId);
+}
+
+static bool8 CtrStartMenu_Divert(void)
+{
+    u8 action = sCtrRequest;
+
+    if (!CtrStartMenu_IsReplaced())
+        return FALSE;
+    sCtrRequest = MENU_ACTION_NONE_CTR;
+    if (action >= MENU_ACTION_EXIT)
+        return TRUE; // START alone opens nothing: the menu is on the bottom screen
+    if (action == MENU_ACTION_POKEDEX && GetNationalPokedexCount(FLAG_GET_SEEN) == 0)
+        return TRUE;
+
+    FreezeObjectEvents();
+    PlayerFreeze();
+    StopPlayerAvatar();
+    LockPlayerFieldControls();
+    if (action == MENU_ACTION_SAVE)
+    {
+        // The save dialog starts by clearing the start menu's window.
+        AddStartMenuWindow(1);
+        gMenuCallback = CtrSaveStartCallback;
+    }
+    else
+    {
+        gMenuCallback = sStartMenuItems[action].func.u8_void;
+        FadeScreen(FADE_TO_BLACK, 0);
+    }
+    CreateTask(Task_CtrStartMenuAction, 0x50);
+    return TRUE;
+}
+
+// Whether a START press in the field should reach ShowStartMenu. With the
+// menu replaced, a press that would open nothing is dropped here: the field
+// locks the player's controls right after ShowStartMenu, and with no menu
+// task to unlock them the game would stay frozen. A request that can't be
+// served is consumed so the bottom screen doesn't wait on it.
+bool8 CtrStartMenu_AcceptStart(void)
+{
+    u8 action = sCtrRequest;
+
+    if (!CtrStartMenu_IsReplaced())
+        return TRUE;
+    if (action >= MENU_ACTION_EXIT
+     || (action == MENU_ACTION_POKEDEX && GetNationalPokedexCount(FLAG_GET_SEEN) == 0))
+    {
+        sCtrRequest = MENU_ACTION_NONE_CTR;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+// MENU_ACTION_* to open on the next START press, or MENU_ACTION_NONE_CTR.
+void CtrStartMenu_Request(u8 action)
+{
+    sCtrRequest = action;
+}
+
+bool8 CtrStartMenu_Pending(void)
+{
+    return sCtrRequest != MENU_ACTION_NONE_CTR;
+}
+
+bool8 CtrStartMenu_Available(void)
+{
+    return CtrStartMenu_IsReplaced();
+}
+
+// A menu action (or its save dialog) is running.
+bool8 CtrStartMenu_Busy(void)
+{
+    return FuncIsActiveTask(Task_CtrStartMenuAction);
+}
+
+bool8 CtrStartMenu_Saving(void)
+{
+    return FuncIsActiveTask(Task_CtrStartMenuAction) && gMenuCallback == CtrSaveCallback;
+}
+#endif

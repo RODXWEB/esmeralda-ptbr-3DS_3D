@@ -1,11 +1,18 @@
 #ifndef GUARD_GLOBAL_H
 #define GUARD_GLOBAL_H
 
+#include <stdio.h>
 #include <string.h>
 #include <limits.h>
+
+#ifndef NO_STD_LIB_ENABLED
+#define DBGPRINTF(...) printf(__VA_ARGS__)
+#else
+#define DBGPRINTF(...)
+#endif
+
 #include "config.h" // we need to define config before gba headers as print stuff needs the functions nulled before defines.
 #include "gba/gba.h"
-#include "gametypes.h"
 #include "constants/global.h"
 #include "constants/flags.h"
 #include "constants/vars.h"
@@ -31,8 +38,10 @@
 /// IDE support
 #if defined(__APPLE__) || defined(__CYGWIN__) || defined(__INTELLISENSE__)
 // We define these when using certain IDEs to fool preproc
+#if !(defined(PORT_BRIDGE) && defined(__INTELLISENSE__))
 #define _(x)        {x}
 #define __(x)       {x}
+#endif
 #define INCBIN(...) {0}
 #define INCBIN_U8   INCBIN
 #define INCBIN_U16  INCBIN
@@ -40,6 +49,9 @@
 #define INCBIN_S8   INCBIN
 #define INCBIN_S16  INCBIN
 #define INCBIN_S32  INCBIN
+void * memcpy(void *, const void *, size_t);
+void * memset(void *, int, size_t);
+int strcmp(const char *, const char*);
 #endif // IDE support
 
 #define ARRAY_COUNT(array) (size_t)(sizeof(array) / sizeof((array)[0]))
@@ -95,6 +107,14 @@
 // if n is changed to a value that isn't a power of 2 then a&(n-1) is unlikely to work as
 // intended, and a%n for powers of 2 isn't always optimized to use &.
 #define MOD(a, n) (((n) & ((n)-1)) ? ((a) % (n)) : ((a) & ((n)-1)))
+
+// Used in cases where modulo by 0 can occur in the retail version.
+// Avoids invalid opcodes on some emulators, and the otherwise UB.
+#ifdef UBFIX
+#define SAFE_MOD(a, b) ((b) ? (a) % (b) : 0)
+#else
+#define SAFE_MOD(a, b) ((a) % (b))
+#endif
 
 // Extracts the upper 16 bits of a 32-bit number
 #define HIHALF(n) (((n) & 0xFFFF0000) >> 16)
@@ -201,7 +221,7 @@ struct Time
     /*0x02*/ s8 hours;
     /*0x03*/ s8 minutes;
     /*0x04*/ s8 seconds;
-};
+} ALIGNED(4);
 
 struct Pokedex
 {
@@ -370,7 +390,7 @@ struct BattleDomeTrainer
     u16 isEliminated:1;
     u16 eliminatedAt:2;
     u16 forfeited:3;
-};
+} ALIGNED(4);
 
 #define DOME_TOURNAMENT_TRAINERS_COUNT 16
 #define BATTLE_TOWER_RECORD_COUNT 5
@@ -602,7 +622,7 @@ struct Pokeblock
     u8 bitter;
     u8 sour;
     u8 feel;
-};
+} ALIGNED(4);
 
 struct Roamer
 {
@@ -715,7 +735,7 @@ typedef union OldMan
     struct MauvilleOldManTrader trader;
     struct MauvilleManStoryteller storyteller;
     u8 filler[0x40];
-} OldMan;
+} ALIGNED(4) OldMan;
 
 #define LINK_B_RECORDS_COUNT 5
 
@@ -768,7 +788,7 @@ struct Mail
     /*0x1A*/ u8 trainerId[TRAINER_ID_LENGTH];
     /*0x1E*/ u16 species;
     /*0x20*/ u16 itemId;
-};
+} ALIGNED(4);
 
 struct DaycareMail
 {
@@ -1086,5 +1106,30 @@ struct MapPosition
     s16 y;
     s8 elevation;
 };
+
+/*
+ * ── Interrupt register redirect ─────────────────────────────────────────────
+ *
+ * Under the port bridge the interrupt and display-status registers are not
+ * hardware. After all GBA headers have defined REG_* to register pointers,
+ * redirect these four to emulated RAM variables owned by the backend
+ * (3ds_port/src/3ds_compat.c).
+ */
+#ifdef PORT_BRIDGE
+extern volatile unsigned short gPortEmuIME;
+extern volatile unsigned short gPortEmuIE;
+extern volatile unsigned short gPortEmuIF;
+extern volatile unsigned short gPortEmuDISPSTAT;
+
+#undef REG_IME
+#undef REG_IE
+#undef REG_IF
+#undef REG_DISPSTAT
+
+#define REG_IME      gPortEmuIME
+#define REG_IE       gPortEmuIE
+#define REG_IF       gPortEmuIF
+#define REG_DISPSTAT gPortEmuDISPSTAT
+#endif /* PORT_BRIDGE */
 
 #endif // GUARD_GLOBAL_H

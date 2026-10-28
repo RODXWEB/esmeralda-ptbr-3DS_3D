@@ -25,6 +25,12 @@
 #include "constants/battle_anim.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
+#ifdef PLATFORM_3DS
+#include "3ds_battle_hud.h"
+#endif
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 struct TestingBar
 {
@@ -652,11 +658,6 @@ static const struct SpritePalette sStatusSummaryBallsSpritePal =
     gBattleInterface_BallDisplayPal, TAG_STATUS_SUMMARY_BALLS_PAL
 };
 
-static const struct SpriteSheet sStatusSummaryBallsSpriteSheet =
-{
-    &gHealthboxElementsGfxTable[HEALTHBOX_GFX_STATUS_BALL], 0x80, TAG_STATUS_SUMMARY_BALLS_TILE
-};
-
 // unused oam data
 static const struct OamData sOamData_Unused64x32 =
 {
@@ -947,6 +948,15 @@ u8 CreateBattlerHealthboxSprites(u8 battler)
     healthBarSpritePtr->hBar_Data6 = data6;
     healthBarSpritePtr->invisible = TRUE;
 
+#ifdef PLATFORM_3DS
+    // The box drawn at the top screen's resolution (3ds_battle_hud.h).
+    if (!IsDoubleBattle())
+        CtrBattleHud_BoxCreated(healthboxLeftSpriteId, battler,
+                                GetBattlerSide(battler) == B_SIDE_PLAYER ? CTR_HUD_SINGLE_PLAYER : CTR_HUD_SINGLE_OPPONENT);
+    else
+        CtrBattleHud_BoxCreated(healthboxLeftSpriteId, battler,
+                                GetBattlerSide(battler) == B_SIDE_PLAYER ? CTR_HUD_DOUBLE_PLAYER : CTR_HUD_DOUBLE_OPPONENT);
+#endif
     return healthboxLeftSpriteId;
 }
 
@@ -967,13 +977,29 @@ u8 CreateSafariPlayerHealthboxSprites(void)
 
     gSprites[healthboxRightSpriteId].callback = SpriteCB_HealthBoxOther;
 
+#ifdef PLATFORM_3DS
+    CtrBattleHud_BoxCreated(healthboxLeftSpriteId, 0, CTR_HUD_SAFARI);
+#endif
     return healthboxLeftSpriteId;
 }
 
 static const u8 *GetHealthboxElementGfxPtr(u8 elementId)
 {
-    return gHealthboxElementsGfxTable[elementId];
+    const u8 *tiles = (const u8 *)gHealthboxElementsGfxTable;
+
+#ifdef PORT_BRIDGE
+    // The table is one concatenated asset; an interior stub loses its identity.
+    tiles = Port_ResolveAssetPointer(tiles);
+#endif
+    return tiles + elementId * sizeof(gHealthboxElementsGfxTable[0]);
 }
+
+#ifdef PLATFORM_3DS
+const u8 *CtrBattleHud_ElementGfx(u8 elementId)
+{
+    return GetHealthboxElementGfxPtr(elementId);
+}
+#endif
 
 // Syncs the position of healthbar accordingly with the healthbox.
 static void SpriteCB_HealthBar(struct Sprite *sprite)
@@ -1098,6 +1124,9 @@ void InitBattlerHealthboxCoords(u8 battler)
             break;
         }
     }
+    // The opponent's side sits higher on the 3DS (ctr_battle_layout.h).
+    if (GetBattlerSide(battler) != B_SIDE_PLAYER)
+        y += BATTLE_SIDE_SHIFT(B_SIDE_OPPONENT);
 
     UpdateSpritePos(gHealthboxSpriteIds[battler], x, y);
 }
@@ -1110,6 +1139,9 @@ static void UpdateLvlInHealthbox(u8 healthboxSpriteId, u8 lvl)
     u32 xPos;
     u8 *objVram;
 
+#ifdef PLATFORM_3DS
+    CtrBattleHud_SetLevel(healthboxSpriteId, lvl);
+#endif
     text[0] = CHAR_EXTRA_SYMBOL;
     text[1] = CHAR_LV_2;
 
@@ -1142,6 +1174,10 @@ void UpdateHpTextInHealthbox(u8 healthboxSpriteId, s16 value, u8 maxOrCurrent)
     u8 *windowTileData;
     u8 text[32];
     void *objVram;
+
+#ifdef PLATFORM_3DS
+    CtrBattleHud_SetHp(healthboxSpriteId, value, maxOrCurrent != HP_CURRENT);
+#endif
 
     if (GetBattlerSide(gSprites[healthboxSpriteId].hMain_Battler) == B_SIDE_PLAYER && !IsDoubleBattle())
     {
@@ -1219,6 +1255,10 @@ static void UpdateHpTextInHealthboxInDoubles(u8 healthboxSpriteId, s16 value, u8
     u8 *windowTileData;
     u8 text[32];
     void *objVram;
+
+#ifdef PLATFORM_3DS
+    CtrBattleHud_SetHp(healthboxSpriteId, value, maxOrCurrent != HP_CURRENT);
+#endif
 
     if (GetBattlerSide(gSprites[healthboxSpriteId].hMain_Battler) == B_SIDE_PLAYER)
     {
@@ -1455,6 +1495,7 @@ u8 CreatePartyStatusSummarySprites(u8 battler, struct HpAndStatus *partyInfo, bo
     u8 summaryBarSpriteId;
     u8 ballIconSpritesIds[PARTY_SIZE];
     u8 taskId;
+    struct SpriteSheet statusSummaryBallsSpriteSheet;
 
     if (!skipPlayer || GetBattlerPosition(battler) != B_POSITION_OPPONENT_RIGHT)
     {
@@ -1485,9 +1526,15 @@ u8 CreatePartyStatusSummarySprites(u8 battler, struct HpAndStatus *partyInfo, bo
         bar_pos2_X = -100;
         bar_data0 = 5;
     }
+    // The opponent's side sits higher on the 3DS (ctr_battle_layout.h).
+    if (isOpponent)
+        bar_Y += BATTLE_SIDE_SHIFT(B_SIDE_OPPONENT);
 
     LoadCompressedSpriteSheetUsingHeap(&sStatusSummaryBarSpriteSheet);
-    LoadSpriteSheet(&sStatusSummaryBallsSpriteSheet);
+    statusSummaryBallsSpriteSheet.data = GetHealthboxElementGfxPtr(HEALTHBOX_GFX_STATUS_BALL);
+    statusSummaryBallsSpriteSheet.size = 0x80;
+    statusSummaryBallsSpriteSheet.tag = TAG_STATUS_SUMMARY_BALLS_TILE;
+    LoadSpriteSheet(&statusSummaryBallsSpriteSheet);
     LoadSpritePalette(&sStatusSummaryBarSpritePal);
     LoadSpritePalette(&sStatusSummaryBallsSpritePal);
 
@@ -1928,6 +1975,9 @@ static void UpdateNickInHealthbox(u8 healthboxSpriteId, struct Pokemon *mon)
 
     if ((species == SPECIES_NIDORAN_F || species == SPECIES_NIDORAN_M) && StringCompare(nickname, gSpeciesNames[species]) == 0)
         gender = 100;
+#ifdef PLATFORM_3DS
+    CtrBattleHud_SetName(healthboxSpriteId, nickname, gender);
+#endif
 
     // AddTextPrinterAndCreateWindowOnHealthbox's arguments are the same in all 3 cases.
     // It's possible they may have been different in early development phases.
@@ -1971,6 +2021,10 @@ static void TryAddPokeballIconToHealthbox(u8 healthboxSpriteId, bool8 noStatus)
 {
     u8 battler, healthBarSpriteId;
 
+#ifdef PLATFORM_3DS
+    CtrBattleHud_SetBall(healthboxSpriteId, FALSE);
+#endif
+
     if (gBattleTypeFlags & BATTLE_TYPE_WALLY_TUTORIAL)
         return;
     if (gBattleTypeFlags & BATTLE_TYPE_TRAINER)
@@ -1984,6 +2038,9 @@ static void TryAddPokeballIconToHealthbox(u8 healthboxSpriteId, bool8 noStatus)
 
     healthBarSpriteId = gSprites[healthboxSpriteId].hMain_HealthBarSpriteId;
 
+#ifdef PLATFORM_3DS
+    CtrBattleHud_SetBall(healthboxSpriteId, noStatus);
+#endif
     if (noStatus)
         CpuCopy32(GetHealthboxElementGfxPtr(HEALTHBOX_GFX_STATUS_BALL_CAUGHT), (void *)(OBJ_VRAM0 + (gSprites[healthBarSpriteId].oam.tileNum + 8) * TILE_SIZE_4BPP), 32);
     else
@@ -2019,29 +2076,47 @@ static void UpdateStatusIconInHealthbox(u8 healthboxSpriteId)
     {
         statusGfxPtr = GetHealthboxElementGfxPtr(GetStatusIconForBattlerId(HEALTHBOX_GFX_STATUS_SLP_BATTLER0, battler));
         statusPalId = PAL_STATUS_SLP;
+#ifdef PLATFORM_3DS
+        CtrBattleHud_SetStatus(healthboxSpriteId, CTR_HUD_STATUS_SLP);
+#endif
     }
     else if (status & STATUS1_PSN_ANY)
     {
         statusGfxPtr = GetHealthboxElementGfxPtr(GetStatusIconForBattlerId(HEALTHBOX_GFX_STATUS_PSN_BATTLER0, battler));
         statusPalId = PAL_STATUS_PSN;
+#ifdef PLATFORM_3DS
+        CtrBattleHud_SetStatus(healthboxSpriteId, CTR_HUD_STATUS_PSN);
+#endif
     }
     else if (status & STATUS1_BURN)
     {
         statusGfxPtr = GetHealthboxElementGfxPtr(GetStatusIconForBattlerId(HEALTHBOX_GFX_STATUS_BRN_BATTLER0, battler));
         statusPalId = PAL_STATUS_BRN;
+#ifdef PLATFORM_3DS
+        CtrBattleHud_SetStatus(healthboxSpriteId, CTR_HUD_STATUS_BRN);
+#endif
     }
     else if (status & STATUS1_FREEZE)
     {
         statusGfxPtr = GetHealthboxElementGfxPtr(GetStatusIconForBattlerId(HEALTHBOX_GFX_STATUS_FRZ_BATTLER0, battler));
         statusPalId = PAL_STATUS_FRZ;
+#ifdef PLATFORM_3DS
+        CtrBattleHud_SetStatus(healthboxSpriteId, CTR_HUD_STATUS_FRZ);
+#endif
     }
     else if (status & STATUS1_PARALYSIS)
     {
         statusGfxPtr = GetHealthboxElementGfxPtr(GetStatusIconForBattlerId(HEALTHBOX_GFX_STATUS_PRZ_BATTLER0, battler));
         statusPalId = PAL_STATUS_PAR;
+#ifdef PLATFORM_3DS
+        CtrBattleHud_SetStatus(healthboxSpriteId, CTR_HUD_STATUS_PAR);
+#endif
     }
     else
     {
+#ifdef PLATFORM_3DS
+        CtrBattleHud_SetStatus(healthboxSpriteId, CTR_HUD_STATUS_NONE);
+#endif
         statusGfxPtr = GetHealthboxElementGfxPtr(HEALTHBOX_GFX_39);
 
         for (i = 0; i < 3; i++)
@@ -2152,6 +2227,9 @@ static void UpdateLeftNoOfBallsTextOnHealthbox(u8 healthboxSpriteId)
 
     txtPtr = StringCopy(text, gText_SafariBallLeft);
     ConvertIntToDecimalStringN(txtPtr, gNumSafariBalls, STR_CONV_MODE_LEFT_ALIGN, 2);
+#ifdef PLATFORM_3DS
+    CtrBattleHud_SetSafariBalls(healthboxSpriteId, gNumSafariBalls);
+#endif
 
     windowTileData = AddTextPrinterAndCreateWindowOnHealthbox(text, GetStringRightAlignXOffset(FONT_SMALL, text, 0x2F), 3, 2, &windowId);
     spriteTileNum = gSprites[healthboxSpriteId].oam.tileNum * TILE_SIZE_4BPP;
@@ -2294,6 +2372,10 @@ static void MoveBattleBarGraphically(u8 battler, u8 whichBar)
             barElementId = HEALTHBOX_GFX_HP_BAR_YELLOW;
         else
             barElementId = HEALTHBOX_GFX_HP_BAR_RED; // 20 % or less
+#ifdef PLATFORM_3DS
+        CtrBattleHud_SetBar(gBattleSpritesDataPtr->battleBars[battler].healthboxSpriteId, FALSE, filledPixelsCount,
+                            barElementId == HEALTHBOX_GFX_HP_BAR_GREEN ? 0 : barElementId == HEALTHBOX_GFX_HP_BAR_YELLOW ? 1 : 2);
+#endif
 
         for (i = 0; i < 6; i++)
         {
@@ -2307,7 +2389,7 @@ static void MoveBattleBarGraphically(u8 battler, u8 whichBar)
         }
         break;
     case EXP_BAR:
-        CalcBarFilledPixels(gBattleSpritesDataPtr->battleBars[battler].maxValue,
+        filledPixelsCount = CalcBarFilledPixels(gBattleSpritesDataPtr->battleBars[battler].maxValue,
                     gBattleSpritesDataPtr->battleBars[battler].oldValue,
                     gBattleSpritesDataPtr->battleBars[battler].receivedValue,
                     &gBattleSpritesDataPtr->battleBars[battler].currValue,
@@ -2317,7 +2399,11 @@ static void MoveBattleBarGraphically(u8 battler, u8 whichBar)
         {
             for (i = 0; i < 8; i++)
                 array[i] = 0;
+            filledPixelsCount = 0;
         }
+#ifdef PLATFORM_3DS
+        CtrBattleHud_SetBar(gBattleSpritesDataPtr->battleBars[battler].healthboxSpriteId, TRUE, filledPixelsCount, 0);
+#endif
         for (i = 0; i < 8; i++)
         {
             if (i < 4)

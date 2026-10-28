@@ -13,7 +13,7 @@
 	.global	se_dex_page
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_dex_page_1:
 	.byte	KEYSH , se_dex_page_key+0
@@ -38,17 +38,17 @@ se_dex_page_1:
 	.byte	W03
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_dex_page:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_dex_page_pri	@ Priority
-	.byte	se_dex_page_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_dex_page_pri	/* Priority*/
+	.byte	se_dex_page_rev	/* Reverb.*/
 
-	.word	se_dex_page_grp
+	.int	se_dex_page_grp
 
-	.word	se_dex_page_1
+	.int	se_dex_page_1
 
 	.end

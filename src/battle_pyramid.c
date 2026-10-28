@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "battle_pyramid.h"
 #include "battle_pyramid_bag.h"
 #include "event_data.h"
@@ -1187,7 +1190,15 @@ static void Task_SetPyramidFloorPalette(u8 taskId)
 {
     if (gPaletteFade.active)
     {
+#ifdef PORT_BRIDGE
+        // A single INCBIN stub here: rows past the first are not in it. The
+        // file (pyramid_floor.gbapal, 7 palettes) is resolved, then indexed.
+        const u16 (*floorPals)[16] = Port_ResolveAssetPointerSized(gBattlePyramidFloor_Pal, 0xE0);
+
+        CpuCopy16(floorPals[gSaveBlock2Ptr->frontier.curChallengeBattleNum], &gPlttBufferUnfaded[BG_PLTT_ID(6)], PLTT_SIZE_4BPP);
+#else
         CpuCopy16(gBattlePyramidFloor_Pal[gSaveBlock2Ptr->frontier.curChallengeBattleNum], &gPlttBufferUnfaded[BG_PLTT_ID(6)], PLTT_SIZE_4BPP);
+#endif
         DestroyTask(taskId);
     }
 }
@@ -1534,6 +1545,10 @@ void GenerateBattlePyramidFloorLayout(u16 *backupMapData, bool8 setPlayerPositio
         int yOffset, xOffset;
         const struct MapLayout *mapLayout = gMapLayouts[floorLayoutOffsets[i] + LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR];
         const u16 *layoutMap = mapLayout->map;
+
+#ifdef PORT_BRIDGE
+        layoutMap = Port_ResolveAssetPointer(layoutMap);
+#endif
 
         gBackupMapLayout.map = backupMapData;
         gBackupMapLayout.width = mapLayout->width * PYRAMID_FLOOR_SQUARES_WIDE + MAP_OFFSET_W;

@@ -334,4 +334,24 @@ void SetControllerToLinkOpponent(void);
 // link partner
 void SetControllerToLinkPartner(void);
 
+#ifdef PLATFORM_3DS
+// 3DS bottom screen (3ds_port/src/3ds_bottom_ui.c): the action, move and
+// target menus live there. The controllers keep their logic; these turn the
+// bottom screen's taps and its own button order into the keys they read.
+bool8 CtrBattleMenu_Active(void);
+void CtrBattleMenu_Begin(void);
+// A menu the controller answers by itself (Wally's catching lesson): shown
+// on the bottom screen every frame it waits, taking no input.
+void CtrBattleMenu_ShowAction(void);
+void CtrBattleMenu_ShowMove(void);
+void CtrBattleMenu_ActionInput(u8 *cursor, bool8 safari);
+void CtrBattleMenu_MoveInput(u8 *cursor, const u16 *moves);
+void CtrBattleMenu_TargetInput(void);
+void CtrBattleMenu_ShowPrompt(void);
+bool8 CtrBattleMenu_TakeQuickBall(void);
+// The ball R or the bottom screen's ball button would throw now, or ITEM_NONE.
+u16 CtrBattle_QuickBallItem(void);
+bool8 CtrBattle_QuickBallCycle(s8 direction);
+#endif
+
 #endif // GUARD_BATTLE_CONTROLLERS_H

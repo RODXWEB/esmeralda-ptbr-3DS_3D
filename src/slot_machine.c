@@ -27,6 +27,9 @@
 #include "constants/rgb.h"
 #include "constants/slot_machine.h"
 #include "constants/songs.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 #define SLOTMACHINE_GFX_TILES 233
 #define MAX_BET 3
@@ -314,11 +317,6 @@ enum {
     DIG_DISPLAY_BONUS_BIG
 };
 
-// IDs for the text windows
-enum {
-    WIN_MSG,
-    WIN_INFO,
-};
 
 // How ReelTime works
 // ==================
@@ -405,7 +403,11 @@ struct SlotMachine
     /*0x50*/ u8 reelTimeBoltSpriteIds[2];
     /*0x52*/ u8 reelTimePikachuAuraSpriteIds[2];
     /*0x54*/ u8 reelTimeDuckSpriteIds[4];
+#ifdef PLATFORM_3DS
+    /*0x58*/ u32 win0h; // with WIN_RANGE's edges past 255 (gba/io_reg.h)
+#else
     /*0x58*/ u16 win0h;
+#endif
     /*0x5a*/ u16 win0v;
     /*0x5c*/ u16 winIn;
     /*0x5e*/ u16 winOut;
@@ -719,12 +721,11 @@ static const u8 sSymbolToMatch[];
 static const u8 sReelTimeSymbols[];
 static const u8 sReelSymbols[NUM_REELS][SYMBOLS_PER_REEL];
 static const u16 *const sLitMatchLinePalTable[NUM_MATCH_LINES];
-static const u16 *const sDarkMatchLinePalTable[NUM_MATCH_LINES];
+static const u16 sDarkMatchLinePalByteOffsets[NUM_MATCH_LINES];
 static const u8 sMatchLinePalOffsets[NUM_MATCH_LINES];
 static const u8 sBetToMatchLineIds[MAX_BET][2];
 static const u8 sMatchLinesPerBet[MAX_BET];
 static const u16 *const sFlashingLightsPalTable[];
-static const u16 *const sSlotMachineMenu_Pal;
 static const u16 sReelTimeWindow_Tilemap[];
 static const u16 sEmptyTilemap[];
 static void (*const sDigitalDisplaySceneExitCallbacks[])(void);
@@ -1206,7 +1207,7 @@ static void InitSlotMachine(void)
     sSlotMachine->bet = 0;
     sSlotMachine->currentReel = LEFT_REEL;
     sSlotMachine->reelSpeed = REEL_NORMAL_SPEED;
-    sSlotMachine->win0h = DISPLAY_WIDTH;
+    sSlotMachine->win0h = WIN_RANGE(0, DISPLAY_WIDTH);
     sSlotMachine->win0v = DISPLAY_HEIGHT;
     sSlotMachine->winIn = WININ_WIN0_BG_ALL | WININ_WIN0_OBJ | WININ_WIN0_CLR;
     sSlotMachine->winOut = WINOUT_WIN01_BG_ALL | WINOUT_WIN01_OBJ | WINOUT_WIN01_CLR;
@@ -1254,7 +1255,7 @@ static void SlotMachineSetup_LoadGfxAndTilemaps(void)
     LoadSlotMachineGfx();
     LoadMessageBoxGfx(0, 0x200, BG_PLTT_ID(15));
     LoadUserWindowBorderGfx(0, 0x214, BG_PLTT_ID(14));
-    PutWindowTilemap(WIN_MSG);
+    PutWindowTilemap(0);
 }
 
 static void CreateSlotMachineSprites(void)
@@ -1395,9 +1396,9 @@ static bool8 SlotTask_HandleBetInput(struct Task *task)
 // SLOTTASK_MSG_NEED_3_COINS
 static bool8 SlotTask_PrintMsg_Need3Coins(struct Task *task)
 {
-    DrawDialogueFrame(WIN_MSG, FALSE);
-    AddTextPrinterParameterized(WIN_MSG, FONT_NORMAL, gText_YouDontHaveThreeCoins, 0, 1, 0, 0);
-    CopyWindowToVram(WIN_MSG, COPYWIN_FULL);
+    DrawDialogueFrame(0, FALSE);
+    AddTextPrinterParameterized(0, FONT_NORMAL, gText_YouDontHaveThreeCoins, 0, 1, 0, 0);
+    CopyWindowToVram(0, COPYWIN_FULL);
     sSlotMachine->state = SLOTTASK_WAIT_MSG_NEED_3_COINS;
     return FALSE;
 }
@@ -1407,7 +1408,7 @@ static bool8 SlotTask_WaitMsg_Need3Coins(struct Task *task)
 {
     if (JOY_NEW(A_BUTTON | B_BUTTON))
     {
-        ClearDialogWindowAndFrame(WIN_MSG, TRUE);
+        ClearDialogWindowAndFrame(0, TRUE);
         sSlotMachine->state = SLOTTASK_BET_INPUT;
     }
     return FALSE;
@@ -1660,9 +1661,9 @@ static bool8 SlotTask_NoMatches(struct Task *task)
 // SLOTTASK_ASK_QUIT
 static bool8 SlotTask_AskQuit(struct Task *task)
 {
-    DrawDialogueFrame(WIN_MSG, FALSE);
-    AddTextPrinterParameterized(WIN_MSG, FONT_NORMAL, gText_QuitTheGame, 0, 1, 0, 0);
-    CopyWindowToVram(WIN_MSG, COPYWIN_FULL);
+    DrawDialogueFrame(0, FALSE);
+    AddTextPrinterParameterized(0, FONT_NORMAL, gText_QuitTheGame, 0, 1, 0, 0);
+    CopyWindowToVram(0, COPYWIN_FULL);
     CreateYesNoMenuParameterized(0x15, 7, 0x214, 0x180, 0xE, 0xF);
     sSlotMachine->state = SLOTTASK_HANDLE_QUIT_INPUT;
     return FALSE;
@@ -1674,16 +1675,16 @@ static bool8 SlotTask_HandleQuitInput(struct Task *task)
     s8 input = Menu_ProcessInputNoWrapClearOnChoose();
     if (input == 0) // Chose to quit
     {
-        ClearDialogWindowAndFrame(WIN_MSG, TRUE);
+        ClearDialogWindowAndFrame(0, TRUE);
         DarkenBetTiles(0);
         DarkenBetTiles(1);
         DarkenBetTiles(2);
         sSlotMachine->coins += sSlotMachine->bet;
         sSlotMachine->state = SLOTTASK_END;
     }
-    else if (input == 1 || input == MENU_B_PRESSED) // Chose not to quit
+    else if (input == 1 || input == -1) // Chose not to quit
     {
-        ClearDialogWindowAndFrame(WIN_MSG, TRUE);
+        ClearDialogWindowAndFrame(0, TRUE);
         sSlotMachine->state = SLOTTASK_BET_INPUT;
     }
     return FALSE;
@@ -1692,9 +1693,9 @@ static bool8 SlotTask_HandleQuitInput(struct Task *task)
 // SLOTTASK_MSG_MAX_COINS
 static bool8 SlotTask_PrintMsg_MaxCoins(struct Task *task)
 {
-    DrawDialogueFrame(WIN_MSG, FALSE);
-    AddTextPrinterParameterized(WIN_MSG, FONT_NORMAL, gText_YouveGot9999Coins, 0, 1, 0, 0);
-    CopyWindowToVram(WIN_MSG, COPYWIN_FULL);
+    DrawDialogueFrame(0, FALSE);
+    AddTextPrinterParameterized(0, FONT_NORMAL, gText_YouveGot9999Coins, 0, 1, 0, 0);
+    CopyWindowToVram(0, COPYWIN_FULL);
     sSlotMachine->state = SLOTTASK_WAIT_MSG_MAX_COINS;
     return FALSE;
 }
@@ -1704,7 +1705,7 @@ static bool8 SlotTask_WaitMsg_MaxCoins(struct Task *task)
 {
     if (JOY_NEW(A_BUTTON | B_BUTTON))
     {
-        ClearDialogWindowAndFrame(WIN_MSG, TRUE);
+        ClearDialogWindowAndFrame(0, TRUE);
         sSlotMachine->state = SLOTTASK_BET_INPUT;
     }
     return FALSE;
@@ -1713,9 +1714,9 @@ static bool8 SlotTask_WaitMsg_MaxCoins(struct Task *task)
 // SLOTTASK_MSG_NO_MORE_COINS
 static bool8 SlotTask_PrintMsg_NoMoreCoins(struct Task *task)
 {
-    DrawDialogueFrame(WIN_MSG, FALSE);
-    AddTextPrinterParameterized(WIN_MSG, FONT_NORMAL, gText_YouveRunOutOfCoins, 0, 1, 0, 0);
-    CopyWindowToVram(WIN_MSG, COPYWIN_FULL);
+    DrawDialogueFrame(0, FALSE);
+    AddTextPrinterParameterized(0, FONT_NORMAL, gText_YouveRunOutOfCoins, 0, 1, 0, 0);
+    CopyWindowToVram(0, COPYWIN_FULL);
     sSlotMachine->state = SLOTTASK_WAIT_MSG_NO_MORE_COINS;
     return FALSE;
 }
@@ -1725,7 +1726,7 @@ static bool8 SlotTask_WaitMsg_NoMoreCoins(struct Task *task)
 {
     if (JOY_NEW(A_BUTTON | B_BUTTON))
     {
-        ClearDialogWindowAndFrame(WIN_MSG, TRUE);
+        ClearDialogWindowAndFrame(0, TRUE);
         sSlotMachine->state = SLOTTASK_END;
     }
     return FALSE;
@@ -1775,6 +1776,11 @@ static bool8 SlotTask_FreeDataStructures(struct Task *task)
         FREE_AND_SET_NULL(sReelBackgroundSpriteSheet);
         FREE_AND_SET_NULL(sSlotMachineSpritesheetsPtr);
         FREE_AND_SET_NULL(sSlotMachine);
+#ifdef PORTABLE
+        SetVBlankCallback(NULL);
+        ResetTasks();
+        ResetSpriteData();
+#endif
     }
     return FALSE;
 }
@@ -3223,7 +3229,7 @@ static void LightenMatchLine(u8 matchLineId)
 
 static void DarkenMatchLine(u8 matchLineId)
 {
-    LoadPalette(sDarkMatchLinePalTable[matchLineId], sMatchLinePalOffsets[matchLineId], PLTT_SIZEOF(1));
+    LoadPaletteWithOffset(gSlotMachineMenu_Pal, sDarkMatchLinePalByteOffsets[matchLineId], sMatchLinePalOffsets[matchLineId], PLTT_SIZEOF(1));
 }
 
 // light up the match line for each bet by the player
@@ -3368,7 +3374,7 @@ static bool8 TryStopSlotMachineLights(void)
     if (gTasks[taskId].sFlashState == 0)
     {
         DestroyTask(taskId);
-        LoadPalette(sSlotMachineMenu_Pal, BG_PLTT_ID(1), PLTT_SIZE_4BPP);
+        LoadPaletteWithOffset(gSlotMachineMenu_Pal, PLTT_SIZEOF(16), BG_PLTT_ID(1), PLTT_SIZE_4BPP);
         return TRUE;
     }
     return FALSE;
@@ -3869,8 +3875,17 @@ static void ReelTime_EndFailure(struct Task *task)
 static void LoadReelTimeWindowTilemap(s16 a0, s16 a1)
 {
     s16 i;
+#ifdef PORT_BRIDGE
+    // &sReelTimeWindow_Tilemap[k] points into the INCBIN stub, not the file
+    // (reel_time_window.bin, 0x1B8 bytes): resolve the file, then index it.
+    const u16 *tilemap = Port_ResolveAssetPointerSized(sReelTimeWindow_Tilemap, 0x1B8);
+
+    for (i = 4; i < 15; i++)
+        LoadBgTilemap(1, &tilemap[a1 + (i - 4) * 20], 2, 32 * i + a0);
+#else
     for (i = 4; i < 15; i++)
         LoadBgTilemap(1, &sReelTimeWindow_Tilemap[a1 + (i - 4) * 20], 2, 32 * i + a0);
+#endif
 }
 
 static void ClearReelTimeWindowTilemap(s16 a0)
@@ -3927,15 +3942,15 @@ static void InfoBox_DrawWindow(struct Task *task)
     DestroyDigitalDisplayScene();
     LoadInfoBoxTilemap();
     AddWindow(&sWindowTemplate_InfoBox);
-    PutWindowTilemap(WIN_INFO);
-    FillWindowPixelBuffer(WIN_INFO, PIXEL_FILL(0));
+    PutWindowTilemap(1);
+    FillWindowPixelBuffer(1, PIXEL_FILL(0));
     task->tState++;
 }
 
 static void InfoBox_AddText(struct Task *task)
 {
-    AddTextPrinterParameterized3(WIN_INFO, FONT_NORMAL, 2, 5, sColors_ReeltimeHelp, 0, gText_ReelTimeHelp);
-    CopyWindowToVram(WIN_INFO, COPYWIN_FULL);
+    AddTextPrinterParameterized3(1, FONT_NORMAL, 2, 5, sColors_ReeltimeHelp, 0, gText_ReelTimeHelp);
+    CopyWindowToVram(1, COPYWIN_FULL);
     BeginNormalPaletteFade(PALETTES_ALL, 0, 16, 0, RGB_BLACK);
     task->tState++;
 }
@@ -3944,10 +3959,10 @@ static void InfoBox_WaitInput(struct Task *task)
 {
     if (JOY_NEW(B_BUTTON | SELECT_BUTTON))
     {
-        FillWindowPixelBuffer(WIN_INFO, PIXEL_FILL(0));
-        ClearWindowTilemap(WIN_INFO);
-        CopyWindowToVram(WIN_INFO, COPYWIN_MAP);
-        RemoveWindow(WIN_INFO);
+        FillWindowPixelBuffer(1, PIXEL_FILL(0));
+        ClearWindowTilemap(1);
+        CopyWindowToVram(1, COPYWIN_MAP);
+        RemoveWindow(1);
         BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
         task->tState++;
     }
@@ -4957,7 +4972,7 @@ static void SpriteCB_DigitalDisplay_AButtonStart(struct Sprite *sprite)
                 sprite->data[2] = 208;
             if (sprite->data[3] < 208)
                 sprite->data[3] = 208;
-            sSlotMachine->win0h = (sprite->data[2] << 8) | sprite->data[3];
+            sSlotMachine->win0h = WIN_RANGE(sprite->data[2], sprite->data[3]);
             if (sprite->sCounter > 51)
             {
                 sprite->sState++;
@@ -4982,7 +4997,7 @@ static void SpriteCB_DigitalDisplay_AButtonStart(struct Sprite *sprite)
                 sprite->data[2] = 208;
             if (sprite->data[3] < 208)
                 sprite->data[3] = 208;
-            sSlotMachine->win0h = (sprite->data[2] << 8) | sprite->data[3];
+            sSlotMachine->win0h = WIN_RANGE(sprite->data[2], sprite->data[3]);
             if (sprite->sCounter > 15)
             {
                 sprite->sState++;
@@ -5008,7 +5023,7 @@ static void EndDigitalDisplayScene_Win(void)
 
 static void EndDigitalDisplayScene_InsertBet(void)
 {
-    sSlotMachine->win0h = DISPLAY_WIDTH;
+    sSlotMachine->win0h = WIN_RANGE(0, DISPLAY_WIDTH);
     sSlotMachine->win0v = DISPLAY_HEIGHT;
     sSlotMachine->winIn = WININ_WIN0_BG_ALL | WININ_WIN0_OBJ | WININ_WIN0_CLR;
     sSlotMachine->winOut = WINOUT_WIN01_BG_ALL | WINOUT_WIN01_OBJ | WINOUT_WIN01_CLR;
@@ -7881,13 +7896,13 @@ static const u16 *const sLitMatchLinePalTable[NUM_MATCH_LINES] =
     [MATCH_NESW_DIAG]  = sNESWDiagLit_Pal,
 };
 
-static const u16 *const sDarkMatchLinePalTable[NUM_MATCH_LINES] =
+static const u16 sDarkMatchLinePalByteOffsets[NUM_MATCH_LINES] =
 {
-    [MATCH_MIDDLE_ROW] = &gSlotMachineMenu_Pal[BG_PLTT_ID(4) + 10],
-    [MATCH_TOP_ROW]    = &gSlotMachineMenu_Pal[BG_PLTT_ID(4) + 11],
-    [MATCH_BOTTOM_ROW] = &gSlotMachineMenu_Pal[BG_PLTT_ID(4) + 12],
-    [MATCH_NWSE_DIAG]  = &gSlotMachineMenu_Pal[BG_PLTT_ID(4) + 13],
-    [MATCH_NESW_DIAG]  = &gSlotMachineMenu_Pal[BG_PLTT_ID(4) + 14],
+    [MATCH_MIDDLE_ROW] = PLTT_SIZEOF(BG_PLTT_ID(4) + 10),
+    [MATCH_TOP_ROW]    = PLTT_SIZEOF(BG_PLTT_ID(4) + 11),
+    [MATCH_BOTTOM_ROW] = PLTT_SIZEOF(BG_PLTT_ID(4) + 12),
+    [MATCH_NWSE_DIAG]  = PLTT_SIZEOF(BG_PLTT_ID(4) + 13),
+    [MATCH_NESW_DIAG]  = PLTT_SIZEOF(BG_PLTT_ID(4) + 14),
 };
 
 static const u8 sMatchLinePalOffsets[NUM_MATCH_LINES] = {
@@ -7917,8 +7932,6 @@ static const u16 *const sFlashingLightsPalTable[] =
     sFlashingLightsMiddle_Pal,
     sFlashingLightsOutside_Pal,
 };
-
-static const u16 *const sSlotMachineMenu_Pal = {gSlotMachineMenu_Pal + 16};
 
 static const u16 sPokeballShining0_Pal[] = INCBIN_U16("graphics/slot_machine/pokeball_shining_0.gbapal");
 static const u16 sPokeballShining1_Pal[] = INCBIN_U16("graphics/slot_machine/pokeball_shining_1.gbapal");

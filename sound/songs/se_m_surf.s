@@ -13,7 +13,7 @@
 	.global	se_m_surf
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_surf_1:
 	.byte	KEYSH , se_m_surf_key+0
@@ -93,17 +93,17 @@ se_m_surf_1:
 	.byte	W06
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_surf:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_surf_pri	@ Priority
-	.byte	se_m_surf_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_surf_pri	/* Priority*/
+	.byte	se_m_surf_rev	/* Reverb.*/
 
-	.word	se_m_surf_grp
+	.int	se_m_surf_grp
 
-	.word	se_m_surf_1
+	.int	se_m_surf_1
 
 	.end

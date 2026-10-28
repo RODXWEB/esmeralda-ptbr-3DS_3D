@@ -9,6 +9,7 @@
 #include "pokemon.h"
 #include "sound.h"
 #include "sprite.h"
+
 #include "task.h"
 #include "trig.h"
 #include "util.h"
@@ -384,6 +385,10 @@ static void Task_DoPokeballSendOutAnim(u8 taskId)
         gBattlerTarget = battler;
         gSprites[ballSpriteId].x = 24;
         gSprites[ballSpriteId].y = 68;
+#ifdef PLATFORM_3DS
+        // From the trainer's hand, which is lower on the 3DS (ctr_battle_layout.h).
+        gSprites[ballSpriteId].y += CtrBattleSideShiftOf(B_SIDE_PLAYER);
+#endif
         gSprites[ballSpriteId].callback = SpriteCB_PlayerMonSendOut_1;
         break;
     case POKEBALL_OPPONENT_SENDOUT:
@@ -669,7 +674,11 @@ static void Task_PlayCryWhenReleasedFromBall(u8 taskId)
     u16 species = gTasks[taskId].tCryTaskSpecies;
     u8 battler = gTasks[taskId].tCryTaskBattler;
     u8 monSpriteId = gTasks[taskId].tCryTaskMonSpriteId;
+#ifndef PORTABLE
     struct Pokemon *mon = (void *)(u32)((gTasks[taskId].tCryTaskMonPtr1 << 16) | (u16)(gTasks[taskId].tCryTaskMonPtr2));
+#else
+    struct Pokemon *mon = (void *)(u32)(((u16)gTasks[taskId].tCryTaskMonPtr1 << 16) | (u16)(gTasks[taskId].tCryTaskMonPtr2));
+#endif
 
     switch (gTasks[taskId].tCryTaskState)
     {
@@ -1032,6 +1041,10 @@ void CreatePokeballSpriteToReleaseMon(u8 monSpriteId, u8 monPalNum, u8 x, u8 y, 
 {
     u8 spriteId;
 
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebug(0x0009, monSpriteId, species, monPalNum);
+#endif
+
     LoadCompressedSpriteSheetUsingHeap(&gBallSpriteSheets[BALL_POKE]);
     LoadCompressedSpritePaletteUsingHeap(&gBallSpritePalettes[BALL_POKE]);
     spriteId = CreateSprite(&gBallSpriteTemplates[BALL_POKE], x, y, subpriority);
@@ -1043,6 +1056,10 @@ void CreatePokeballSpriteToReleaseMon(u8 monSpriteId, u8 monPalNum, u8 x, u8 y, 
     gSprites[monSpriteId].x = x;
     gSprites[monSpriteId].y = y;
     gSprites[monSpriteId].sSpecies = species;
+
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebug(0x000A, monSpriteId, gSprites[monSpriteId].sSpecies, gSprites[monSpriteId].oam.tileNum);
+#endif
 
     gSprites[spriteId].sDelay = delay;
     gSprites[spriteId].sMonPalNum = monPalNum;

@@ -1,4 +1,10 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#include "braille_puzzles.h"
+#include "fldeff.h"
+#include "region_map.h"
+#endif
 #include "item_use.h"
 #include "battle.h"
 #include "battle_pyramid.h"
@@ -72,7 +78,7 @@ static void SetDistanceOfClosestHiddenItem(u8, s16, s16);
 static void CB2_OpenPokeblockFromBag(void);
 
 // EWRAM variables
-EWRAM_DATA static TaskFunc sItemUseOnFieldCB = NULL;
+EWRAM_DATA static void(*sItemUseOnFieldCB)(u8 taskId) = NULL;
 
 // Below is set TRUE by UseRegisteredKeyItemOnField
 #define tUsingRegisteredKeyItem  data[3]
@@ -786,8 +792,82 @@ void ItemUseOutOfBattle_RareCandy(u8 taskId)
     SetUpItemUseCallback(taskId);
 }
 
+#ifdef PLATFORM_3DS
+// HMs without the move (OPTIONS, ENHANCEMENTS): Fly and Flash are used from a
+// Pokemon's menu, never by a field script, so with the option their HMs are
+// used from the Bag - with the badge, where the move works, by the Pokemon
+// the option has stand in for the others (FieldHmUser, scrcmd.c).
+static bool8 CanUseFieldHmFromBag(u16 item)
+{
+    if (!CtrExtras_Get("field_hms") || FieldHmUser(ItemIdToBattleMoveId(item)) >= PARTY_SIZE)
+        return FALSE;
+    if (item == ITEM_HM02)
+        return FlagGet(FLAG_BADGE06_GET) && Overworld_MapTypeAllowsTeleportAndFly(gMapHeader.mapType);
+    if (item == ITEM_HM05)
+        return FlagGet(FLAG_BADGE02_GET)
+            && (ShouldDoBrailleRegisteelEffect() || (gMapHeader.cave == TRUE && !FlagGet(FLAG_SYS_USE_FLASH)));
+    return FALSE;
+}
+
+static void UseFieldHmFromBag(u8 taskId)
+{
+    gPartyMenu.slotId = FieldHmUser(ItemIdToBattleMoveId(gSpecialVar_ItemId));
+    if (gSpecialVar_ItemId == ITEM_HM02)
+    {
+        // cancelled, the Fly map goes back to the Bag (region_map.c)
+        gFlyMapFromBag = TRUE;
+        gBagMenu->newScreenCallback = CB2_OpenFlyMap;
+        Task_FadeAndCloseBagMenu(taskId);
+    }
+    else if (SetUpFieldMove_Flash())
+    {
+        gBagMenu->newScreenCallback = CB2_ReturnToField;
+        Task_FadeAndCloseBagMenu(taskId);
+    }
+    else
+    {
+        CloseItemMessage(taskId);
+    }
+}
+
+static void BootUpFieldHmInstead(u8 taskId)
+{
+    DisplayItemMessage(taskId, FONT_NORMAL, gText_BootedUpHM, BootUpSoundTMHM);
+}
+
+static const struct YesNoFuncTable sUseFieldHmFromBagYesNoFuncTable =
+{
+    .yesFunc = UseFieldHmFromBag,
+    .noFunc = BootUpFieldHmInstead,
+};
+
+#if GAME_LANGUAGE == LANGUAGE_SPANISH
+static const u8 sText_UseFieldHmNow[] = _("¿Usar {STR_VAR_1} ahora?");
+#elif GAME_LANGUAGE == LANGUAGE_FRENCH
+static const u8 sText_UseFieldHmNow[] = _("Utiliser {STR_VAR_1} maintenant?");
+#elif GAME_LANGUAGE == LANGUAGE_ITALIAN
+static const u8 sText_UseFieldHmNow[] = _("Usare {STR_VAR_1} ora?");
+#else
+static const u8 sText_UseFieldHmNow[] = _("Use {STR_VAR_1} now?");
+#endif
+
+static void UseFieldHmFromBagYesNo(u8 taskId)
+{
+    BagMenu_YesNo(taskId, ITEMWIN_YESNO_HIGH, &sUseFieldHmFromBagYesNoFuncTable);
+}
+#endif
+
 void ItemUseOutOfBattle_TMHM(u8 taskId)
 {
+#ifdef PLATFORM_3DS
+    if (CanUseFieldHmFromBag(gSpecialVar_ItemId))
+    {
+        StringCopy(gStringVar1, gMoveNames[ItemIdToBattleMoveId(gSpecialVar_ItemId)]);
+        StringExpandPlaceholders(gStringVar4, sText_UseFieldHmNow);
+        DisplayItemMessage(taskId, FONT_NORMAL, gStringVar4, UseFieldHmFromBagYesNo);
+        return;
+    }
+#endif
     if (gSpecialVar_ItemId >= ITEM_HM01)
         DisplayItemMessage(taskId, FONT_NORMAL, gText_BootedUpHM, BootUpSoundTMHM); // HM
     else
@@ -800,9 +880,18 @@ static void BootUpSoundTMHM(u8 taskId)
     gTasks[taskId].func = Task_ShowTMHMContainedMessage;
 }
 
+#ifdef PLATFORM_3DS
+// menu.c: a tap on the bag, where it is shown on the 3DS bottom screen, goes
+// on with a message as A or B would.
+bool8 CtrMenu_TakeAck(void);
+#define ITEM_USE_ACK(keys) (JOY_NEW(keys) || CtrMenu_TakeAck())
+#else
+#define ITEM_USE_ACK(keys) JOY_NEW(keys)
+#endif
+
 static void Task_ShowTMHMContainedMessage(u8 taskId)
 {
-    if (JOY_NEW(A_BUTTON | B_BUTTON))
+    if (ITEM_USE_ACK(A_BUTTON | B_BUTTON))
     {
         StringCopy(gStringVar1, gMoveNames[ItemIdToBattleMoveId(gSpecialVar_ItemId)]);
         StringExpandPlaceholders(gStringVar4, gText_TMHMContainedVar1);
@@ -865,12 +954,46 @@ static void Task_UseRepel(u8 taskId)
     if (!IsSEPlaying())
     {
         VarSet(VAR_REPEL_STEP_COUNT, GetItemHoldEffectParam(gSpecialVar_ItemId));
+#ifdef PLATFORM_3DS
+        VarSet(VAR_LAST_REPEL, gSpecialVar_ItemId);
+#endif
         RemoveUsedItem();
         if (CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE)
             DisplayItemMessage(taskId, FONT_NORMAL, gStringVar4, CloseItemMessage);
         else
             DisplayItemMessageInBattlePyramid(taskId, gStringVar4, Task_CloseBattlePyramidBagMessage);
     }
+}
+
+// Repel prompt (OPTIONS, ENHANCEMENTS): when a Repel wears off, another of
+// the last kind used, while the Bag still holds one (data/scripts/repel.inc).
+// Not in the Battle Pyramid, whose Repels are in a bag of its own.
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_SPANISH
+const u8 gText_UseAnotherRepel[] = _("¿Usar otro {STR_VAR_1}?");
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_FRENCH
+const u8 gText_UseAnotherRepel[] = _("Utiliser un autre {STR_VAR_1}?");
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
+const u8 gText_UseAnotherRepel[] = _("Usare un altro {STR_VAR_1}?");
+#else
+const u8 gText_UseAnotherRepel[] = _("Use another {STR_VAR_1}?");
+#endif
+
+void ShouldOfferAnotherRepel(void)
+{
+#ifdef PLATFORM_3DS
+    u16 repel = VarGet(VAR_LAST_REPEL);
+
+    gSpecialVar_Result = CtrExtras_Get("repel_prompt") && repel != ITEM_NONE
+                      && CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE
+                      && CheckBagHasItem(repel, 1);
+#else
+    gSpecialVar_Result = FALSE;
+#endif
+}
+
+void SetRepelStepsFromLastRepel(void)
+{
+    VarSet(VAR_REPEL_STEP_COUNT, GetItemHoldEffectParam(VarGet(VAR_LAST_REPEL)));
 }
 
 static void Task_UsedBlackWhiteFlute(u8 taskId)
@@ -968,7 +1091,7 @@ void ItemUseInBattle_PokeBall(u8 taskId)
 
 static void Task_CloseStatIncreaseMessage(u8 taskId)
 {
-    if (JOY_NEW(A_BUTTON | B_BUTTON))
+    if (ITEM_USE_ACK(A_BUTTON | B_BUTTON))
     {
         if (CurrentBattlePyramidLocation() == PYRAMID_LOCATION_NONE)
             Task_FadeAndCloseBagMenu(taskId);

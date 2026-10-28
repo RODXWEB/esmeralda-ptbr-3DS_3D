@@ -13,7 +13,7 @@
 	.global	se_m_moonlight
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_moonlight_1:
 	.byte	KEYSH , se_m_moonlight_key+0
@@ -105,18 +105,18 @@ se_m_moonlight_1_004:
 	.byte		N20   , Gn6 , v100
 	.byte	W21
 	.byte	PATT
-	 .word	se_m_moonlight_1_000
+	 .int	se_m_moonlight_1_000
 	.byte	PATT
-	 .word	se_m_moonlight_1_001
+	 .int	se_m_moonlight_1_001
 	.byte	PATT
-	 .word	se_m_moonlight_1_002
+	 .int	se_m_moonlight_1_002
 	.byte	PATT
-	 .word	se_m_moonlight_1_003
+	 .int	se_m_moonlight_1_003
 	.byte	PATT
-	 .word	se_m_moonlight_1_004
+	 .int	se_m_moonlight_1_004
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_moonlight_2:
 	.byte	KEYSH , se_m_moonlight_key+0
@@ -192,27 +192,27 @@ se_m_moonlight_2_002:
 	.byte		        Gn6 , v096
 	.byte	W05
 	.byte	PATT
-	 .word	se_m_moonlight_2_000
+	 .int	se_m_moonlight_2_000
 	.byte	PATT
-	 .word	se_m_moonlight_2_001
+	 .int	se_m_moonlight_2_001
 	.byte	PATT
-	 .word	se_m_moonlight_2_002
+	 .int	se_m_moonlight_2_002
 	.byte	W24
 	.byte	W24
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_moonlight:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_moonlight_pri	@ Priority
-	.byte	se_m_moonlight_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_moonlight_pri	/* Priority*/
+	.byte	se_m_moonlight_rev	/* Reverb.*/
 
-	.word	se_m_moonlight_grp
+	.int	se_m_moonlight_grp
 
-	.word	se_m_moonlight_1
-	.word	se_m_moonlight_2
+	.int	se_m_moonlight_1
+	.int	se_m_moonlight_2
 
 	.end

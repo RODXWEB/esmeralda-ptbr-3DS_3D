@@ -13,7 +13,7 @@
 	.global	se_m_dragon_rage
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_dragon_rage_1:
 	.byte	KEYSH , se_m_dragon_rage_key+0
@@ -134,17 +134,17 @@ se_m_dragon_rage_1:
 	.byte	W23
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_dragon_rage:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_dragon_rage_pri	@ Priority
-	.byte	se_m_dragon_rage_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_dragon_rage_pri	/* Priority*/
+	.byte	se_m_dragon_rage_rev	/* Reverb.*/
 
-	.word	se_m_dragon_rage_grp
+	.int	se_m_dragon_rage_grp
 
-	.word	se_m_dragon_rage_1
+	.int	se_m_dragon_rage_1
 
 	.end

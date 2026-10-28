@@ -13,7 +13,7 @@
 	.global	se_m_heat_wave
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_heat_wave_1:
 	.byte	KEYSH , se_m_heat_wave_key+0
@@ -148,7 +148,7 @@ se_m_heat_wave_1:
 	.byte		EOT
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_heat_wave_2:
 	.byte	KEYSH , se_m_heat_wave_key+0
@@ -189,18 +189,18 @@ se_m_heat_wave_2:
 	.byte	W12
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_heat_wave:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_heat_wave_pri	@ Priority
-	.byte	se_m_heat_wave_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_heat_wave_pri	/* Priority*/
+	.byte	se_m_heat_wave_rev	/* Reverb.*/
 
-	.word	se_m_heat_wave_grp
+	.int	se_m_heat_wave_grp
 
-	.word	se_m_heat_wave_1
-	.word	se_m_heat_wave_2
+	.int	se_m_heat_wave_1
+	.int	se_m_heat_wave_2
 
 	.end

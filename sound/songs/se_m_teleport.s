@@ -13,7 +13,7 @@
 	.global	se_m_teleport
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_teleport_1:
 	.byte	KEYSH , se_m_teleport_key+0
@@ -149,17 +149,17 @@ se_m_teleport_1:
 	.byte	W02
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_teleport:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_teleport_pri	@ Priority
-	.byte	se_m_teleport_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_teleport_pri	/* Priority*/
+	.byte	se_m_teleport_rev	/* Reverb.*/
 
-	.word	se_m_teleport_grp
+	.int	se_m_teleport_grp
 
-	.word	se_m_teleport_1
+	.int	se_m_teleport_1
 
 	.end

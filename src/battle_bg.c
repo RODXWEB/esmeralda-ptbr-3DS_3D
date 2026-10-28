@@ -757,8 +757,28 @@ void LoadBattleMenuWindowGfx(void)
     }
 }
 
+#ifdef PLATFORM_3DS
+// The 3DS can draw the overworld in 3D in place of the battle's scenery on
+// BG3. A move's background is loaded into the same BG3 (LoadMoveBg) and has to
+// be shown instead, so the renderer asks which of the two BG3 holds.
+static bool8 sCtrMoveBgShown;
+
+bool8 CtrBattleBg_MoveBgShown(void)
+{
+    return sCtrMoveBgShown;
+}
+
+void CtrBattleBg_SetMoveBgShown(bool8 shown)
+{
+    sCtrMoveBgShown = shown;
+}
+#endif
+
 void DrawMainBattleBackground(void)
 {
+#ifdef PLATFORM_3DS
+    sCtrMoveBgShown = FALSE;
+#endif
     if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_EREADER_TRAINER | BATTLE_TYPE_RECORDED_LINK))
     {
         LZDecompressVram(gBattleEnvironmentTiles_Building, (void *)(BG_CHAR_ADDR(2)));
@@ -1282,6 +1302,9 @@ bool8 LoadChosenBattleElement(u8 caseId)
         }
         break;
     case 4:
+#ifdef PLATFORM_3DS
+        sCtrMoveBgShown = FALSE;
+#endif
         if (gBattleTypeFlags & (BATTLE_TYPE_FRONTIER | BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK | BATTLE_TYPE_EREADER_TRAINER))
         {
             LZDecompressVram(gBattleEnvironmentTilemap_Building, (void *)(BG_SCREEN_ADDR(26)));

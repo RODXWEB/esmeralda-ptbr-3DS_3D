@@ -13,7 +13,7 @@
 	.global	se_m_attract
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_attract_1:
 	.byte	KEYSH , se_m_attract_key+0
@@ -65,7 +65,7 @@ se_m_attract_1:
 	.byte		        c_v+0
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_attract_2:
 	.byte	KEYSH , se_m_attract_key+0
@@ -109,18 +109,18 @@ se_m_attract_2:
 	.byte	W03
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_attract:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_attract_pri	@ Priority
-	.byte	se_m_attract_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_attract_pri	/* Priority*/
+	.byte	se_m_attract_rev	/* Reverb.*/
 
-	.word	se_m_attract_grp
+	.int	se_m_attract_grp
 
-	.word	se_m_attract_1
-	.word	se_m_attract_2
+	.int	se_m_attract_1
+	.int	se_m_attract_2
 
 	.end

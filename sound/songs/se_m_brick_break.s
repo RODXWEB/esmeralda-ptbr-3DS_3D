@@ -13,7 +13,7 @@
 	.global	se_m_brick_break
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_brick_break_1:
 	.byte	KEYSH , se_m_brick_break_key+0
@@ -54,7 +54,7 @@ se_m_brick_break_1:
 	.byte	W06
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_brick_break_2:
 	.byte	KEYSH , se_m_brick_break_key+0
@@ -83,18 +83,18 @@ se_m_brick_break_2:
 	.byte	W05
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_brick_break:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_brick_break_pri	@ Priority
-	.byte	se_m_brick_break_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_brick_break_pri	/* Priority*/
+	.byte	se_m_brick_break_rev	/* Reverb.*/
 
-	.word	se_m_brick_break_grp
+	.int	se_m_brick_break_grp
 
-	.word	se_m_brick_break_1
-	.word	se_m_brick_break_2
+	.int	se_m_brick_break_1
+	.int	se_m_brick_break_2
 
 	.end

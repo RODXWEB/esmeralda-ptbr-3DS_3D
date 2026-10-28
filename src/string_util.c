@@ -2,6 +2,9 @@
 #include "string_util.h"
 #include "text.h"
 #include "strings.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 EWRAM_DATA u8 gStringVar1[0x100] = {0};
 EWRAM_DATA u8 gStringVar2[0x100] = {0};
@@ -10,6 +13,13 @@ EWRAM_DATA u8 gStringVar4[0x3E8] = {0};
 EWRAM_DATA static u8 sUnknownStringVar[16] = {0};
 
 static const u8 sDigits[] = __("0123456789ABCDEF");
+
+#ifdef PORT_BRIDGE
+static const u8 *ResolveTextString(const u8 *str)
+{
+    return Port_ResolveTextPointer(str);
+}
+#endif
 
 static const s32 sPowersOfTen[] =
 {
@@ -74,6 +84,10 @@ u8 *StringCopy_PlayerName(u8 *dest, const u8 *src)
 
 u8 *StringCopy(u8 *dest, const u8 *src)
 {
+#ifdef PORT_BRIDGE
+    src = ResolveTextString(src);
+#endif
+
     while (*src != EOS)
     {
         *dest = *src;
@@ -97,6 +111,10 @@ u8 *StringCopyN(u8 *dest, const u8 *src, u8 n)
 {
     u16 i;
 
+#ifdef PORT_BRIDGE
+    src = ResolveTextString(src);
+#endif
+
     for (i = 0; i < n; i++)
         dest[i] = src[i];
 
@@ -115,6 +133,10 @@ u16 StringLength(const u8 *str)
 {
     u16 length = 0;
 
+#ifdef PORT_BRIDGE
+    str = ResolveTextString(str);
+#endif
+
     while (str[length] != EOS)
         length++;
 
@@ -123,6 +145,11 @@ u16 StringLength(const u8 *str)
 
 s32 StringCompare(const u8 *str1, const u8 *str2)
 {
+#ifdef PORT_BRIDGE
+    str1 = ResolveTextString(str1);
+    str2 = ResolveTextString(str2);
+#endif
+
     while (*str1 == *str2)
     {
         if (*str1 == EOS)
@@ -136,6 +163,11 @@ s32 StringCompare(const u8 *str1, const u8 *str2)
 
 s32 StringCompareN(const u8 *str1, const u8 *str2, u32 n)
 {
+#ifdef PORT_BRIDGE
+    str1 = ResolveTextString(str1);
+    str2 = ResolveTextString(str2);
+#endif
+
     while (*str1 == *str2)
     {
         if (*str1 == EOS)
@@ -152,6 +184,10 @@ s32 StringCompareN(const u8 *str1, const u8 *str2, u32 n)
 bool8 IsStringLengthAtLeast(const u8 *str, s32 n)
 {
     u8 i;
+
+#ifdef PORT_BRIDGE
+    str = ResolveTextString(str);
+#endif
 
     for (i = 0; i < n; i++)
         if (str[i] && str[i] != EOS)
@@ -334,6 +370,10 @@ u8 *ConvertIntToHexStringN(u8 *dest, s32 value, enum StringConvertMode mode, u8 
 
 u8 *StringExpandPlaceholders(u8 *dest, const u8 *src)
 {
+#ifdef PORT_BRIDGE
+    src = ResolveTextString(src);
+#endif
+
     for (;;)
     {
         u8 c = *src++;
@@ -397,6 +437,10 @@ u8 *StringBraille(u8 *dest, const u8 *src)
         2,
         EOS
     };
+
+#ifdef PORT_BRIDGE
+    src = ResolveTextString(src);
+#endif
 
     dest = StringCopy(dest, setBrailleFont);
 
@@ -537,6 +581,10 @@ u8 *StringFill(u8 *dest, u8 c, u16 n)
 
 u8 *StringCopyPadded(u8 *dest, const u8 *src, u8 c, u16 n)
 {
+#ifdef PORT_BRIDGE
+    src = ResolveTextString(src);
+#endif
+
     while (*src != EOS)
     {
         *dest++ = *src++;
@@ -566,6 +614,10 @@ u8 *StringCopyN_Multibyte(u8 *dest, u8 *src, u32 n)
 {
     u32 i;
 
+#ifdef PORT_BRIDGE
+    src = (u8 *)ResolveTextString(src);
+#endif
+
     for (i = n - 1; i != (u32)-1; i--)
     {
         if (*src == EOS)
@@ -587,6 +639,10 @@ u8 *StringCopyN_Multibyte(u8 *dest, u8 *src, u32 n)
 u32 StringLength_Multibyte(const u8 *str)
 {
     u32 length = 0;
+
+#ifdef PORT_BRIDGE
+    str = ResolveTextString(str);
+#endif
 
     while (*str != EOS)
     {
@@ -628,6 +684,10 @@ u8 *WriteColorChangeControlCode(u8 *dest, u32 colorType, u8 color)
 
 bool32 IsStringJapanese(u8 *str)
 {
+#ifdef PORT_BRIDGE
+    str = (u8 *)ResolveTextString(str);
+#endif
+
     while (*str != EOS)
     {
         if (*str <= JAPANESE_CHAR_END)
@@ -642,6 +702,10 @@ bool32 IsStringJapanese(u8 *str)
 bool32 IsStringNJapanese(u8 *str, s32 n)
 {
     s32 i;
+
+#ifdef PORT_BRIDGE
+    str = (u8 *)ResolveTextString(str);
+#endif
 
     for (i = 0; *str != EOS && i < n; i++)
     {
@@ -705,6 +769,11 @@ static const u8 *SkipExtCtrlCode(const u8 *s)
 s32 StringCompareWithoutExtCtrlCodes(const u8 *str1, const u8 *str2)
 {
     s32 retVal = 0;
+
+#ifdef PORT_BRIDGE
+    str1 = ResolveTextString(str1);
+    str2 = ResolveTextString(str2);
+#endif
 
     while (1)
     {

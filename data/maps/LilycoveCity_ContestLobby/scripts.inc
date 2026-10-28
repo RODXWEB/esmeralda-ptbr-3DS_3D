@@ -3,7 +3,7 @@ LilycoveCity_ContestLobby_MapScripts::
 	map_script MAP_SCRIPT_ON_FRAME_TABLE, LilycoveCity_ContestLobby_OnFrame
 	.byte 0
 
-@ Some scripts for this room are split into data/scripts/contest_hall and data/scripts/berry_blender
+/* Some scripts for this room are split into data/scripts/contest_hall and data/scripts/berry_blender*/
 
 LilycoveCity_ContestLobby_OnTransition:
 	call LilycoveCity_ContestLobby_EventScript_TryShowContestReporter
@@ -25,7 +25,7 @@ LilycoveCity_ContestLobby_EventScript_ShowBlendMaster::
 LilycoveCity_ContestLobby_OnFrame:
 	map_script_2 VAR_LILYCOVE_CONTEST_LOBBY_STATE, 1, LilycoveCity_ContestLobby_EventScript_TryDoContestArtist
 	map_script_2 VAR_LILYCOVE_CONTEST_LOBBY_STATE, 2, LilycoveCity_ContestLobby_EventScript_TryDoLinkContestArtist
-	.2byte 0
+	.short 0
 
 LilycoveCity_ContestLobby_EventScript_TryDoContestArtist::
 	goto_if_set FLAG_HIDE_LILYCOVE_MUSEUM_CURATOR, LilycoveCity_ContestLobby_EventScript_ContestArtist
@@ -308,10 +308,10 @@ LilycoveCity_ContestLobby_Movement_LinkArtistReturnToPlayer:
 	walk_in_place_faster_left
 	step_end
 
-@ EventScript_SpeakToContestReceptionist either ends or returns after a contest entry is submitted
+/* EventScript_SpeakToContestReceptionist either ends or returns after a contest entry is submitted*/
 LilycoveCity_ContestLobby_EventScript_ContestReceptionist::
 	special ClearLinkContestFlags
-	specialvar VAR_RESULT, IsContestDebugActive  @ Always FALSE
+	specialvar VAR_RESULT, IsContestDebugActive  /* Always FALSE*/
 	goto_if_eq VAR_RESULT, TRUE, LilycoveCity_ContestLobby_EventScript_SetDebug
 	call LilycoveCity_ContestLobby_EventScript_SpeakToContestReceptionist
 	call LilycoveCity_ContestLobby_EventScript_LeadToContestHall
@@ -346,14 +346,10 @@ LilycoveCity_ContestLobby_EventScript_SetMasterContestType::
 	setvar VAR_CONTEST_TYPE, CONTEST_TYPE_NPC_MASTER
 	return
 
-@ Functionally unused
+/* Functionally unused*/
 LilycoveCity_ContestLobby_EventScript_SetDebug::
 	setflag FLAG_HIDE_LILYCOVE_MUSEUM_CURATOR
-#ifdef UBFIX
-	setvar VAR_LILYCOVE_MUSEUM_2F_STATE, 1
-#else
-	copyvar VAR_LILYCOVE_MUSEUM_2F_STATE, 1, warn=FALSE
-#endif
+	copyvar VAR_LILYCOVE_MUSEUM_2F_STATE, 1
 	additem ITEM_CONTEST_PASS
 	setvar VAR_0x800B, 8
 	setvar VAR_CONTEST_RANK, CONTEST_RANK_MASTER
@@ -635,6 +631,11 @@ LilycoveCity_ContestLobby_EventScript_AskEnterLinkContest::
 	end
 
 LilycoveCity_ContestLobby_EventScript_TryEnterLinkContest::
+	@ Link contests: in the session of this counter with players nearby.
+	setvar VAR_0x800A, LOCAL_KIND_CONTEST
+	call CableClub_EventScript_LocalSession
+	specialvar VAR_RESULT, LocalSession_CanEnter
+	goto_if_eq VAR_RESULT, FALSE, LilycoveCity_ContestLobby_EventScript_CancelLinkContest
 	msgbox LilycoveCity_ContestLobby_Text_ProgressWillBeSaved, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, LilycoveCity_ContestLobby_EventScript_CancelLinkContest
 	call Common_EventScript_SaveGame
@@ -644,8 +645,8 @@ LilycoveCity_ContestLobby_EventScript_TryEnterLinkContest::
 	specialvar VAR_TEMP_D, IsWirelessAdapterConnected
 	multichoice 0, 0, MULTI_LINK_CONTEST_MODE, FALSE
 	switch VAR_RESULT
-	case 0, LilycoveCity_ContestLobby_EventScript_EmeraldMode  @ Shortened to E-Mode
-	case 1, LilycoveCity_ContestLobby_EventScript_GlobalMode   @ Shortened to G-Mode
+	case 0, LilycoveCity_ContestLobby_EventScript_EmeraldMode  /* Shortened to E-Mode*/
+	case 1, LilycoveCity_ContestLobby_EventScript_GlobalMode   /* Shortened to G-Mode*/
 	case 2, LilycoveCity_ContestLobby_EventScript_CancelLinkContest
 	case MULTI_B_PRESSED, LilycoveCity_ContestLobby_EventScript_CancelLinkContest
 	end

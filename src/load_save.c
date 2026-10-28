@@ -8,11 +8,18 @@
 #include "pokemon.h"
 #include "pokemon_storage_system.h"
 #include "random.h"
+#ifdef PLATFORM_3DS
+#include "follower_mon.h"
+#endif
 #include "save_location.h"
 #include "trainer_hill.h"
 #include "gba/flash_internal.h"
 #include "decoration_inventory.h"
 #include "agb_flash.h"
+#ifdef PORT_BRIDGE
+#include "dma3.h"
+#include "port_platform.h"
+#endif
 
 static void ApplyNewEncryptionKeyToAllEncryptedData(u32 encryptionKey);
 
@@ -47,7 +54,11 @@ void CheckForFlashMemory(void)
 {
     if (!IdentifyFlash())
     {
+#ifdef PORT_BRIDGE
+        gFlashMemoryPresent = Port_SaveIsAvailable();
+#else
         gFlashMemoryPresent = TRUE;
+#endif
         InitFlashTimer();
     }
     else
@@ -96,14 +107,25 @@ void MoveSaveBlocks_ResetHeap(void)
     gMain.hblankCallback = NULL;
     gTrainerHillVBlankCounter = NULL;
 
+#ifdef PORT_BRIDGE
+    // Pending graphics copies may still reference the heap we are about to reuse.
+    ProcessDma3Requests();
+#endif
+
     saveBlock2Copy = (struct SaveBlock2 *)(gHeap);
     saveBlock1Copy = (struct SaveBlock1 *)(gHeap + sizeof(struct SaveBlock2));
     pokemonStorageCopy = (struct PokemonStorage *)(gHeap + sizeof(struct SaveBlock2) + sizeof(struct SaveBlock1));
 
     // backup the saves.
+#ifdef PORTABLE
+    CpuCopy32(gSaveBlock2Ptr, saveBlock2Copy, sizeof(*gSaveBlock2Ptr));
+    CpuCopy32(gSaveBlock1Ptr, saveBlock1Copy, sizeof(*gSaveBlock1Ptr));
+    CpuCopy32(gPokemonStoragePtr, pokemonStorageCopy, sizeof(*gPokemonStoragePtr));
+#else
     *saveBlock2Copy = *gSaveBlock2Ptr;
     *saveBlock1Copy = *gSaveBlock1Ptr;
     *pokemonStorageCopy = *gPokemonStoragePtr;
+#endif
 
     // change saveblocks' pointers
     // argument is a sum of the individual trainerId bytes
@@ -114,9 +136,15 @@ void MoveSaveBlocks_ResetHeap(void)
       saveBlock2Copy->playerTrainerId[3]);
 
     // restore saveblock data since the pointers changed
+#ifdef PORTABLE
+    CpuCopy32(saveBlock2Copy, gSaveBlock2Ptr, sizeof(*saveBlock2Copy));
+    CpuCopy32(saveBlock1Copy, gSaveBlock1Ptr, sizeof(*saveBlock1Copy));
+    CpuCopy32(pokemonStorageCopy, gPokemonStoragePtr, sizeof(*pokemonStorageCopy));
+#else
     *gSaveBlock2Ptr = *saveBlock2Copy;
     *gSaveBlock1Ptr = *saveBlock1Copy;
     *gPokemonStoragePtr = *pokemonStorageCopy;
+#endif
 
     // heap was destroyed in the copying process, so reset it
     InitHeap(gHeap, HEAP_SIZE);
@@ -183,6 +211,12 @@ void SaveObjectEvents(void)
 
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
         gSaveBlock1Ptr->objectEvents[i] = gObjectEvents[i];
+#ifdef PLATFORM_3DS
+    // The follower is the port's alone: the field brings it back (follower_mon.c).
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+        if (FollowerMon_IsFollower(&gSaveBlock1Ptr->objectEvents[i]))
+            memset(&gSaveBlock1Ptr->objectEvents[i], 0, sizeof(gSaveBlock1Ptr->objectEvents[i]));
+#endif
 }
 
 void LoadObjectEvents(void)

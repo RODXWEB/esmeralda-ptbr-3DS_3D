@@ -2,12 +2,13 @@
 .global SPECIAL_\ptr
 .set SPECIAL_\ptr, __special__
 .set __special__, __special__ + 1
-	.4byte \ptr
+	.int \ptr
 	.endm
 
 .set __special__, 0
 		.align 2
-gSpecials::
+	.global gSpecials
+gSpecials:
 	def_special HealPlayerParty
 	def_special SetCableClubWarp
 	def_special DoCableClubWarp
@@ -516,7 +517,7 @@ gSpecials::
 	def_special LinkRetireStatusWithBattleTowerPartner
 	def_special BattleTowerReconnectLink
 	def_special CallTrainerHillFunction
-	def_special Script_DoRayquazaScene @ Listed twice
+	def_special Script_DoRayquazaScene /* Listed twice*/
 	def_special LoopWingFlapSE
 	def_special DestroyMewEmergingGrassSprite
 	def_special ShowBerryCrushRankings
@@ -535,3 +536,10 @@ gSpecials::
 	def_special RemoveRecordsWindow
 	def_special CloseDeptStoreElevatorWindow
 	def_special TrySetBattleTowerLinkType
+	def_special ShouldOfferAnotherRepel
+	def_special SetRepelStepsFromLastRepel
+	def_special LocalSession_IsEnabled
+	def_special LocalSession_Start
+	def_special LocalSession_Wait
+	def_special LocalSession_CanEnter
+	def_special LocalSession_Leave

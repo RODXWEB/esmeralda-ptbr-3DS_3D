@@ -9,6 +9,9 @@
 #include "sound.h"
 #include "sprite.h"
 #include "text_window.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 #define ANIM_CURSOR (NUM_MON_MARKINGS * 2)
 #define ANIM_TEXT   (ANIM_CURSOR + 1)
@@ -295,7 +298,13 @@ void InitMonMarkingsMenu(struct MonMarkingsMenu *ptr)
 static void BufferMenuWindowTiles(void)
 {
     const struct TilesPal *frame = GetWindowFrameTilesPal(gSaveBlock2Ptr->optionsWindowFrameType);
+#ifdef PORT_BRIDGE
+    // The frame's tiles are read a tile at a time below: from the loaded data,
+    // since an offset into an INCBIN stub lands on the next asset's stub.
+    sMenu->frameTiles = Port_ResolveAssetPointer(frame->tiles);
+#else
     sMenu->frameTiles = frame->tiles;
+#endif
     sMenu->framePalette = frame->pal;
     sMenu->tileLoadState = 0;
     CpuFill16(0, sMenu->windowSpriteTiles, sizeof(sMenu->windowSpriteTiles));
@@ -390,10 +399,30 @@ void FreeMonMarkingsMenu(void)
     }
 }
 
-bool8 HandleMonMarkingsMenuInput(void)
+// A on the row under the cursor: a marking toggles, OK and CANCEL close the menu.
+static bool8 ChooseMonMarking(void)
 {
     u16 i;
 
+    PlaySE(SE_SELECT);
+
+    switch (sMenu->cursorPos)
+    {
+    case SELECTION_OK:
+        sMenu->markings = 0;
+        for (i = 0; i < NUM_MON_MARKINGS; i++)
+            sMenu->markings |= sMenu->markingsArray[i] << i;
+        return FALSE;
+    case SELECTION_CANCEL:
+        return FALSE;
+    }
+
+    sMenu->markingsArray[sMenu->cursorPos] = !sMenu->markingsArray[sMenu->cursorPos];
+    return TRUE;
+}
+
+bool8 HandleMonMarkingsMenuInput(void)
+{
     if (JOY_NEW(DPAD_UP))
     {
         PlaySE(SE_SELECT);
@@ -411,23 +440,7 @@ bool8 HandleMonMarkingsMenuInput(void)
     }
 
     if (JOY_NEW(A_BUTTON))
-    {
-        PlaySE(SE_SELECT);
-
-        switch (sMenu->cursorPos)
-        {
-        case SELECTION_OK:
-            sMenu->markings = 0;
-            for (i = 0; i < NUM_MON_MARKINGS; i++)
-                sMenu->markings |= sMenu->markingsArray[i] << i;
-            return FALSE;
-        case SELECTION_CANCEL:
-            return FALSE;
-        }
-
-        sMenu->markingsArray[sMenu->cursorPos] = !sMenu->markingsArray[sMenu->cursorPos];
-        return TRUE;
-    }
+        return ChooseMonMarking();
 
     if (JOY_NEW(B_BUTTON))
     {
@@ -612,5 +625,42 @@ static struct Sprite *CreateMarkingComboSprite(u16 tileTag, u16 paletteTag, cons
 // Update what combination is shown, used for sprites created with CreateMonMarkingComboSprite
 void UpdateMonMarkingTiles(u8 markings, void *dest)
 {
+#ifdef PORT_BRIDGE
+    // Each combination is 0x80 bytes into the loaded data, not into the stub.
+    const u8 *gfx = Port_ResolveAssetPointer(sMonMarkings_Gfx);
+    RequestDma3Copy(&gfx[markings * 0x80], dest, 0x80, 0x10);
+#else
     RequestDma3Copy(&sMonMarkings_Gfx[markings * 0x80], dest, 0x80, 0x10);
+#endif
 }
+
+#ifdef PLATFORM_3DS
+// The open markings menu, for the 3DS bottom screen: its cursor, and its top
+// left corner (row i is centred on line y + 16 + 16 * i, 64 pixels wide).
+bool8 CtrMonMarkings_Menu(s8 *cursor, s16 *x, s16 *y)
+{
+    if (sMenu == NULL || sMenu->cursorSprite == NULL || sMenu->windowSprites[0] == NULL)
+        return FALSE;
+    *cursor = sMenu->cursorPos;
+    *x = sMenu->windowSprites[0]->x - 32;
+    *y = sMenu->windowSprites[0]->y - 32;
+    return TRUE;
+}
+
+// Puts the cursor on a row (CtrPokenavMenu_SetCursor).
+void CtrMonMarkings_SetCursor(s8 cursor)
+{
+    if (sMenu != NULL && cursor >= 0 && cursor <= SELECTION_CANCEL)
+        sMenu->cursorPos = cursor;
+}
+
+// A tap on a row: the cursor goes there and it is chosen, as with A. Returns
+// what HandleMonMarkingsMenuInput does: FALSE once the menu is to close.
+bool8 CtrMonMarkings_Choose(s8 cursor)
+{
+    if (sMenu == NULL || cursor < 0 || cursor > SELECTION_CANCEL)
+        return TRUE;
+    sMenu->cursorPos = cursor;
+    return ChooseMonMarking();
+}
+#endif

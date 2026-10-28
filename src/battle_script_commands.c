@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "battle.h"
 #include "battle_message.h"
 #include "battle_anim.h"
@@ -281,7 +284,7 @@ static void Cmd_trymemento(void);
 static void Cmd_setforcedtarget(void);
 static void Cmd_setcharge(void);
 static void Cmd_callenvironmentattack(void);
-static void Cmd_cureifburnedparalyzedorpoisoned(void);
+static void Cmd_cureifburnedparalysedorpoisoned(void);
 static void Cmd_settorment(void);
 static void Cmd_jumpifnodamage(void);
 static void Cmd_settaunt(void);
@@ -533,7 +536,7 @@ void (*const gBattleScriptingCommandsTable[])(void) =
     Cmd_setforcedtarget,                         //0xCA
     Cmd_setcharge,                               //0xCB
     Cmd_callenvironmentattack,                   //0xCC
-    Cmd_cureifburnedparalyzedorpoisoned,         //0xCD
+    Cmd_cureifburnedparalysedorpoisoned,         //0xCD
     Cmd_settorment,                              //0xCE
     Cmd_jumpifnodamage,                          //0xCF
     Cmd_settaunt,                                //0xD0
@@ -927,7 +930,7 @@ static void Cmd_attackcanceler(void)
         gBattlescriptCurrInstr = BattleScript_MoveEnd;
         return;
     }
-    if (AtkCanceler_UnableToUseMove())
+    if (AtkCanceller_UnableToUseMove())
         return;
     if (AbilityBattleEffects(ABILITYEFFECT_MOVES_BLOCK, gBattlerTarget, 0, 0, 0))
         return;
@@ -1153,7 +1156,7 @@ static void Cmd_accuracycheck(void)
             calc = (calc * 130) / 100; // 1.3 compound eyes boost
         if (WEATHER_HAS_EFFECT && gBattleMons[gBattlerTarget].ability == ABILITY_SAND_VEIL && gBattleWeather & B_WEATHER_SANDSTORM)
             calc = (calc * 80) / 100; // 1.2 sand veil loss
-        if (gBattleMons[gBattlerAttacker].ability == ABILITY_HUSTLE && IS_TYPE_PHYSICAL(type))
+        if (gBattleMons[gBattlerAttacker].ability == ABILITY_HUSTLE && IS_MOVE_PHYSICAL(move, type))
             calc = (calc * 80) / 100; // 1.2 hustle loss
 
         if (gBattleMons[gBattlerTarget].item == ITEM_ENIGMA_BERRY)
@@ -1935,7 +1938,7 @@ static void Cmd_datahpupdate(void)
                 // Note: While physicalDmg/specialDmg below are only distinguished between for Counter/Mirror Coat, they are
                 //       used in combination as general damage trackers for other purposes. specialDmg is additionally used
                 //       to help determine if a fire move should defrost the target.
-                if (IS_TYPE_PHYSICAL(moveType) && !(gHitMarker & HITMARKER_PASSIVE_HP_UPDATE) && gCurrentMove != MOVE_PAIN_SPLIT)
+                if (IS_MOVE_PHYSICAL(gCurrentMove, moveType) && !(gHitMarker & HITMARKER_PASSIVE_HP_UPDATE) && gCurrentMove != MOVE_PAIN_SPLIT)
                 {
                     // Record physical damage/attacker for Counter
                     gProtectStructs[gActiveBattler].physicalDmg = gHpDealt;
@@ -1951,7 +1954,14 @@ static void Cmd_datahpupdate(void)
                         gSpecialStatuses[gActiveBattler].physicalBattlerId = gBattlerTarget;
                     }
                 }
+#ifdef PLATFORM_3DS
+                // With the split, status moves that cost HP (Pain Split...)
+                // count for neither.
+                else if ((MoveSplitEnabled() ? IS_MOVE_SPECIAL(gCurrentMove, moveType) : !IS_TYPE_PHYSICAL(moveType))
+                         && !(gHitMarker & HITMARKER_PASSIVE_HP_UPDATE))
+#else
                 else if (!IS_TYPE_PHYSICAL(moveType) && !(gHitMarker & HITMARKER_PASSIVE_HP_UPDATE))
+#endif
                 {
                     // Record special damage/attacker for Mirror Coat
                     gProtectStructs[gActiveBattler].specialDmg = gHpDealt;
@@ -2507,7 +2517,7 @@ void SetMoveEffect(bool8 primary, u8 certain)
              {
                 u8 *synchronizeEffect = &gBattleStruct->synchronizeMoveEffect;
                 *synchronizeEffect = gBattleCommunication[MOVE_EFFECT_BYTE];
-                gHitMarker |= HITMARKER_SYNCHRONIZE_EFFECT;
+                gHitMarker |= HITMARKER_SYNCHRONISE_EFFECT;
              }
             return;
         }
@@ -3252,6 +3262,14 @@ static void Cmd_jumpiftype(void)
         gBattlescriptCurrInstr += 7;
 }
 
+#ifdef PLATFORM_3DS
+// Modern Exp Share (OPTIONS, ENHANCEMENTS): as in the later games, the whole
+// party shares - full EXP for who fought, half for the rest - and the rest
+// gain under one line. The held Exp. Share then adds nothing.
+static bool8 sTeamExpShown;
+#define PARTY_EXP_SHARE() (CtrExtras_Get("exp_share") != 0)
+#endif
+
 static void Cmd_getexp(void)
 {
     u16 item;
@@ -3278,8 +3296,22 @@ static void Cmd_getexp(void)
         {
             gBattleScripting.getexpState = 6; // goto last case
         }
+#ifdef PLATFORM_3DS
+        // EXP for catching (OPTIONS, ENHANCEMENTS): BattleScript_PrintCaughtMonInfo
+        // runs getexp too; the target still has its HP when it was caught.
+        else if (gBattleMons[gBattlerFainted].hp != 0
+              && (!CtrExtras_Get("exp_catch") || (gBattleTypeFlags & BATTLE_TYPE_WALLY_TUTORIAL)))
+        {
+            gBattleScripting.getexpState = 6; // caught, and no EXP for it
+        }
+#endif
         else
         {
+#ifdef PLATFORM_3DS
+            // Caught: the catch fanfare plays, not the victory music.
+            if (gBattleMons[gBattlerFainted].hp != 0)
+                gBattleStruct->wildVictorySong = 1;
+#endif
             gBattleScripting.getexpState++;
             gBattleStruct->givenExpMons |= gBitTable[gBattlerPartyIndexes[gBattlerFainted]];
         }
@@ -3309,6 +3341,18 @@ static void Cmd_getexp(void)
 
             calculatedExp = gSpeciesInfo[gBattleMons[gBattlerFainted].species].expYield * gBattleMons[gBattlerFainted].level / 7;
 
+#ifdef PLATFORM_3DS
+            if (PARTY_EXP_SHARE())
+            {
+                *exp = calculatedExp;
+                if (*exp == 0)
+                    *exp = 1;
+                gExpShareExp = calculatedExp / 2;
+                if (gExpShareExp == 0)
+                    gExpShareExp = 1;
+            }
+            else
+#endif
             if (viaExpShare) // at least one mon is getting exp via exp share
             {
                 *exp = SAFE_DIV(calculatedExp / 2, viaSentIn);
@@ -3330,6 +3374,9 @@ static void Cmd_getexp(void)
             gBattleScripting.getexpState++;
             gBattleStruct->expGetterMonId = 0;
             gBattleStruct->sentInPokes = sentIn;
+#ifdef PLATFORM_3DS
+            sTeamExpShown = FALSE;
+#endif
         }
         // fall through
     case 2: // set exp value to the poke in expgetter_id and print message
@@ -3342,7 +3389,16 @@ static void Cmd_getexp(void)
             else
                 holdEffect = GetItemHoldEffect(item);
 
+#ifdef PLATFORM_3DS
+            // Modern Exp Share: everyone but eggs and the fainted.
+            if (PARTY_EXP_SHARE()
+             ? (GetMonData(&gPlayerParty[gBattleStruct->expGetterMonId], MON_DATA_IS_EGG)
+                || GetMonData(&gPlayerParty[gBattleStruct->expGetterMonId], MON_DATA_HP) == 0
+                || GetMonData(&gPlayerParty[gBattleStruct->expGetterMonId], MON_DATA_SPECIES) == SPECIES_NONE)
+             : (holdEffect != HOLD_EFFECT_EXP_SHARE && !(gBattleStruct->sentInPokes & 1)))
+#else
             if (holdEffect != HOLD_EFFECT_EXP_SHARE && !(gBattleStruct->sentInPokes & 1))
+#endif
             {
                 *(&gBattleStruct->sentInPokes) >>= 1;
                 gBattleScripting.getexpState = 5;
@@ -3371,6 +3427,15 @@ static void Cmd_getexp(void)
                     else
                         gBattleMoveDamage = 0;
 
+#ifdef PLATFORM_3DS
+                    if (PARTY_EXP_SHARE())
+                    {
+                        // The held Exp. Share adds nothing: all share.
+                        if (!(gBattleStruct->sentInPokes & 1))
+                            gBattleMoveDamage = gExpShareExp;
+                    }
+                    else
+#endif
                     if (holdEffect == HOLD_EFFECT_EXP_SHARE)
                         gBattleMoveDamage += gExpShareExp;
                     if (holdEffect == HOLD_EFFECT_LUCKY_EGG)
@@ -3411,12 +3476,27 @@ static void Cmd_getexp(void)
                         gBattleStruct->expGetterBattlerId = 0;
                     }
 
+#ifdef PLATFORM_3DS
+                    if (PARTY_EXP_SHARE() && !(gBattleStruct->sentInPokes & 1))
+                    {
+                        // Not in the fight: one line for all of them, and the
+                        // rest gain silently.
+                        if (!sTeamExpShown)
+                        {
+                            sTeamExpShown = TRUE;
+                            PrepareStringBattle(STRINGID_PKMNTEAMGAINEDEXP, gBattleStruct->expGetterBattlerId);
+                        }
+                    }
+                    else
+#endif
+                    {
                     PREPARE_MON_NICK_WITH_PREFIX_BUFFER(gBattleTextBuff1, gBattleStruct->expGetterBattlerId, gBattleStruct->expGetterMonId);
                     // buffer 'gained' or 'gained a boosted'
                     PREPARE_STRING_BUFFER(gBattleTextBuff2, i);
                     PREPARE_WORD_NUMBER_BUFFER(gBattleTextBuff3, 5, gBattleMoveDamage);
 
                     PrepareStringBattle(STRINGID_PKMNGAINEDEXP, gBattleStruct->expGetterBattlerId);
+                    }
                     MonGainEVs(&gPlayerParty[gBattleStruct->expGetterMonId], gBattleMons[gBattlerFainted].species);
                 }
                 gBattleStruct->sentInPokes >>= 1;
@@ -3626,7 +3706,7 @@ static void MoveValuesCleanUp(void)
     gBattleCommunication[MOVE_EFFECT_BYTE] = 0;
     gBattleCommunication[MISS_TYPE] = 0;
     gHitMarker &= ~HITMARKER_DESTINYBOND;
-    gHitMarker &= ~HITMARKER_SYNCHRONIZE_EFFECT;
+    gHitMarker &= ~HITMARKER_SYNCHRONISE_EFFECT;
 }
 
 static void Cmd_movevaluescleanup(void)
@@ -4001,6 +4081,11 @@ static void Cmd_endselectionscript(void)
     *(gBattlerAttacker + gBattleStruct->selectionScriptFinished) = TRUE;
 }
 
+#ifdef PORTABLE
+#define SAFE_BtlController_EmitBattleAnimation(bufferId, animationId) BtlController_EmitBattleAnimation(bufferId, animationId, argumentPtr != NULL ? *argumentPtr : 0)
+#else
+#define SAFE_BtlController_EmitBattleAnimation(bufferId, animationId) BtlController_EmitBattleAnimation(bufferId, animationId, *argumentPtr)
+#endif
 static void Cmd_playanimation(void)
 {
     const u16 *argumentPtr;
@@ -4012,7 +4097,7 @@ static void Cmd_playanimation(void)
      || gBattlescriptCurrInstr[2] == B_ANIM_SNATCH_MOVE
      || gBattlescriptCurrInstr[2] == B_ANIM_SUBSTITUTE_FADE)
     {
-        BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, gBattlescriptCurrInstr[2], *argumentPtr);
+        SAFE_BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, gBattlescriptCurrInstr[2]);
         MarkBattlerForControllerExec(gActiveBattler);
         gBattlescriptCurrInstr += 7;
     }
@@ -4026,7 +4111,7 @@ static void Cmd_playanimation(void)
           || gBattlescriptCurrInstr[2] == B_ANIM_SANDSTORM_CONTINUES
           || gBattlescriptCurrInstr[2] == B_ANIM_HAIL_CONTINUES)
     {
-        BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, gBattlescriptCurrInstr[2], *argumentPtr);
+        SAFE_BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, gBattlescriptCurrInstr[2]);
         MarkBattlerForControllerExec(gActiveBattler);
         gBattlescriptCurrInstr += 7;
     }
@@ -4036,7 +4121,7 @@ static void Cmd_playanimation(void)
     }
     else
     {
-        BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, gBattlescriptCurrInstr[2], *argumentPtr);
+        SAFE_BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, gBattlescriptCurrInstr[2]);
         MarkBattlerForControllerExec(gActiveBattler);
         gBattlescriptCurrInstr += 7;
     }
@@ -4051,12 +4136,18 @@ static void Cmd_playanimation_var(void)
     gActiveBattler = GetBattlerForBattleScript(gBattlescriptCurrInstr[1]);
     animationIdPtr = T2_READ_PTR(gBattlescriptCurrInstr + 2);
     argumentPtr = T2_READ_PTR(gBattlescriptCurrInstr + 6);
-
+#ifdef PORTABLE
+    if (animationIdPtr != NULL && (
+       *animationIdPtr == B_ANIM_STATS_CHANGE
+    || *animationIdPtr == B_ANIM_SNATCH_MOVE
+    || *animationIdPtr == B_ANIM_SUBSTITUTE_FADE))
+#else
     if (*animationIdPtr == B_ANIM_STATS_CHANGE
      || *animationIdPtr == B_ANIM_SNATCH_MOVE
      || *animationIdPtr == B_ANIM_SUBSTITUTE_FADE)
+#endif
     {
-        BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, *animationIdPtr, *argumentPtr);
+        SAFE_BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, *animationIdPtr);
         MarkBattlerForControllerExec(gActiveBattler);
         gBattlescriptCurrInstr += 10;
     }
@@ -4064,12 +4155,20 @@ static void Cmd_playanimation_var(void)
     {
         gBattlescriptCurrInstr += 10;
     }
+#ifdef PORTABLE
+    else if (animationIdPtr != NULL && (
+             *animationIdPtr == B_ANIM_RAIN_CONTINUES
+          || *animationIdPtr == B_ANIM_SUN_CONTINUES
+          || *animationIdPtr == B_ANIM_SANDSTORM_CONTINUES
+          || *animationIdPtr == B_ANIM_HAIL_CONTINUES))
+#else
     else if (*animationIdPtr == B_ANIM_RAIN_CONTINUES
           || *animationIdPtr == B_ANIM_SUN_CONTINUES
           || *animationIdPtr == B_ANIM_SANDSTORM_CONTINUES
           || *animationIdPtr == B_ANIM_HAIL_CONTINUES)
+#endif
     {
-        BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, *animationIdPtr, *argumentPtr);
+        SAFE_BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, *animationIdPtr);
         MarkBattlerForControllerExec(gActiveBattler);
         gBattlescriptCurrInstr += 10;
     }
@@ -4079,11 +4178,12 @@ static void Cmd_playanimation_var(void)
     }
     else
     {
-        BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, *animationIdPtr, *argumentPtr);
+        SAFE_BtlController_EmitBattleAnimation(B_COMM_TO_CONTROLLER, *animationIdPtr);
         MarkBattlerForControllerExec(gActiveBattler);
         gBattlescriptCurrInstr += 10;
     }
 }
+#undef SAFE_BtlController_EmitBattleAnimation
 
 static void Cmd_setgraphicalstatchangevalues(void)
 {
@@ -4258,7 +4358,13 @@ static void Cmd_moveend(void)
             if (gBattleMons[gBattlerTarget].status1 & STATUS1_FREEZE
                 && gBattleMons[gBattlerTarget].hp != 0
                 && gBattlerAttacker != gBattlerTarget
+#ifdef PLATFORM_3DS
+                // With the split any damaging Fire move thaws (Fire Punch is physical).
+                && (gSpecialStatuses[gBattlerTarget].specialDmg
+                    || (MoveSplitEnabled() && gSpecialStatuses[gBattlerTarget].physicalDmg))
+#else
                 && gSpecialStatuses[gBattlerTarget].specialDmg
+#endif
                 && !(gMoveResultFlags & MOVE_RESULT_NO_EFFECT)
                 && moveType == TYPE_FIRE)
             {
@@ -9116,7 +9222,7 @@ static void Cmd_callenvironmentattack(void)
 }
 
 // Refresh
-static void Cmd_cureifburnedparalyzedorpoisoned(void)
+static void Cmd_cureifburnedparalysedorpoisoned(void)
 {
     if (gBattleMons[gBattlerAttacker].status1 & (STATUS1_POISON | STATUS1_BURN | STATUS1_PARALYSIS | STATUS1_TOXIC_POISON))
     {
@@ -10006,6 +10112,12 @@ static void Cmd_handleballthrow(void)
             }
         }
 
+#ifdef PLATFORM_3DS
+        // Every Poke Ball catches (OPTIONS, CHEATS): wild battles only (a
+        // trainer's Pokemon never reaches here).
+        if (CtrExtras_Get("always_catch"))
+            odds = 255;
+#endif
         if (odds > 254) // mon caught
         {
             BtlController_EmitBallThrowAnim(B_COMM_TO_CONTROLLER, BALL_3_SHAKES_SUCCESS);
@@ -10022,8 +10134,10 @@ static void Cmd_handleballthrow(void)
         {
             u8 shakes;
 
-            odds = Sqrt(Sqrt(16711680 / odds));
-            odds = 1048560 / odds;
+            // We have to use SAFE_DIV here, otherwise using the Master Ball crashes the game
+            // The reason this happens is that in the odds calculation the 'ballMultiplier' is zero for the Master Ball
+            odds = Sqrt(Sqrt(SAFE_DIV(16711680, odds)));
+            odds = SAFE_DIV(1048560, odds);
 
             for (shakes = 0; shakes < BALL_3_SHAKES_SUCCESS && Random() < odds; shakes++);
 

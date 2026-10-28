@@ -6,6 +6,7 @@
 #include "fldeff_misc.h"
 #include "frontier_util.h"
 #include "menu.h"
+#include "malloc.h"
 #include "mirage_tower.h"
 #include "overworld.h"
 #include "palette.h"
@@ -16,6 +17,16 @@
 #include "tv.h"
 #include "constants/rgb.h"
 #include "constants/metatile_behaviors.h"
+
+#ifdef PORT_BRIDGE
+#include "port_log.h"
+#include "port_platform.h"
+#endif
+#ifdef PORT_BRIDGE
+#define PORT_PROF(label) Port_ProfileMark(label)
+#else
+#define PORT_PROF(label) ((void)0)
+#endif
 
 struct ConnectionFlags
 {
@@ -48,16 +59,20 @@ static const struct MapConnection *GetIncomingConnection(u8 direction, int x, in
 static bool8 IsPosInIncomingConnectingMap(u8 direction, int x, int y, const struct MapConnection *connection);
 static bool8 IsCoordInIncomingConnectingMap(int coord, int srcMax, int destMax, int offset);
 
-#define GetBorderBlockAt(x, y) ({                                                                  \
-    u16 block;                                                                                     \
-    int i;                                                                                         \
-    const u16 *border = gMapHeader.mapLayout->border; /* Unused, they read it again below */       \
-                                                                                                   \
-    i = (x + 1) & 1;                                                                               \
-    i += ((y + 1) & 1) * 2;                                                                        \
-                                                                                                   \
-    block = gMapHeader.mapLayout->border[i] | MAPGRID_IMPASSABLE;                                  \
-})
+static inline u16 GetBorderBlockAt(int x, int y)
+{
+    int i;
+    const u16 *border = gMapHeader.mapLayout->border;
+
+#ifdef PORT_BRIDGE
+    border = Port_ResolveAssetPointer(border);
+#endif
+
+    i = (x + 1) & 1;
+    i += ((y + 1) & 1) * 2;
+
+    return border[i] | MAPGRID_IMPASSABLE;
+}
 
 #define AreCoordsWithinMapGridBounds(x, y) (x >= 0 && x < gBackupMapLayout.width && y >= 0 && y < gBackupMapLayout.height)
 
@@ -120,6 +135,11 @@ static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
 {
     u16 *dest;
     int y;
+
+#ifdef PORT_BRIDGE
+    map = Port_ResolveAssetPointer(map);
+#endif
+
     dest = gBackupMapLayout.map;
     dest += gBackupMapLayout.width * 7 + MAP_OFFSET;
     for (y = 0; y < height; y++)
@@ -176,7 +196,11 @@ static void FillConnection(int x, int y, struct MapHeader const *connectedMapHea
     int mapWidth;
 
     mapWidth = connectedMapHeader->mapLayout->width;
-    src = &connectedMapHeader->mapLayout->map[mapWidth * y2 + x2];
+    src = connectedMapHeader->mapLayout->map;
+#ifdef PORT_BRIDGE
+    src = Port_ResolveAssetPointer(src);
+#endif
+    src += mapWidth * y2 + x2;
     dest = &gBackupMapLayout.map[gBackupMapLayout.width * y + x];
 
     for (i = 0; i < height; i++)
@@ -362,9 +386,305 @@ u8 MapGridGetCollisionAt(int x, int y)
     return UNPACK_COLLISION(block);
 }
 
+#ifdef PORT_BRIDGE
+// The centered port view reaches beyond the GBA collision/save-map padding,
+// and the 3D view further still. What it shows there is visual only: keep
+// MAP_OFFSET and the saved mapView layout unchanged.
+//
+// The maps that can be seen are the current map, its connections and theirs,
+// placed as voxel_world.c places them. Where none of them reaches, the GBA
+// tiles the current map's 2x2 border block for ever. Its 15 x 10 screen never
+// looked far enough past a corner for that to matter; this one does, and the
+// ground past a corner - outside both the map and its neighbour - changed
+// drawing the moment the player crossed, because the border followed
+// whichever map was current (Mauville's water against Route 117's trees). So
+// each such cell takes the border of the nearest map instead: the one whose
+// edge it lies against, whichever map the player stands on.
+//
+// Only a border the current tilesets can draw is a candidate. Every border of
+// the overworld is in the shared primary tileset except a handful (Dewford,
+// Fallarbor, Lavaridge and the routes that share their tilesets); next to a
+// map with other tilesets those fall back to the next nearest map, ultimately
+// the current one, as before.
+#define CAMERA_MAPS_MAX 16
+
+struct CameraMap
+{
+    const struct MapHeader *header;
+    u16 id;          // mapGroup << 8 | mapNum: the stable tie-break
+    s16 x, y;        // origin, in metatiles of the current map
+    s16 phaseX, phaseY; // origin its 2x2 border is phased on
+    bool8 drawn;     // its ground is drawn here
+    bool8 border;    // its border is drawable with the current tilesets
+};
+
+static struct CameraMap sCameraMaps[CAMERA_MAPS_MAX];
+static u8 sCameraMapCount;
+static const struct MapLayout *sCameraMapsLayout;
+static const struct MapConnections *sCameraMapsConnections;
+static u16 sCameraMapsId;
+
+static bool8 CameraTilesetsMatch(const struct MapLayout *layout)
+{
+    return layout->primaryTileset == gMapHeader.mapLayout->primaryTileset
+        && layout->secondaryTileset == gMapHeader.mapLayout->secondaryTileset;
+}
+
+static bool8 CameraBorderDrawable(const struct MapLayout *layout)
+{
+    const u16 *border;
+    int i;
+
+    if (layout->border == NULL || layout->primaryTileset != gMapHeader.mapLayout->primaryTileset)
+        return FALSE;
+    if (layout->secondaryTileset == gMapHeader.mapLayout->secondaryTileset)
+        return TRUE;
+    border = Port_ResolveAssetPointer(layout->border);
+    if (border == NULL)
+        return FALSE;
+    for (i = 0; i < 4; i++)
+        if (UNPACK_METATILE(border[i]) >= NUM_METATILES_IN_PRIMARY)
+            return FALSE;
+    return TRUE;
+}
+
+static void PlaceCameraMap(const struct MapHeader *header, u16 id, int x, int y, bool8 near)
+{
+    struct CameraMap *map = &sCameraMaps[sCameraMapCount++];
+
+    map->header = header;
+    map->id = id;
+    map->x = map->phaseX = x;
+    map->y = map->phaseY = y;
+    map->drawn = near || CameraTilesetsMatch(header->mapLayout);
+    map->border = CameraBorderDrawable(header->mapLayout);
+}
+
+// The maps across the side connections of sCameraMaps[from]. The current map's
+// own are taken as they are; one further away (far) only where it is not a
+// map already placed and covers none of their ground, as in voxel_world.c.
+static void AddCameraConnections(int from, bool8 far)
+{
+    const struct MapHeader *header = sCameraMaps[from].header;
+    const struct MapConnection *connection;
+    int i, k;
+
+    if (header->connections == NULL)
+        return;
+    connection = header->connections->connections;
+    for (i = 0; i < header->connections->count; i++, connection++)
+    {
+        const struct CameraMap *source = &sCameraMaps[from];
+        const struct MapHeader *neighbour;
+        const struct MapLayout *layout;
+        u16 id = (connection->mapGroup << 8) | connection->mapNum;
+        int x, y;
+        bool8 clash = FALSE;
+
+        if (sCameraMapCount >= CAMERA_MAPS_MAX)
+            return;
+        neighbour = GetMapHeaderFromConnection(connection);
+        if (neighbour == NULL || neighbour->mapLayout == NULL)
+            continue;
+        layout = neighbour->mapLayout;
+        switch (connection->direction)
+        {
+        case CONNECTION_NORTH:
+            x = source->x + connection->offset;
+            y = source->y - layout->height;
+            break;
+        case CONNECTION_SOUTH:
+            x = source->x + connection->offset;
+            y = source->y + header->mapLayout->height;
+            break;
+        case CONNECTION_WEST:
+            x = source->x - layout->width;
+            y = source->y + connection->offset;
+            break;
+        case CONNECTION_EAST:
+            x = source->x + header->mapLayout->width;
+            y = source->y + connection->offset;
+            break;
+        default:
+            continue;
+        }
+        for (k = 0; far && k < sCameraMapCount && !clash; k++)
+        {
+            const struct CameraMap *placed = &sCameraMaps[k];
+            const struct MapLayout *other = placed->header->mapLayout;
+
+            clash = placed->id == id
+                 || (x < placed->x + other->width && x + layout->width > placed->x
+                  && y < placed->y + other->height && y + layout->height > placed->y);
+        }
+        if (!clash)
+            PlaceCameraMap(neighbour, id, x, y, !far);
+    }
+}
+
+static void UpdateCameraMaps(void)
+{
+    u16 id = (gSaveBlock1Ptr->location.mapGroup << 8) | gSaveBlock1Ptr->location.mapNum;
+    int near, i;
+
+    if (sCameraMapCount != 0 && sCameraMapsLayout == gMapHeader.mapLayout
+     && sCameraMapsConnections == gMapHeader.connections && sCameraMapsId == id)
+        return;
+    sCameraMapsLayout = gMapHeader.mapLayout;
+    sCameraMapsConnections = gMapHeader.connections;
+    sCameraMapsId = id;
+    sCameraMapCount = 0;
+    PlaceCameraMap(&gMapHeader, id, 0, 0, TRUE);
+    AddCameraConnections(0, FALSE);
+    near = sCameraMapCount;
+    for (i = 1; i < near; i++)
+        AddCameraConnections(i, TRUE);
+
+    // Most of Hoenn shares one border block, and a map phases it on its own
+    // origin: two neighbours an odd number of tiles apart would show the
+    // pattern break where one's border gives way to the other's. Maps with
+    // the same block take the phase of the lowest id among them instead.
+    for (i = 0; i < sCameraMapCount; i++)
+    {
+        const u16 *border = Port_ResolveAssetPointer(sCameraMaps[i].header->mapLayout->border);
+        u16 anchor = sCameraMaps[i].id;
+        int k;
+
+        if (border == NULL)
+            continue;
+        for (k = 0; k < sCameraMapCount; k++)
+        {
+            const u16 *other = Port_ResolveAssetPointer(sCameraMaps[k].header->mapLayout->border);
+
+            if (sCameraMaps[k].id < anchor && other != NULL
+             && memcmp(border, other, 4 * sizeof(u16)) == 0)
+            {
+                anchor = sCameraMaps[k].id;
+                sCameraMaps[i].phaseX = sCameraMaps[k].x;
+                sCameraMaps[i].phaseY = sCameraMaps[k].y;
+            }
+        }
+    }
+}
+
+// The border at x, y (metatiles of the current map): that of the nearest map
+// whose border can be drawn, as the layout's unresolved pointer, and which of
+// its 2x2 blocks. Distance is to the map's rectangle; a tie goes to the lower
+// map id, never to the current map, so the answer is the same from either side
+// of a crossing. The 2x2 is phased on that map's own origin, as
+// GetBorderBlockAt phases it when that map is the current one (or on the map
+// that shares its block, above).
+const u16 *MapGridGetCameraBorderAt(int x, int y, u8 *index)
+{
+    const struct CameraMap *best = NULL;
+    u32 bestDistance = 0;
+    int i;
+
+    UpdateCameraMaps();
+    for (i = 0; i < sCameraMapCount; i++)
+    {
+        const struct CameraMap *map = &sCameraMaps[i];
+        const struct MapLayout *layout = map->header->mapLayout;
+        int dx = 0, dy = 0;
+        u32 distance;
+
+        if (!map->border)
+            continue;
+        if (x < map->x)
+            dx = map->x - x;
+        else if (x >= map->x + layout->width)
+            dx = x - (map->x + layout->width - 1);
+        if (y < map->y)
+            dy = map->y - y;
+        else if (y >= map->y + layout->height)
+            dy = y - (map->y + layout->height - 1);
+        distance = dx * dx + dy * dy;
+        if (best == NULL || distance < bestDistance
+         || (distance == bestDistance && map->id < best->id))
+        {
+            best = map;
+            bestDistance = distance;
+        }
+    }
+    if (best == NULL)
+        best = &sCameraMaps[0];
+    x += MAP_OFFSET - best->phaseX;
+    y += MAP_OFFSET - best->phaseY;
+    *index = ((x + 1) & 1) + ((y + 1) & 1) * 2;
+    return best->header->mapLayout->border;
+}
+
+static u16 GetNearestBorderBlockAt(int x, int y)
+{
+    u8 index;
+    const u16 *border = Port_ResolveAssetPointer(MapGridGetCameraBorderAt(x, y, &index));
+
+    return border[index] | MAPGRID_IMPASSABLE;
+}
+
+// x, y in backup-layout coordinates, outside the ground the backup holds.
+static u16 GetCameraConnectionBlockAt(int x, int y)
+{
+    int i;
+
+    x -= MAP_OFFSET;
+    y -= MAP_OFFSET;
+    UpdateCameraMaps();
+    for (i = 1; i < sCameraMapCount; i++)
+    {
+        const struct CameraMap *map = &sCameraMaps[i];
+        const struct MapLayout *layout = map->header->mapLayout;
+        int mapX = x - map->x;
+        int mapY = y - map->y;
+
+        if (map->drawn && mapX >= 0 && mapX < layout->width && mapY >= 0 && mapY < layout->height)
+        {
+            const u16 *blocks = Port_ResolveAssetPointer(layout->map);
+            return blocks[mapY * layout->width + mapX];
+        }
+    }
+    return GetNearestBorderBlockAt(x, y);
+}
+
+// What the camera draws at x, y (backup-layout coordinates). Unlike
+// MapGridGetMetatileIdAt, the cells the GBA leaves undefined in the backup
+// (past a corner, within MAP_OFFSET) follow the rule above too; nothing but
+// drawing reads this, so the game's own lookups are left as they were.
+u32 MapGridGetMetatileIdForCameraAt(int x, int y)
+{
+    u16 block = AreCoordsWithinMapGridBounds(x, y)
+        ? gBackupMapLayout.map[x + gBackupMapLayout.width * y]
+        : MAPGRID_UNDEFINED;
+
+    if (block == MAPGRID_UNDEFINED)
+        block = GetCameraConnectionBlockAt(x, y);
+    return UNPACK_METATILE(block);
+}
+
+#endif
+
 u32 MapGridGetMetatileIdAt(int x, int y)
 {
+#ifdef PORT_BRIDGE
+    u16 block = AreCoordsWithinMapGridBounds(x, y)
+        ? gBackupMapLayout.map[x + gBackupMapLayout.width * y]
+        : GetCameraConnectionBlockAt(x, y);
+#else
     u16 block = GetMapGridBlockAt(x, y);
+#endif
+
+#ifdef PORT_BRIDGE
+    Port_SetAssetDebugEx(0x0330,
+                        x,
+                        y,
+                        gBackupMapLayout.width,
+                        gBackupMapLayout.height);
+    Port_SetAssetDebugEx(0x0331,
+                        block,
+                        (u16)((uintptr_t)gBackupMapLayout.map >> 16),
+                        (u16)(uintptr_t)gBackupMapLayout.map,
+                        0); /* was CheckHeap(): a walk of the whole heap on every lookup, for an argument the port drops */
+#endif
 
     if (block == MAPGRID_UNDEFINED)
         return UNPACK_METATILE(GetBorderBlockAt(x, y));
@@ -375,6 +695,9 @@ u32 MapGridGetMetatileIdAt(int x, int y)
 u32 MapGridGetMetatileBehaviorAt(int x, int y)
 {
     u16 metatile = MapGridGetMetatileIdAt(x, y);
+#ifdef PORT_BRIDGE
+    Port_SetAssetDebugEx(0x0332, metatile, x, y, 0);
+#endif
     return UNPACK_BEHAVIOR(GetMetatileAttributesById(metatile));
 }
 
@@ -412,11 +735,47 @@ u16 GetMetatileAttributesById(u16 metatile)
     if (metatile < NUM_METATILES_IN_PRIMARY)
     {
         attributes = gMapHeader.mapLayout->primaryTileset->metatileAttributes;
+#ifdef PORT_BRIDGE
+        Port_SetAssetDebugEx(0x0333,
+                            metatile,
+                            0,
+                            (u16)((uintptr_t)attributes >> 16),
+                            (u16)(uintptr_t)attributes);
+        attributes = Port_ResolveAssetPointer(attributes);
+        Port_SetAssetDebugEx(0x0334,
+                            metatile,
+                            0,
+                            (u16)((uintptr_t)attributes >> 16),
+                            (u16)(uintptr_t)attributes);
+#endif
+#ifdef PORT_BRIDGE
+        Port_SetAssetDebugEx(0x0335, metatile, attributes[metatile], 0, 0);
+#endif
         return attributes[metatile];
     }
     else if (metatile < NUM_METATILES_TOTAL)
     {
         attributes = gMapHeader.mapLayout->secondaryTileset->metatileAttributes;
+#ifdef PORT_BRIDGE
+        Port_SetAssetDebugEx(0x0336,
+                            metatile,
+                            1,
+                            (u16)((uintptr_t)attributes >> 16),
+                            (u16)(uintptr_t)attributes);
+        attributes = Port_ResolveAssetPointer(attributes);
+        Port_SetAssetDebugEx(0x0337,
+                            metatile,
+                            1,
+                            (u16)((uintptr_t)attributes >> 16),
+                            (u16)(uintptr_t)attributes);
+#endif
+#ifdef PORT_BRIDGE
+        Port_SetAssetDebugEx(0x0338,
+                            metatile,
+                            attributes[metatile - NUM_METATILES_IN_PRIMARY],
+                            metatile - NUM_METATILES_IN_PRIMARY,
+                            0);
+#endif
         return attributes[metatile - NUM_METATILES_IN_PRIMARY];
     }
     else
@@ -660,19 +1019,23 @@ bool8 CameraMove(int x, int y)
     }
     else
     {
+        PORT_PROF("camera-begin");
         SaveMapView();
+        PORT_PROF("SaveMapView");
         ClearMirageTowerPulseBlendEffect();
         old_x = gSaveBlock1Ptr->pos.x;
         old_y = gSaveBlock1Ptr->pos.y;
         connection = GetIncomingConnection(direction, gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y);
         SetPositionFromConnection(connection, direction, x, y);
         LoadMapFromCameraTransition(connection->mapGroup, connection->mapNum);
+        PORT_PROF("LoadMapFromCameraTransition");
         gCamera.active = TRUE;
         gCamera.x = old_x - gSaveBlock1Ptr->pos.x;
         gCamera.y = old_y - gSaveBlock1Ptr->pos.y;
         gSaveBlock1Ptr->pos.x += x;
         gSaveBlock1Ptr->pos.y += y;
         MoveMapViewToBackup(direction);
+        PORT_PROF("MoveMapViewToBackup");
     }
     return gCamera.active;
 }
@@ -854,10 +1217,22 @@ static void CopyTilesetToVramUsingHeap(struct Tileset const *tileset, u16 numTil
 {
     if (tileset)
     {
+#ifdef PORT_BRIDGE
+        const void *tiles = tileset->tiles;
+
+        if (!tileset->isCompressed)
+            tiles = Port_ResolveAssetPointer(tiles);
+
+        if (!tileset->isCompressed)
+            LoadBgTiles(2, tiles, numTiles * 32, offset);
+        else
+            DecompressAndLoadBgGfxUsingHeap(2, tiles, numTiles * 32, offset, 0);
+#else
         if (!tileset->isCompressed)
             LoadBgTiles(2, tileset->tiles, numTiles * 32, offset);
         else
             DecompressAndLoadBgGfxUsingHeap(2, tileset->tiles, numTiles * 32, offset, 0);
+#endif
     }
 }
 
@@ -878,20 +1253,53 @@ static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u1
 
     if (tileset)
     {
+#ifdef PORT_BRIDGE
+        u16 paletteData[NUM_PALS_TOTAL][16];
+        const u16 (*palettes)[16] = tileset->palettes;
+        static u8 sLoggedPalettes;
+        u8 logMask = tileset->isSecondary ? 2 : 1;
+
+        if (tileset->isSecondary <= TRUE && Port_GetAssetSizeExact(palettes) != 0)
+        {
+            u32 sourceOffset = tileset->isSecondary ? NUM_PALS_IN_PRIMARY * PLTT_SIZE_4BPP : 0;
+            if (!Port_LoadAssetRangeToBuffer(palettes, sourceOffset,
+                                           (u8 *)paletteData + sourceOffset, size))
+                return;
+            palettes = paletteData;
+        }
+
+        if (!(sLoggedPalettes & logMask))
+        {
+            u8 nonzero = 0;
+
+            for (u32 i = 0; i < size; i++)
+                nonzero |= ((const u8 *)palettes)[i];
+            Port_SetGfxPaletteDebug(tileset->isSecondary, nonzero,
+                                   palettes != tileset->palettes);
+            PORT_LOG("Palette %c src=%08lX dst=%08lX nz=%02X\n",
+                    tileset->isSecondary ? 'S' : 'P',
+                    (unsigned long)tileset->palettes,
+                    (unsigned long)palettes, nonzero);
+            sLoggedPalettes |= logMask;
+        }
+#else
+        const u16 (*palettes)[16] = tileset->palettes;
+#endif
+
         if (tileset->isSecondary == FALSE)
         {
             LoadPalette(&black, destOffset, PLTT_SIZEOF(1));
-            LoadPalette(tileset->palettes[0] + 1, destOffset + 1, size - PLTT_SIZEOF(1));
+            LoadPalette(palettes[0] + 1, destOffset + 1, size - PLTT_SIZEOF(1));
             ApplyGlobalTintToPaletteEntries(destOffset + 1, (size - PLTT_SIZEOF(1)) >> 1);
         }
         else if (tileset->isSecondary == TRUE)
         {
-            LoadPalette(tileset->palettes[NUM_PALS_IN_PRIMARY], destOffset, size);
+            LoadPalette(palettes[NUM_PALS_IN_PRIMARY], destOffset, size);
             ApplyGlobalTintToPaletteEntries(destOffset, size >> 1);
         }
         else
         {
-            LoadCompressedPalette((const u32 *)tileset->palettes, destOffset, size);
+            LoadCompressedPalette((const u32 *)palettes, destOffset, size);
             ApplyGlobalTintToPaletteEntries(destOffset, size >> 1);
         }
     }
@@ -926,8 +1334,20 @@ void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)
 {
     if (mapLayout)
     {
+#ifdef PORT_BRIDGE
+        // Returning from a UI or battle must use the same buffer ownership as
+        // the initial map load. Publish both tilesets before drawing the map.
+        CopyPrimaryTilesetToVram(mapLayout);
+        // Release the primary temporary before allocating the secondary one.
+        while (FreeTempTileDataBuffersIfPossible())
+            ;
+        CopySecondaryTilesetToVram(mapLayout);
+        while (FreeTempTileDataBuffersIfPossible())
+            ;
+#else
         CopyTilesetToVramUsingHeap(mapLayout->primaryTileset, NUM_TILES_IN_PRIMARY, 0);
         CopyTilesetToVramUsingHeap(mapLayout->secondaryTileset, NUM_TILES_TOTAL - NUM_TILES_IN_PRIMARY, NUM_TILES_IN_PRIMARY);
+#endif
     }
 }
 

@@ -118,6 +118,14 @@ static void SpriteCB_Rival(struct Sprite *);
 static u8 CreateCreditsMonSprite(u16, s16, s16, u16);
 static void DeterminePokemonToShow(void);
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_SPANISH
+static const u32 sSpanishTheEnd_Tilemap[] = INCBIN_U32("graphics/credits/spanish_the_end.bin.lz");
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_FRENCH
+static const u32 sFrenchTheEnd_Tilemap[] = INCBIN_U32("graphics/credits/french_the_end.bin.lz");
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
+static const u32 sItalianTheEnd_Tilemap[] = INCBIN_U32("graphics/credits/italian_the_end.bin.lz");
+#endif
+
 static const u8 sTheEnd_LetterMap_T[] =
 {
     0,    1, 0,
@@ -549,7 +557,7 @@ static void Task_LoadShowMons(u8 taskId)
         gReservedSpritePaletteCount = 8;
         LZ77UnCompVram(gBirchBagGrass_Gfx, (void *)VRAM);
         LZ77UnCompVram(gBirchGrassTilemap, (void *)(BG_SCREEN_ADDR(7)));
-        LoadPalette(gBirchBagGrass_Pal + 1, BG_PLTT_ID(0) + 1, PLTT_SIZEOF(2 * 16 - 1));
+        LoadPaletteWithOffset(gBirchBagGrass_Pal, PLTT_SIZEOF(1), BG_PLTT_ID(0) + 1, PLTT_SIZEOF(2 * 16 - 1));
 
         for (i = 0; i < MON_PIC_SIZE; i++)
             gDecompressionBuffer[i] = 0x11;
@@ -1328,6 +1336,13 @@ static void DrawLetterMapTiles(const u8 baseTiles[], u8 baseX, u8 baseY, u16 off
 
 static void DrawTheEnd(u16 offset, u16 palette)
 {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_SPANISH
+    LZ77UnCompVram(sSpanishTheEnd_Tilemap, (void *)(VRAM + offset));
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_FRENCH
+    LZ77UnCompVram(sFrenchTheEnd_Tilemap, (void *)(VRAM + offset));
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
+    LZ77UnCompVram(sItalianTheEnd_Tilemap, (void *)(VRAM + offset));
+#else
     u16 pos;
     u16 baseTile = (palette / 16) << 12;
 
@@ -1340,6 +1355,7 @@ static void DrawTheEnd(u16 offset, u16 palette)
     DrawLetterMapTiles(sTheEnd_LetterMap_E, 16, 7, offset, palette);
     DrawLetterMapTiles(sTheEnd_LetterMap_N, 20, 7, offset, palette);
     DrawLetterMapTiles(sTheEnd_LetterMap_D, 24, 7, offset, palette);
+#endif
 }
 
 #define sState data[0]

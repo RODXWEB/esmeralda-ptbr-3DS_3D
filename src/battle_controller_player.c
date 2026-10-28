@@ -35,6 +35,10 @@
 #include "constants/songs.h"
 #include "constants/trainers.h"
 #include "constants/rgb.h"
+#ifdef PLATFORM_3DS
+#include "event_data.h"
+#include "constants/vars.h"
+#endif
 
 static void PlayerHandleGetMonData(void);
 static void PlayerHandleSetMonData(void);
@@ -230,6 +234,137 @@ static void CompleteOnBankSpritePosX_0(void)
         PlayerBufferExecCompleted();
 }
 
+#ifdef PLATFORM_3DS
+/*
+ * Quick ball: R, or the ball button on the bottom screen, throws the selected
+ * ball without opening the bag. The last ball is kept in an unused save var,
+ * so it survives a restart. Wild single battles only.
+ */
+#define VAR_QUICK_BALL_LAST VAR_UNUSED_0x40F7
+
+static u16 sQuickBall;
+static u16 sQuickBallSelected = ITEM_NONE;
+
+static bool8 IsBall(u16 item)
+{
+    return item >= FIRST_BALL && item <= LAST_BALL;
+}
+
+/*
+ * Whether a caught mon would have nowhere to go. The bottom screen asks for
+ * the quick ball every frame, and the answer walks the boxes, decrypting up
+ * to 420 mons each time (5% of a 2D battle's CPU in a PC sampling). Nothing
+ * in a battle fills them but a catch, which ends it: asked again once a
+ * second, in frames, so a recorded session replays the same.
+ */
+static bool8 QuickBallNowhereToGo(void)
+{
+    static u32 sAskedAt;
+    static bool8 sAsked, sFull;
+
+    if (!sAsked || gMain.vblankCounter2 - sAskedAt >= 60)
+    {
+        sFull = IsPlayerPartyAndPokemonStorageFull();
+        sAskedAt = gMain.vblankCounter2;
+        sAsked = TRUE;
+    }
+    return sFull;
+}
+
+/* The ball a quick throw would use now, or ITEM_NONE: the selected ball,
+ * else the last one used, then the first in the Poke Balls pocket. */
+u16 CtrBattle_QuickBallItem(void)
+{
+    u16 ball;
+    u32 i;
+
+    if (gBattleTypeFlags & (BATTLE_TYPE_DOUBLE | BATTLE_TYPE_LINK | BATTLE_TYPE_TRAINER | BATTLE_TYPE_FIRST_BATTLE
+                          | BATTLE_TYPE_SAFARI | BATTLE_TYPE_WALLY_TUTORIAL | BATTLE_TYPE_EREADER_TRAINER
+                          | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_RECORDED | BATTLE_TYPE_RECORDED_LINK
+                          | BATTLE_TYPE_TRAINER_HILL | BATTLE_TYPE_SECRET_BASE))
+        return ITEM_NONE;
+    if (QuickBallNowhereToGo())
+        return ITEM_NONE;
+    if (IsBall(sQuickBallSelected) && CheckBagHasItem(sQuickBallSelected, 1))
+        return sQuickBallSelected;
+    sQuickBallSelected = ITEM_NONE;
+    ball = VarGet(VAR_QUICK_BALL_LAST);
+    if (IsBall(ball) && CheckBagHasItem(ball, 1))
+        return ball;
+    for (i = 0; i < gBagPockets[BALLS_POCKET].capacity; i++)
+    {
+        ball = gBagPockets[BALLS_POCKET].itemSlots[i].itemId;
+        if (IsBall(ball) && CheckBagHasItem(ball, 1))
+            return ball;
+    }
+    return ITEM_NONE;
+}
+
+/* The Poke Balls pocket slot of the first stack of `ball`, or the capacity. */
+static u32 QuickBallFirstStack(u16 ball)
+{
+    u32 i;
+
+    for (i = 0; i < gBagPockets[BALLS_POCKET].capacity; i++)
+        if (gBagPockets[BALLS_POCKET].itemSlots[i].itemId == ball)
+            break;
+    return i;
+}
+
+/* Select the next available ball in bag order, wrapping at either end. A
+ * ball in two stacks counts once, at its first: stopping at a second stack
+ * sent the next press back to the first and left the balls past it out. */
+bool8 CtrBattle_QuickBallCycle(s8 direction)
+{
+    u16 current = CtrBattle_QuickBallItem(), ball;
+    u32 capacity = gBagPockets[BALLS_POCKET].capacity;
+    u32 currentIndex, step;
+
+    if (current == ITEM_NONE || direction == 0 || capacity == 0)
+        return FALSE;
+    currentIndex = QuickBallFirstStack(current);
+    if (currentIndex == capacity)
+        return FALSE;
+    for (step = 1; step < capacity; step++)
+    {
+        u32 index = direction > 0 ? (currentIndex + step) % capacity
+                                  : (currentIndex + capacity - step) % capacity;
+
+        ball = gBagPockets[BALLS_POCKET].itemSlots[index].itemId;
+        if (IsBall(ball) && QuickBallFirstStack(ball) == index && CheckBagHasItem(ball, 1))
+        {
+            sQuickBallSelected = ball;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* R or the bottom-screen button: TRUE if a ball is on its way. */
+static bool8 TryQuickBall(void)
+{
+    /* Buttons are u16: R (0x100) would truncate to 0 in a bool8. */
+    bool8 asked = JOY_NEW(R_BUTTON) != 0;
+    u16 ball;
+
+    if (CtrBattleMenu_TakeQuickBall())
+        asked = TRUE;
+    if (!asked)
+        return FALSE;
+    ball = CtrBattle_QuickBallItem();
+    if (ball == ITEM_NONE)
+    {
+        PlaySE(SE_FAILURE);
+        return FALSE;
+    }
+    PlaySE(SE_SELECT);
+    sQuickBall = ball;
+    BtlController_EmitTwoReturnValues(B_COMM_TO_ENGINE, B_ACTION_USE_ITEM, 0);
+    PlayerBufferExecCompleted();
+    return TRUE;
+}
+#endif
+
 static void HandleInputChooseAction(void)
 {
     u16 itemId = gBattleBufferA[gActiveBattler][2] | (gBattleBufferA[gActiveBattler][3] << 8);
@@ -242,6 +377,14 @@ static void HandleInputChooseAction(void)
     else
         gPlayerDpadHoldFrames = 0;
 
+#ifdef PLATFORM_3DS
+    if (CtrBattleMenu_Active())
+        CtrBattleMenu_ActionInput(&gActionSelectionCursor[gActiveBattler], FALSE);
+#endif
+#ifdef PLATFORM_3DS
+    if (TryQuickBall())
+        return;
+#endif
     if (JOY_NEW(A_BUTTON))
     {
         PlaySE(SE_SELECT);
@@ -361,6 +504,10 @@ static void HandleInputChooseTarget(void)
     else
         gPlayerDpadHoldFrames = 0;
 
+#ifdef PLATFORM_3DS
+    if (CtrBattleMenu_Active())
+        CtrBattleMenu_TargetInput();
+#endif
     if (JOY_NEW(A_BUTTON))
     {
         PlaySE(SE_SELECT);
@@ -478,6 +625,10 @@ static void HandleInputChooseMove(void)
     else
         gPlayerDpadHoldFrames = 0;
 
+#ifdef PLATFORM_3DS
+    if (CtrBattleMenu_Active())
+        CtrBattleMenu_MoveInput(&gMoveSelectionCursor[gActiveBattler], moveInfo->moves);
+#endif
     if (JOY_NEW(A_BUTTON))
     {
         u8 moveTarget;
@@ -1387,6 +1538,12 @@ static void CompleteWhenChoseItem(void)
 {
     if (gMain.callback2 == BattleMainCB2 && !gPaletteFade.active)
     {
+#ifdef PLATFORM_3DS
+        if (IsBall(gSpecialVar_ItemId))
+            VarSet(VAR_QUICK_BALL_LAST, gSpecialVar_ItemId);
+        if (IsBall(gSpecialVar_ItemId))
+            sQuickBallSelected = ITEM_NONE;
+#endif
         BtlController_EmitOneReturnValue(B_COMM_TO_ENGINE, gSpecialVar_ItemId);
         PlayerBufferExecCompleted();
     }
@@ -2304,18 +2461,18 @@ static void PlayerHandleDrawTrainerPic(void)
         if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER && gPartnerTrainerId != TRAINER_STEVEN_PARTNER)
         {
             xPos = 90;
-            yPos = (8 - gTrainerFrontPicCoords[trainerPicId].size) * 4 + 80;
+            yPos = (8 - gTrainerFrontPicCoords[trainerPicId].size) * 4 + 80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER);
         }
         else
         {
-            yPos = (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80;
+            yPos = (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER);
         }
 
     }
     else
     {
         xPos = 80;
-        yPos = (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80;
+        yPos = (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER);
     }
 
     // Use front pic table for any tag battles unless your partner is Steven.
@@ -2378,7 +2535,7 @@ static void PlayerHandleTrainerSlide(void)
 
     DecompressTrainerBackPic(trainerPicId, gActiveBattler);
     SetMultiuseSpriteTemplateToTrainerBack(trainerPicId, GetBattlerPosition(gActiveBattler));
-    gBattlerSpriteIds[gActiveBattler] = CreateSprite(&gMultiuseSpriteTemplate, 80, (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80, 30);
+    gBattlerSpriteIds[gActiveBattler] = CreateSprite(&gMultiuseSpriteTemplate, 80, (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER), 30);
 
     gSprites[gBattlerSpriteIds[gActiveBattler]].oam.paletteNum = gActiveBattler;
     gSprites[gBattlerSpriteIds[gActiveBattler]].x2 = -96;
@@ -2568,6 +2725,11 @@ static void HandleChooseActionAfterDma3(void)
     {
         gBattle_BG0_X = 0;
         gBattle_BG0_Y = DISPLAY_HEIGHT;
+#ifdef PLATFORM_3DS
+        // The menu is on the bottom screen: the top keeps the message box.
+        if (CtrBattleMenu_Active())
+            gBattle_BG0_Y = 0;
+#endif
         gBattlerControllerFuncs[gActiveBattler] = HandleInputChooseAction;
     }
 }
@@ -2578,6 +2740,18 @@ static void PlayerHandleChooseAction(void)
 
     gBattlerControllerFuncs[gActiveBattler] = HandleChooseActionAfterDma3;
     BattleTv_ClearExplosionFaintCause();
+#ifdef PLATFORM_3DS
+    sQuickBall = ITEM_NONE;
+#endif
+#ifdef PLATFORM_3DS
+    if (CtrBattleMenu_Active())
+    {
+        CtrBattleMenu_Begin();
+        BattleStringExpandPlaceholdersToDisplayedString(gText_WhatWillPkmnDo);
+        CtrBattleMenu_ShowPrompt();
+        return;
+    }
+#endif
     BattlePutTextOnWindow(gText_BattleMenu, B_WIN_ACTION_MENU);
 
     for (i = 0; i < 4; i++)
@@ -2610,6 +2784,10 @@ static void HandleChooseMoveAfterDma3(void)
     {
         gBattle_BG0_X = 0;
         gBattle_BG0_Y = DISPLAY_HEIGHT * 2;
+#ifdef PLATFORM_3DS
+        if (CtrBattleMenu_Active())
+            gBattle_BG0_Y = 0;
+#endif
         gBattlerControllerFuncs[gActiveBattler] = HandleInputChooseMove;
     }
 }
@@ -2633,6 +2811,22 @@ static void PlayerHandleChooseMove(void)
         *(gBattleStruct->arenaMindPoints + gActiveBattler) = 8;
         gBattlerControllerFuncs[gActiveBattler] = PlayerChooseMoveInBattlePalace;
     }
+#ifdef PLATFORM_3DS
+    else if (CtrBattleMenu_Active())
+    {
+        // What InitMoveSelectionsVarsAndStrings sets, without drawing the menu.
+        struct ChooseMoveStruct *moveInfo = (struct ChooseMoveStruct *)(&gBattleBufferA[gActiveBattler][4]);
+        s32 i;
+
+        gNumberOfMovesToChoose = 0;
+        for (i = 0; i < MAX_MON_MOVES; i++)
+            if (moveInfo->moves[i] != MOVE_NONE)
+                gNumberOfMovesToChoose++;
+        gMultiUsePlayerCursor = 0xFF;
+        CtrBattleMenu_Begin();
+        gBattlerControllerFuncs[gActiveBattler] = HandleChooseMoveAfterDma3;
+    }
+#endif
     else
     {
         InitMoveSelectionsVarsAndStrings();
@@ -2654,6 +2848,27 @@ static void PlayerHandleChooseItem(void)
 {
     s32 i;
 
+#ifdef PLATFORM_3DS
+    /* A quick ball: what the bag does for a ball, without the bag. */
+    if (sQuickBall != ITEM_NONE)
+    {
+        u16 ball = sQuickBall;
+
+        sQuickBall = ITEM_NONE;
+        gBattlerInMenuId = gActiveBattler;
+        for (i = 0; i < (int)ARRAY_COUNT(gBattlePartyCurrentOrder); i++)
+            gBattlePartyCurrentOrder[i] = gBattleBufferA[gActiveBattler][1 + i];
+        if (CtrBattle_QuickBallItem() != ball || !RemoveBagItem(ball, 1))
+            ball = ITEM_NONE;  /* nothing thrown: back to the action menu */
+        else
+            VarSet(VAR_QUICK_BALL_LAST, ball);
+        sQuickBallSelected = ITEM_NONE;
+        gSpecialVar_ItemId = ball;
+        BtlController_EmitOneReturnValue(B_COMM_TO_ENGINE, ball);
+        PlayerBufferExecCompleted();
+        return;
+    }
+#endif
     BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 0x10, RGB_BLACK);
     gBattlerControllerFuncs[gActiveBattler] = OpenBagAndChooseItem;
     gBattlerInMenuId = gActiveBattler;

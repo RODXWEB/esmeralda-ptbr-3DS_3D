@@ -628,3 +628,13 @@ u8 GetNumConditionMonSparkles(void)
     struct Pokenav_ConditionMenu *menu = GetSubstructPtr(POKENAV_SUBSTRUCT_CONDITION_GRAPH_MENU);
     return menu->numSparkles[menu->loadId];
 }
+
+#ifdef PLATFORM_3DS
+// Whether the condition graph's markings menu is open, for the 3DS bottom screen.
+bool8 CtrPokenavCondition_Marking(void)
+{
+    struct Pokenav_ConditionMenu *menu = GetSubstructPtr(POKENAV_SUBSTRUCT_CONDITION_GRAPH_MENU);
+
+    return menu != NULL && menu->callback == OpenMarkingsMenu;
+}
+#endif

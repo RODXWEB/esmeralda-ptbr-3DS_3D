@@ -41,7 +41,7 @@ struct Pokenav_RegionMapGfx
 
 struct CityMapEntry
 {
-    mapsec_u16_t mapSecId;
+    u16 mapSecId;
     u16 index;
     const u32 *tilemap;
 };
@@ -63,8 +63,8 @@ static bool32 IsDma3ManagerBusyWithBgCopy_(struct Pokenav_RegionMapGfx *);
 static void ChangeBgYForZoom(bool32);
 static bool32 IsChangeBgYForZoomActive(void);
 static void CreateCityZoomTextSprites(void);
-static void DrawCityMap(struct Pokenav_RegionMapGfx *, mapsec_s32_t, int);
-static void PrintLandmarkNames(struct Pokenav_RegionMapGfx *, mapsec_s32_t, int);
+static void DrawCityMap(struct Pokenav_RegionMapGfx *, int, int);
+static void PrintLandmarkNames(struct Pokenav_RegionMapGfx *, int, int);
 static void SetCityZoomTextInvisibility(bool32);
 static void Task_ChangeBgYForZoom(u8 taskId);
 static void UpdateCityZoomTextPosition(void);
@@ -634,7 +634,7 @@ static u32 LoopedTask_DecompressCityMaps(s32 taskState)
     return LT_FINISH;
 }
 
-static void DrawCityMap(struct Pokenav_RegionMapGfx *state, mapsec_s32_t mapSecId, int pos)
+static void DrawCityMap(struct Pokenav_RegionMapGfx *state, int mapSecId, int pos)
 {
     int i;
     for (i = 0; i < NUM_CITY_MAPS && (sPokenavCityMaps[i].mapSecId != mapSecId || sPokenavCityMaps[i].index != pos); i++)
@@ -647,7 +647,7 @@ static void DrawCityMap(struct Pokenav_RegionMapGfx *state, mapsec_s32_t mapSecI
     CopyToBgTilemapBufferRect(1, state->cityZoomPics[i], 18, 6, 10, 10);
 }
 
-static void PrintLandmarkNames(struct Pokenav_RegionMapGfx *state, mapsec_s32_t mapSecId, int pos)
+static void PrintLandmarkNames(struct Pokenav_RegionMapGfx *state, int mapSecId, int pos)
 {
     int i = 0;
     while (1)
@@ -740,3 +740,17 @@ static void SetCityZoomTextInvisibility(bool32 invisible)
     for (i = 0; i < (int)ARRAY_COUNT(state->cityZoomTextSprites); i++)
         state->cityZoomTextSprites[i]->invisible = invisible;
 }
+
+#ifdef PLATFORM_3DS
+bool8 CtrPokenav_IsOpen(void);
+
+// The background of the map's info window, for the 3DS bottom screen: it
+// keeps the window on the help bar while the map is zoomed out, as the GBA
+// screen does. -1 without the map.
+int CtrPokenavRegionMap_InfoBg(void)
+{
+    if (!CtrPokenav_IsOpen() || GetSubstructPtr(POKENAV_SUBSTRUCT_REGION_MAP_ZOOM) == NULL)
+        return -1;
+    return sMapSecInfoWindowTemplate.bg;
+}
+#endif

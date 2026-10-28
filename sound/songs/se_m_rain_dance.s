@@ -13,7 +13,7 @@
 	.global	se_m_rain_dance
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_rain_dance_1:
 	.byte	KEYSH , se_m_rain_dance_key+0
@@ -100,17 +100,17 @@ se_m_rain_dance_1:
 	.byte		EOT
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_rain_dance:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_rain_dance_pri	@ Priority
-	.byte	se_m_rain_dance_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_rain_dance_pri	/* Priority*/
+	.byte	se_m_rain_dance_rev	/* Reverb.*/
 
-	.word	se_m_rain_dance_grp
+	.int	se_m_rain_dance_grp
 
-	.word	se_m_rain_dance_1
+	.int	se_m_rain_dance_1
 
 	.end

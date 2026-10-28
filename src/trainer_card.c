@@ -77,7 +77,7 @@ struct TrainerCardData
     u8 cardType;
     bool8 isHoenn;
     u16 blendColor;
-    MainCallback callback2;
+    void (*callback2)(void);
     struct TrainerCard trainerCard;
     u16 frontTilemap[600];
     u16 backTilemap[600];
@@ -363,6 +363,9 @@ static void CloseTrainerCard(u8 taskId)
     FreeAllWindowBuffers();
     FREE_AND_SET_NULL(sData);
     DestroyTask(taskId);
+#ifdef PORTABLE
+    SetVBlankHBlankCallbacksToNull(); // UB: fixes use after free of sData in VBlank callback
+#endif
 }
 
 // States for Task_TrainerCard. Skips the initial states, which are done once in order
@@ -858,7 +861,7 @@ static void InitGpuRegs(void)
     SetGpuReg(REG_OFFSET_WININ, WININ_WIN0_BG_ALL | WININ_WIN0_OBJ | WININ_WIN0_CLR);
     SetGpuReg(REG_OFFSET_WINOUT, WINOUT_WIN01_BG1 | WINOUT_WIN01_BG2 | WINOUT_WIN01_BG3 | WINOUT_WIN01_OBJ);
     SetGpuReg(REG_OFFSET_WIN0V, DISPLAY_HEIGHT);
-    SetGpuReg(REG_OFFSET_WIN0H, DISPLAY_WIDTH);
+    SetGpuReg(REG_OFFSET_WIN0H, WIN_RANGE(0, DISPLAY_WIDTH));
     if (gReceivedRemoteLinkPlayers)
         EnableInterrupts(INTR_FLAG_VBLANK | INTR_FLAG_HBLANK | INTR_FLAG_VCOUNT | INTR_FLAG_TIMER3 | INTR_FLAG_SERIAL);
     else

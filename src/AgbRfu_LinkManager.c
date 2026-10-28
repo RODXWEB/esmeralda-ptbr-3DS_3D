@@ -1,6 +1,9 @@
 #include "global.h"
 #include "librfu.h"
 #include "link_rfu.h"
+#ifdef PLATFORM_3DS
+#include "local_link.h"
+#endif
 
 #define RN_ACCEPT           0x01
 #define RN_NAME_TIMER_CLEAR 0x02
@@ -1305,6 +1308,13 @@ static void UNUSED rfu_LMAN_setLMANCallback(void (*func)(u8, u8))
 u8 rfu_LMAN_setLinkRecovery(u8 enable_flag, u16 recovery_period)
 {
     u16 imeBak;
+#ifdef PLATFORM_3DS
+    // Over local wireless, a partner whose link is lost has left the session
+    // for good (it would have to join again): no waiting 10 seconds for them
+    // to come back into range.
+    if (PlatformLocalLinkEnabled())
+        enable_flag = 0;
+#endif
     if (lman.linkRecovery_enable && enable_flag == 0 && lman.linkRecoveryTimer.active)
     {
         return LMAN_ERROR_NOW_LINK_RECOVERY;

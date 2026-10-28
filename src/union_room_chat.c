@@ -3214,9 +3214,8 @@ static void MoveKeyboardCursor(void)
 
 static void SetRegisteredTextPalette(bool32 registering)
 {
-    const u16 *palette = &sUnionRoomChatInterfacePal[registering * 2 + 1];
     u8 index = IndexOfSpritePaletteTag(PALTAG_INTERFACE);
-    LoadPalette(palette, OBJ_PLTT_ID(index) + 1, PLTT_SIZEOF(2));
+    LoadPaletteWithOffset(sUnionRoomChatInterfacePal, PLTT_SIZEOF(registering * 2 + 1), OBJ_PLTT_ID(index) + 1, PLTT_SIZEOF(2));
 }
 
 static void StartKeyboardCursorAnim(void)

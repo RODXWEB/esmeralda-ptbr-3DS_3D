@@ -10,8 +10,8 @@
 
 static ALIGNED(2) u8 sGpuRegBuffer[GPU_REG_BUF_SIZE]; // sGpuRegBuffer is read as u16 so it needs to be properly aligned
 static u8 sGpuRegWaitingList[GPU_REG_BUF_SIZE];
-static volatile bool8 sGpuRegBufferLocked;
-static volatile bool8 sShouldSyncRegIE;
+static vbool8 sGpuRegBufferLocked;
+static vbool8 sShouldSyncRegIE;
 static vu16 sRegIE;
 
 static void CopyBufferedValueToGpuReg(u8 regOffset);
@@ -63,7 +63,11 @@ void CopyBufferedValuesToGpuRegs(void)
     }
 }
 
+#ifdef PLATFORM_3DS
+static void SetGpuReg16(u8 regOffset, u16 value)
+#else
 void SetGpuReg(u8 regOffset, u16 value)
+#endif
 {
     if (regOffset < GPU_REG_BUF_SIZE)
     {
@@ -97,6 +101,25 @@ void SetGpuReg(u8 regOffset, u16 value)
     }
 }
 
+#ifdef PLATFORM_3DS
+// WIN0H and WIN1H: what the edges pass 255 by goes beside the register,
+// buffered and copied with it, tagged with the value it belongs to. A window
+// kept in an s16 (a task's data) arrives sign-extended when its left edge is
+// 128 or more: 0xFFFF above bit 15 is that, never edges past 255.
+void SetGpuReg(u8 regOffset, u32 value)
+{
+    if (regOffset == REG_OFFSET_WIN0H || regOffset == REG_OFFSET_WIN1H)
+    {
+        u8 over = regOffset == REG_OFFSET_WIN0H ? REG_OFFSET_WIN0H_OVER : REG_OFFSET_WIN1H_OVER;
+        u8 tag = regOffset == REG_OFFSET_WIN0H ? REG_OFFSET_WIN0H_TAG : REG_OFFSET_WIN1H_TAG;
+
+        SetGpuReg16(over, (value >> 16) == 0xFFFF ? 0 : value >> 16);
+        SetGpuReg16(tag, value);
+    }
+    SetGpuReg16(regOffset, value);
+}
+
+#endif
 void SetGpuReg_ForcedBlank(u8 regOffset, u16 value)
 {
     if (regOffset < GPU_REG_BUF_SIZE)

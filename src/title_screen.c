@@ -29,12 +29,26 @@ enum {
     TAG_LOGO_SHINE,
 };
 
+#if defined(PORT_BRIDGE) && !defined(CTR_GBA_STAGE)
+#define TITLE_SCREEN_WIDTH 256
+#define TITLE_SCREEN_HEIGHT 192
+#define TITLE_BG_MODE DISPCNT_MODE_0
+#define TITLE_LOGO_BG_SIZE BGCNT_TXT256x256
+#else
+#define TITLE_SCREEN_WIDTH DISPLAY_WIDTH
+#define TITLE_SCREEN_HEIGHT DISPLAY_HEIGHT
+#define TITLE_BG_MODE DISPCNT_MODE_1
+#define TITLE_LOGO_BG_SIZE BGCNT_AFF256x256
+#endif
+
+#define TITLE_CENTER_X_OFFSET ((TITLE_SCREEN_WIDTH - DISPLAY_WIDTH) / 2)
+
 #define VERSION_BANNER_RIGHT_TILEOFFSET 64
-#define VERSION_BANNER_LEFT_X 98
-#define VERSION_BANNER_RIGHT_X 162
+#define VERSION_BANNER_LEFT_X (98 + TITLE_CENTER_X_OFFSET)
+#define VERSION_BANNER_RIGHT_X (162 + TITLE_CENTER_X_OFFSET)
 #define VERSION_BANNER_Y 2
 #define VERSION_BANNER_Y_GOAL 66
-#define START_BANNER_X 128
+#define START_BANNER_X (128 + TITLE_CENTER_X_OFFSET)
 
 #define CLEAR_SAVE_BUTTON_COMBO (B_BUTTON | SELECT_BUTTON | DPAD_UP)
 #define RESET_RTC_BUTTON_COMBO (B_BUTTON | SELECT_BUTTON | DPAD_LEFT)
@@ -466,7 +480,7 @@ enum {
 
 static void SpriteCB_PokemonLogoShine(struct Sprite *sprite)
 {
-    if (sprite->x < DISPLAY_WIDTH + 32)
+    if (sprite->x < TITLE_SCREEN_WIDTH + 32)
     {
         // In any mode except SHINE_MODE_SINGLE_NO_BG_COLOR the background
         // color will change, in addition to the shine sprite moving.
@@ -474,7 +488,7 @@ static void SpriteCB_PokemonLogoShine(struct Sprite *sprite)
         {
             u16 backgroundColor;
 
-            if (sprite->x < DISPLAY_WIDTH / 2)
+            if (sprite->x < TITLE_SCREEN_WIDTH / 2)
             {
                 // Brighten background color
                 if (sprite->sBgColor < 31)
@@ -495,10 +509,10 @@ static void SpriteCB_PokemonLogoShine(struct Sprite *sprite)
 
             // Flash the background green for 4 frames of movement.
             // Otherwise use the updating color.
-            if (sprite->x == DISPLAY_WIDTH / 2 + (3 * SHINE_SPEED)
-             || sprite->x == DISPLAY_WIDTH / 2 + (4 * SHINE_SPEED)
-             || sprite->x == DISPLAY_WIDTH / 2 + (5 * SHINE_SPEED)
-             || sprite->x == DISPLAY_WIDTH / 2 + (6 * SHINE_SPEED))
+            if (sprite->x == TITLE_SCREEN_WIDTH / 2 + (3 * SHINE_SPEED)
+             || sprite->x == TITLE_SCREEN_WIDTH / 2 + (4 * SHINE_SPEED)
+             || sprite->x == TITLE_SCREEN_WIDTH / 2 + (5 * SHINE_SPEED)
+             || sprite->x == TITLE_SCREEN_WIDTH / 2 + (6 * SHINE_SPEED))
                 gPlttBufferFaded[0] = RGB(24, 31, 12);
             else
                 gPlttBufferFaded[0] = backgroundColor;
@@ -516,7 +530,7 @@ static void SpriteCB_PokemonLogoShine(struct Sprite *sprite)
 
 static void SpriteCB_PokemonLogoShine_Fast(struct Sprite *sprite)
 {
-    if (sprite->x < DISPLAY_WIDTH + 32)
+    if (sprite->x < TITLE_SCREEN_WIDTH + 32)
         sprite->x += SHINE_SPEED * 2;
     else
         DestroySprite(sprite);
@@ -567,6 +581,43 @@ static void VBlankCB(void)
     SetGpuReg(REG_OFFSET_BG1VOFS, gBattle_BG1_Y);
 }
 
+#if defined(PORT_BRIDGE) && !defined(CTR_GBA_STAGE)
+static void PrepareTitleScreenTilemaps(void)
+{
+    u8 *logo = (u8 *)BG_SCREEN_ADDR(9);
+    u16 *logoText = (u16 *)logo;
+    u16 *rayquaza = (u16 *)BG_SCREEN_ADDR(26);
+    s32 i, x, y;
+
+    // Port mode 1 has a text BG2, not GBA's affine BG2. Use mode 0 and
+    // expand the logo's byte entries in place once, then use text scroll.
+    for (i = 32 * 32 - 1; i >= 0; i--)
+        logoText[i] = logo[i];
+
+    // HOFS=-8 puts column 31 on the left and column 30 on the right.
+    // Copy whole entries to retain the edge tiles' palette and flip bits.
+    for (y = 0; y < DISPLAY_TILE_HEIGHT; y++)
+    {
+        rayquaza[y * 32 + 30] = rayquaza[y * 32 + 29];
+        rayquaza[y * 32 + 31] = rayquaza[y * 32];
+    }
+
+    // VOFS=-32 anchors the 240x160 scene at (8, 32). The last four map
+    // rows wrap above it; extend the lower edge into the unused rows too.
+    for (y = DISPLAY_TILE_HEIGHT; y < 32; y++)
+    {
+        s32 sourceY = y < 32 - (TITLE_SCREEN_HEIGHT - DISPLAY_HEIGHT) / TILE_HEIGHT
+                    ? DISPLAY_TILE_HEIGHT - 1 : 0;
+        for (x = 0; x < 32; x++)
+            rayquaza[y * 32 + x] = rayquaza[sourceY * 32 + x];
+    }
+
+    // The clouds already have a complete, scrolling 32x32 map.
+    gBattle_BG1_X = 0;
+    gBattle_BG1_Y = 0;
+}
+#endif
+
 void CB2_InitTitleScreen(void)
 {
     switch (gMain.state)
@@ -605,6 +656,9 @@ void CB2_InitTitleScreen(void)
         // bg1
         LZ77UnCompVram(sTitleScreenCloudsGfx, (void *)(BG_CHAR_ADDR(3)));
         LZ77UnCompVram(gTitleScreenCloudsTilemap, (void *)(BG_SCREEN_ADDR(27)));
+#if defined(PORT_BRIDGE) && !defined(CTR_GBA_STAGE)
+        PrepareTitleScreenTilemaps();
+#endif
         ScanlineEffect_Stop();
         ResetTasks();
         ResetSpriteData();
@@ -639,6 +693,13 @@ void CB2_InitTitleScreen(void)
         SetGpuReg(REG_OFFSET_BG2X_H, -1);
         SetGpuReg(REG_OFFSET_BG2Y_L, -32 * 256);
         SetGpuReg(REG_OFFSET_BG2Y_H, -1);
+#if defined(PORT_BRIDGE) && !defined(CTR_GBA_STAGE)
+        // Visible logo pixels span x=4..168 (center 86), not the 256px canvas.
+        SetGpuReg(REG_OFFSET_BG2HOFS, -(TITLE_SCREEN_WIDTH / 2 - 86));
+        SetGpuReg(REG_OFFSET_BG2VOFS, -32);
+        SetGpuReg(REG_OFFSET_BG0HOFS, -TITLE_CENTER_X_OFFSET);
+        SetGpuReg(REG_OFFSET_BG0VOFS, DISPLAY_HEIGHT - TITLE_SCREEN_HEIGHT);
+#endif
         SetGpuReg(REG_OFFSET_WIN0H, 0);
         SetGpuReg(REG_OFFSET_WIN0V, 0);
         SetGpuReg(REG_OFFSET_WIN1H, 0);
@@ -650,9 +711,9 @@ void CB2_InitTitleScreen(void)
         SetGpuReg(REG_OFFSET_BLDY, 12);
         SetGpuReg(REG_OFFSET_BG0CNT, BGCNT_PRIORITY(3) | BGCNT_CHARBASE(2) | BGCNT_SCREENBASE(26) | BGCNT_16COLOR | BGCNT_TXT256x256);
         SetGpuReg(REG_OFFSET_BG1CNT, BGCNT_PRIORITY(2) | BGCNT_CHARBASE(3) | BGCNT_SCREENBASE(27) | BGCNT_16COLOR | BGCNT_TXT256x256);
-        SetGpuReg(REG_OFFSET_BG2CNT, BGCNT_PRIORITY(1) | BGCNT_CHARBASE(0) | BGCNT_SCREENBASE(9) | BGCNT_256COLOR | BGCNT_AFF256x256);
+        SetGpuReg(REG_OFFSET_BG2CNT, BGCNT_PRIORITY(1) | BGCNT_CHARBASE(0) | BGCNT_SCREENBASE(9) | BGCNT_256COLOR | TITLE_LOGO_BG_SIZE);
         EnableInterrupts(INTR_FLAG_VBLANK);
-        SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_MODE_1
+        SetGpuReg(REG_OFFSET_DISPCNT, TITLE_BG_MODE
                                     | DISPCNT_OBJ_1D_MAP
                                     | DISPCNT_BG2_ON
                                     | DISPCNT_OBJ_ON
@@ -665,7 +726,7 @@ void CB2_InitTitleScreen(void)
         if (!UpdatePaletteFade())
         {
             StartPokemonLogoShine(SHINE_MODE_SINGLE_NO_BG_COLOR);
-            ScanlineEffect_InitWave(0, DISPLAY_HEIGHT, 4, 4, 0, SCANLINE_EFFECT_REG_BG1HOFS, TRUE);
+            ScanlineEffect_InitWave(0, TITLE_SCREEN_HEIGHT, 4, 4, 0, SCANLINE_EFFECT_REG_BG1HOFS, TRUE);
             SetMainCallback2(MainCB2);
         }
         break;
@@ -704,7 +765,7 @@ static void Task_TitleScreenPhase1(u8 taskId)
     {
         u8 spriteId;
 
-        SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_MODE_1 | DISPCNT_OBJ_1D_MAP | DISPCNT_BG2_ON | DISPCNT_OBJ_ON);
+        SetGpuReg(REG_OFFSET_DISPCNT, TITLE_BG_MODE | DISPCNT_OBJ_1D_MAP | DISPCNT_BG2_ON | DISPCNT_OBJ_ON);
         SetGpuReg(REG_OFFSET_WININ, 0);
         SetGpuReg(REG_OFFSET_WINOUT, 0);
         SetGpuReg(REG_OFFSET_BLDCNT, BLDCNT_TGT1_OBJ | BLDCNT_EFFECT_BLEND | BLDCNT_TGT2_ALL);
@@ -750,14 +811,14 @@ static void Task_TitleScreenPhase2(u8 taskId)
         SetGpuReg(REG_OFFSET_BLDCNT, BLDCNT_TGT1_BG1 | BLDCNT_EFFECT_BLEND | BLDCNT_TGT2_BG0 | BLDCNT_TGT2_BD);
         SetGpuReg(REG_OFFSET_BLDALPHA, BLDALPHA_BLEND(6, 15));
         SetGpuReg(REG_OFFSET_BLDY, 0);
-        SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_MODE_1
+        SetGpuReg(REG_OFFSET_DISPCNT, TITLE_BG_MODE
                                     | DISPCNT_OBJ_1D_MAP
                                     | DISPCNT_BG0_ON
                                     | DISPCNT_BG1_ON
                                     | DISPCNT_BG2_ON
                                     | DISPCNT_OBJ_ON);
-        CreatePressStartBanner(START_BANNER_X, 108);
-        CreateCopyrightBanner(START_BANNER_X, 148);
+        CreatePressStartBanner(START_BANNER_X, TITLE_SCREEN_HEIGHT - 52);
+        CreateCopyrightBanner(START_BANNER_X, TITLE_SCREEN_HEIGHT - 12);
         gTasks[taskId].tBg1Y = 0;
         gTasks[taskId].func = Task_TitleScreenPhase3;
     }
@@ -771,6 +832,9 @@ static void Task_TitleScreenPhase2(u8 taskId)
     yPos = gTasks[taskId].tBg2Y * 256;
     SetGpuReg(REG_OFFSET_BG2Y_L, yPos);
     SetGpuReg(REG_OFFSET_BG2Y_H, yPos / 0x10000);
+#if defined(PORT_BRIDGE) && !defined(CTR_GBA_STAGE)
+    SetGpuReg(REG_OFFSET_BG2VOFS, gTasks[taskId].tBg2Y);
+#endif
 
     gTasks[taskId].data[5] = 15; // Unused
     gTasks[taskId].data[6] = 6;  // Unused
@@ -806,6 +870,9 @@ static void Task_TitleScreenPhase3(u8 taskId)
     {
         SetGpuReg(REG_OFFSET_BG2Y_L, 0);
         SetGpuReg(REG_OFFSET_BG2Y_H, 0);
+#if defined(PORT_BRIDGE) && !defined(CTR_GBA_STAGE)
+        SetGpuReg(REG_OFFSET_BG2VOFS, 0);
+#endif
         if (++gTasks[taskId].tCounter & 1)
         {
             gTasks[taskId].tBg1Y++;
@@ -813,11 +880,13 @@ static void Task_TitleScreenPhase3(u8 taskId)
             gBattle_BG1_X = 0;
         }
         UpdateLegendaryMarkingColor(gTasks[taskId].tCounter);
+#ifndef PORTABLE
         if ((gMPlayInfo_BGM.status & 0xFFFF) == 0)
         {
             BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_WHITEALPHA);
             SetMainCallback2(CB2_GoToCopyrightScreen);
         }
+#endif
     }
 }
 
@@ -867,3 +936,11 @@ static void UpdateLegendaryMarkingColor(u8 frameNum)
         LoadPalette(&color, BG_PLTT_ID(14) + 15, sizeof(color));
    }
 }
+
+#ifdef PLATFORM_3DS
+// The background Rayquaza is drawn on while the title screen is up, else -1.
+int CtrTitleScreen_RayquazaBg(void)
+{
+    return gMain.callback2 == MainCB2 ? 0 : -1;
+}
+#endif

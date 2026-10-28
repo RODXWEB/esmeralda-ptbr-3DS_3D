@@ -109,9 +109,19 @@ void GetBerryCountString(u8 *dst, const u8 *berryName, u32 quantity)
     else
         berryString = gText_Berries;
 
+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH)
+    txtPtr = StringCopy(dst, berryString);
+    *txtPtr = CHAR_SPACE;
+    StringCopy(txtPtr + 1, berryName);
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
+    // Italian berry names already start with BACCA: one word, no space.
+    txtPtr = StringCopy(dst, berryString);
+    StringCopy(txtPtr, berryName);
+#else
     txtPtr = StringCopy(dst, berryName);
     *txtPtr = CHAR_SPACE;
     StringCopy(txtPtr + 1, berryString);
+#endif
 }
 
 bool8 IsBagPocketNonEmpty(u8 pocket)

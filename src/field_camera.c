@@ -12,11 +12,20 @@
 #include "sprite.h"
 #include "text.h"
 
+#ifdef PORT_BRIDGE
+#include "port_log.h"
+#include "port_platform.h"
+#endif
+
 EWRAM_DATA bool8 gUnusedBikeCameraAheadPanback = FALSE;
 
 struct FieldCameraOffset
 {
+#ifdef PORT_BRIDGE
+    u16 xPixelOffset;
+#else
     u8 xPixelOffset;
+#endif
     u8 yPixelOffset;
     u8 xTileOffset;
     u8 yTileOffset;
@@ -30,11 +39,40 @@ static void RedrawMapSliceWest(struct FieldCameraOffset *, const struct MapLayou
 static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *, s32, s32);
 static void DrawWholeMapViewInternal(int, int, const struct MapLayout *);
 static void DrawMetatileAt(const struct MapLayout *, u16, int, int);
+static void DrawMetatileAtTilemapPos(const struct MapLayout *, int, int, int, int);
 static void DrawMetatile(s32, const u16 *, u16);
 static void CameraPanningCB_PanAhead(void);
 
+#if defined(PLATFORM_3DS)
+// The view is shifted left by FIELD_VIEW_OFFSET_X to centre the player, so the
+// columns run from -(offset) to the right edge of the viewport, plus two
+// columns at each end: one for the half-metatile and one so the column a step
+// brings in is drawn before it can be seen, instead of flush with the edge,
+// which showed as a black line down the right side while walking. 58 columns
+// still fit in the 64-column ring buffer.
+#define FIELD_CAMERA_VIEW_LEFT (-4 - FIELD_VIEW_OFFSET_X / 8)
+#define FIELD_CAMERA_VIEW_RIGHT (4 + (DISPLAY_WIDTH - FIELD_VIEW_OFFSET_X) / 8)
+// The column a camera step brings in on each side. It has to be the last one
+// the view covers, or the columns past it keep whatever the previous map view
+// left there.
+#define FIELD_CAMERA_REDRAW_EDGE_X (FIELD_CAMERA_VIEW_RIGHT / 2 - 1)
+#define FIELD_CAMERA_REDRAW_EDGE_Y 15
+#define FIELD_CAMERA_TILEMAP_WIDTH 64
+#else
+#define FIELD_CAMERA_REDRAW_EDGE_X 14
+#define FIELD_CAMERA_REDRAW_EDGE_Y 14
+#define FIELD_CAMERA_TILEMAP_WIDTH 32
+#define FIELD_CAMERA_VIEW_LEFT 0
+#define FIELD_CAMERA_VIEW_RIGHT 32
+#endif
+
 static struct FieldCameraOffset sFieldCameraOffset;
 static s16 sHorizontalCameraPan;
+#if defined(PLATFORM_3DS)
+/* Vertical slice waiting for the half step, and how far is left of it. */
+static s8 sPendingVerticalSlice;
+static s8 sPendingVerticalPixels;
+#endif
 static s16 sVerticalCameraPan;
 static bool8 sBikeCameraPanFlag;
 static void (*sFieldCameraPanningCallback)(void);
@@ -55,14 +93,18 @@ static void ResetCameraOffset(struct FieldCameraOffset *cameraOffset)
 static void AddCameraTileOffset(struct FieldCameraOffset *cameraOffset, u32 xOffset, u32 yOffset)
 {
     cameraOffset->xTileOffset += xOffset;
-    cameraOffset->xTileOffset %= 32;
+    cameraOffset->xTileOffset %= FIELD_CAMERA_TILEMAP_WIDTH;
     cameraOffset->yTileOffset += yOffset;
     cameraOffset->yTileOffset %= 32;
 }
 
 static void AddCameraPixelOffset(struct FieldCameraOffset *cameraOffset, u32 xOffset, u32 yOffset)
 {
+#ifdef PORT_BRIDGE
+    cameraOffset->xPixelOffset = (cameraOffset->xPixelOffset + xOffset) & 0x1FF;
+#else
     cameraOffset->xPixelOffset += xOffset;
+#endif
     cameraOffset->yPixelOffset += yOffset;
 }
 
@@ -74,8 +116,10 @@ void ResetFieldCamera(void)
 void FieldUpdateBgTilemapScroll(void)
 {
     u32 r4, r5;
-    r5 = sFieldCameraOffset.xPixelOffset + sHorizontalCameraPan;
-    r4 = sVerticalCameraPan + sFieldCameraOffset.yPixelOffset + 8;
+    // Scrolling less shows the map further right and down, which is how the
+    // field view is centred on a viewport wider than a GBA screen.
+    r5 = sFieldCameraOffset.xPixelOffset + sHorizontalCameraPan - FIELD_VIEW_OFFSET_X;
+    r4 = sVerticalCameraPan + sFieldCameraOffset.yPixelOffset + 8 - FIELD_VIEW_OFFSET_Y;
 
     SetGpuReg(REG_OFFSET_BG1HOFS, r5);
     SetGpuReg(REG_OFFSET_BG1VOFS, r4);
@@ -87,36 +131,36 @@ void FieldUpdateBgTilemapScroll(void)
 
 void GetCameraOffsetWithPan(s16 *x, s16 *y)
 {
-    *x = sFieldCameraOffset.xPixelOffset + sHorizontalCameraPan;
-    *y = sFieldCameraOffset.yPixelOffset + sVerticalCameraPan + 8;
+    // The battle transition reproduces the field scroll, so it follows the
+    // same centring as FieldUpdateBgTilemapScroll.
+    *x = sFieldCameraOffset.xPixelOffset + sHorizontalCameraPan - FIELD_VIEW_OFFSET_X;
+    *y = sFieldCameraOffset.yPixelOffset + sVerticalCameraPan + 8 - FIELD_VIEW_OFFSET_Y;
 }
 
 void DrawWholeMapView(void)
 {
     DrawWholeMapViewInternal(gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y, gMapHeader.mapLayout);
     sFieldCameraOffset.copyBGToVRAM = TRUE;
+#if defined(PLATFORM_3DS)
+    // Every row is current now, so a slice still waiting would redraw one of
+    // them for a camera step that is already accounted for.
+    sPendingVerticalSlice = 0;
+#endif
 }
 
 static void DrawWholeMapViewInternal(int x, int y, const struct MapLayout *mapLayout)
 {
-    u8 i;
-    u8 j;
-    u32 r6;
-    u8 temp;
+    int i;
+    int j;
 
     for (i = 0; i < 32; i += 2)
     {
-        temp = sFieldCameraOffset.yTileOffset + i;
-        if (temp >= 32)
-            temp -= 32;
-        r6 = temp * 32;
-        for (j = 0; j < 32; j += 2)
-        {
-            temp = sFieldCameraOffset.xTileOffset + j;
-            if (temp >= 32)
-                temp -= 32;
-            DrawMetatileAt(mapLayout, r6 + temp, x + j / 2, y + i / 2);
-        }
+        for (j = FIELD_CAMERA_VIEW_LEFT; j < FIELD_CAMERA_VIEW_RIGHT; j += 2)
+            DrawMetatileAtTilemapPos(mapLayout,
+                                     sFieldCameraOffset.xTileOffset + j,
+                                     sFieldCameraOffset.yTileOffset + i,
+                                     x + j / 2,
+                                     y + i / 2);
     }
 }
 
@@ -128,77 +172,93 @@ static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffse
         RedrawMapSliceWest(cameraOffset, mapLayout);
     if (x < 0)
         RedrawMapSliceEast(cameraOffset, mapLayout);
+#if defined(PLATFORM_3DS)
+    // The row a vertical step brings in and the row it retires are the same
+    // ring slot: the tilemap holds 16 metatile rows, 256px, and the viewport
+    // takes 240 of them, so for the first half of the step that slot is still
+    // on screen at the opposite edge. Drawing it now would put the incoming
+    // row where the outgoing one still belongs, which is the bottom of the
+    // map appearing in the top strip. Both constraints meet at the half step,
+    // so the vertical slice waits for it. A 160px GBA screen has five spare
+    // rows and no such conflict, which is why the original draws it at once.
+    if (y != 0)
+        sPendingVerticalSlice = y > 0 ? 1 : -1, sPendingVerticalPixels = 8;
+#else
     if (y > 0)
         RedrawMapSliceNorth(cameraOffset, mapLayout);
     if (y < 0)
         RedrawMapSliceSouth(cameraOffset, mapLayout);
+#endif
     cameraOffset->copyBGToVRAM = TRUE;
 }
 
+#if defined(PLATFORM_3DS)
+// Draws the deferred vertical slice once the camera has travelled half a
+// metatile into the step, or right away if it stops before getting there.
+static void DrawPendingVerticalSlice(int movementSpeedY)
+{
+    if (!sPendingVerticalSlice)
+        return;
+    sPendingVerticalPixels -= movementSpeedY < 0 ? -movementSpeedY : movementSpeedY;
+    if (sPendingVerticalPixels > 0 && movementSpeedY != 0)
+        return;
+    if (sPendingVerticalSlice > 0)
+        RedrawMapSliceNorth(&sFieldCameraOffset, gMapHeader.mapLayout);
+    else
+        RedrawMapSliceSouth(&sFieldCameraOffset, gMapHeader.mapLayout);
+    sFieldCameraOffset.copyBGToVRAM = TRUE;
+    sPendingVerticalSlice = 0;
+}
+#endif
+
 static void RedrawMapSliceNorth(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
 {
-    u8 i;
-    u8 temp;
-    u32 r7;
+    int i;
 
-    temp = cameraOffset->yTileOffset + 28;
-    if (temp >= 32)
-        temp -= 32;
-    r7 = temp * 32;
-    for (i = 0; i < 32; i += 2)
-    {
-        temp = cameraOffset->xTileOffset + i;
-        if (temp >= 32)
-            temp -= 32;
-        DrawMetatileAt(mapLayout, r7 + temp, gSaveBlock1Ptr->pos.x + i / 2, gSaveBlock1Ptr->pos.y + 14);
-    }
+    for (i = FIELD_CAMERA_VIEW_LEFT; i < FIELD_CAMERA_VIEW_RIGHT; i += 2)
+        DrawMetatileAtTilemapPos(mapLayout,
+                                 cameraOffset->xTileOffset + i,
+                                 cameraOffset->yTileOffset + FIELD_CAMERA_REDRAW_EDGE_Y * 2,
+                                 gSaveBlock1Ptr->pos.x + i / 2,
+                                 gSaveBlock1Ptr->pos.y + FIELD_CAMERA_REDRAW_EDGE_Y);
 }
 
 static void RedrawMapSliceSouth(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
 {
-    u8 i;
-    u8 temp;
-    u32 r7 = cameraOffset->yTileOffset * 32;
+    int i;
 
-    for (i = 0; i < 32; i += 2)
-    {
-        temp = cameraOffset->xTileOffset + i;
-        if (temp >= 32)
-            temp -= 32;
-        DrawMetatileAt(mapLayout, r7 + temp, gSaveBlock1Ptr->pos.x + i / 2, gSaveBlock1Ptr->pos.y);
-    }
+    for (i = FIELD_CAMERA_VIEW_LEFT; i < FIELD_CAMERA_VIEW_RIGHT; i += 2)
+        DrawMetatileAtTilemapPos(mapLayout,
+                                 cameraOffset->xTileOffset + i,
+                                 cameraOffset->yTileOffset,
+                                 gSaveBlock1Ptr->pos.x + i / 2,
+                                 gSaveBlock1Ptr->pos.y);
 }
 
 static void RedrawMapSliceEast(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
 {
     u8 i;
-    u8 temp;
-    u32 r6 = cameraOffset->xTileOffset;
+    int r6 = cameraOffset->xTileOffset + FIELD_CAMERA_VIEW_LEFT;
 
     for (i = 0; i < 32; i += 2)
-    {
-        temp = cameraOffset->yTileOffset + i;
-        if (temp >= 32)
-            temp -= 32;
-        DrawMetatileAt(mapLayout, temp * 32 + r6, gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y + i / 2);
-    }
+        DrawMetatileAtTilemapPos(mapLayout,
+                                 r6,
+                                 cameraOffset->yTileOffset + i,
+                                 gSaveBlock1Ptr->pos.x + FIELD_CAMERA_VIEW_LEFT / 2,
+                                 gSaveBlock1Ptr->pos.y + i / 2);
 }
 
 static void RedrawMapSliceWest(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
 {
     u8 i;
-    u8 temp;
-    u8 r5 = cameraOffset->xTileOffset + 28;
+    u8 r5 = cameraOffset->xTileOffset + FIELD_CAMERA_REDRAW_EDGE_X * 2;
 
-    if (r5 >= 32)
-        r5 -= 32;
     for (i = 0; i < 32; i += 2)
-    {
-        temp = cameraOffset->yTileOffset + i;
-        if (temp >= 32)
-            temp -= 32;
-        DrawMetatileAt(mapLayout, temp * 32 + r5, gSaveBlock1Ptr->pos.x + 14, gSaveBlock1Ptr->pos.y + i / 2);
-    }
+        DrawMetatileAtTilemapPos(mapLayout,
+                                 r5,
+                                 cameraOffset->yTileOffset + i,
+                                 gSaveBlock1Ptr->pos.x + FIELD_CAMERA_REDRAW_EDGE_X,
+                                 gSaveBlock1Ptr->pos.y + i / 2);
 }
 
 void CurrentMapDrawMetatileAt(int x, int y)
@@ -225,11 +285,22 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
 
 static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x, int y)
 {
+#ifdef PORT_BRIDGE
+    u16 metatileId = MapGridGetMetatileIdForCameraAt(x, y);
+#else
     u16 metatileId = MapGridGetMetatileIdAt(x, y);
+#endif
     const u16 *metatiles;
+#ifdef PORT_BRIDGE
+    bool8 isPrimary;
+    u16 rawMetatileId = metatileId;
+#endif
 
     if (metatileId > NUM_METATILES_TOTAL)
         metatileId = 0;
+#ifdef PORT_BRIDGE
+    isPrimary = metatileId < NUM_METATILES_IN_PRIMARY;
+#endif
     if (metatileId < NUM_METATILES_IN_PRIMARY)
     {
         metatiles = mapLayout->primaryTileset->metatiles;
@@ -239,7 +310,48 @@ static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x,
         metatiles = mapLayout->secondaryTileset->metatiles;
         metatileId -= NUM_METATILES_IN_PRIMARY;
     }
+
+#ifdef PORT_BRIDGE
+    {
+        static bool8 sLoggedPrimaryMetatile;
+        const u16 *source = metatiles;
+
+        metatiles = Port_ResolveAssetPointer(metatiles);
+        if (!sLoggedPrimaryMetatile && isPrimary)
+        {
+            const u16 *tiles = metatiles + metatileId * NUM_TILES_PER_METATILE;
+
+            Port_SetGfxMetatileDebug(metatileId, metatiles != source,
+                                    tiles[0], tiles[1]);
+            PORT_LOG("Metatile P id=%03X src=%08lX dst=%08lX %04X/%04X\n",
+                    metatileId, (unsigned long)source, (unsigned long)metatiles,
+                    tiles[0], tiles[1]);
+            sLoggedPrimaryMetatile = TRUE;
+        }
+    }
+#endif
+
+#ifdef PORT_BRIDGE
+    // The id is already in hand; MapGridGetMetatileLayerTypeAt would look the
+    // same cell up again (twice, with its asset resolution) for every metatile.
+    DrawMetatile(UNPACK_LAYER_TYPE(GetMetatileAttributesById(rawMetatileId)),
+                 metatiles + metatileId * NUM_TILES_PER_METATILE, offset);
+#else
     DrawMetatile(MapGridGetMetatileLayerTypeAt(x, y), metatiles + metatileId * NUM_TILES_PER_METATILE, offset);
+#endif
+}
+
+static void DrawMetatileAtTilemapPos(const struct MapLayout *mapLayout, int tileX, int tileY, int mapX, int mapY)
+{
+    tileX &= FIELD_CAMERA_TILEMAP_WIDTH - 1;
+    tileY &= 31;
+
+#ifdef PORT_BRIDGE
+    if (tileX >= 32)
+        DrawMetatileAt(mapLayout, BG_SCREEN_SIZE / 2 + tileY * 32 + tileX - 32, mapX, mapY);
+    else
+#endif
+        DrawMetatileAt(mapLayout, tileY * 32 + tileX, mapX, mapY);
 }
 
 static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
@@ -313,11 +425,10 @@ static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x
 {
     x -= gSaveBlock1Ptr->pos.x;
     x *= 2;
-    if (x >= 32 || x < 0)
+    if (x >= FIELD_CAMERA_VIEW_RIGHT || x < FIELD_CAMERA_VIEW_LEFT)
         return -1;
     x = x + cameraOffset->xTileOffset;
-    if (x >= 32)
-        x -= 32;
+    x &= FIELD_CAMERA_TILEMAP_WIDTH - 1;
 
     y = (y - gSaveBlock1Ptr->pos.y) * 2;
     if (y >= 32 || y < 0)
@@ -326,6 +437,10 @@ static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x
     if (y >= 32)
         y -= 32;
 
+#ifdef PORT_BRIDGE
+    if (x >= 32)
+        return BG_SCREEN_SIZE / 2 + y * 32 + x - 32;
+#endif
     return y * 32 + x;
 }
 
@@ -400,9 +515,9 @@ void CameraUpdate(void)
     if (curMovementOffsetY != 0 && curMovementOffsetY == -movementSpeedY)
     {
         if (movementSpeedY > 0)
-            deltaX = 1;
+            deltaY = 1;
         else
-            deltaX = -1;
+            deltaY = -1;
     }
 
     gFieldCamera.x += movementSpeedX;
@@ -417,10 +532,34 @@ void CameraUpdate(void)
         RotatingGatePuzzleCameraUpdate(deltaX, deltaY);
         SetBerryTreesSeen();
         AddCameraTileOffset(&sFieldCameraOffset, deltaX * 2, deltaY * 2);
+#ifdef PORT_BRIDGE
+        // The saved GBA map view is smaller than the port viewport. A map
+        // connection can replace borders/tilesets anywhere in that viewport,
+        // so its old ring-buffer contents cannot be retained across maps.
+        if (gCamera.active)
+        {
+            Port_ProfileMark("camera-pre-draw");
+            DrawWholeMapView();
+            Port_ProfileMark("DrawWholeMapView");
+        }
+        else
+#endif
         RedrawMapSlicesForCameraUpdate(&sFieldCameraOffset, deltaX * 2, deltaY * 2);
     }
+#if defined(PLATFORM_3DS)
+    // At rest, a change of view (the 2D/voxel option, the voxel camera's
+    // pitch or zoom) brings in or lets go the people it reaches, as a step
+    // does.
+    else if (gFieldCamera.x == 0 && gFieldCamera.y == 0 && movementSpeedX == 0 && movementSpeedY == 0)
+    {
+        UpdateObjectEventsForViewChange();
+    }
+#endif
 
     AddCameraPixelOffset(&sFieldCameraOffset, movementSpeedX, movementSpeedY);
+#if defined(PLATFORM_3DS)
+    DrawPendingVerticalSlice(movementSpeedY);
+#endif
     gTotalCameraPixelOffsetX -= movementSpeedX;
     gTotalCameraPixelOffsetY -= movementSpeedY;
 }
@@ -458,8 +597,11 @@ void UpdateCameraPanning(void)
     if (sFieldCameraPanningCallback != NULL)
         sFieldCameraPanningCallback();
     //Update sprite offset of overworld objects
-    gSpriteCoordOffsetX = gTotalCameraPixelOffsetX - sHorizontalCameraPan;
-    gSpriteCoordOffsetY = gTotalCameraPixelOffsetY - sVerticalCameraPan - 8;
+    // Overworld sprites live in the same space as the map layers, so they take
+    // the same centring shift; otherwise the player would part company with
+    // the metatile it stands on.
+    gSpriteCoordOffsetX = gTotalCameraPixelOffsetX - sHorizontalCameraPan + FIELD_VIEW_OFFSET_X;
+    gSpriteCoordOffsetY = gTotalCameraPixelOffsetY - sVerticalCameraPan - 8 + FIELD_VIEW_OFFSET_Y;
 }
 
 static void CameraPanningCB_PanAhead(void)

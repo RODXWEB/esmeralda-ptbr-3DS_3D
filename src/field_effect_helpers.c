@@ -10,6 +10,12 @@
 #include "sound.h"
 #include "sprite.h"
 #include "trig.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+#ifdef PLATFORM_3DS
+#include "follower_mon.h"
+#endif
 #include "constants/field_effects.h"
 #include "constants/songs.h"
 
@@ -26,8 +32,8 @@ static void UpdateFeetInFlowingWaterFieldEffect(struct Sprite *);
 static void UpdateAshFieldEffect_Wait(struct Sprite *);
 static void UpdateAshFieldEffect_Show(struct Sprite *);
 static void UpdateAshFieldEffect_End(struct Sprite *);
-static void SynchronizeSurfAnim(struct ObjectEvent *, struct Sprite *);
-static void SynchronizeSurfPosition(struct ObjectEvent *, struct Sprite *);
+static void SynchroniseSurfAnim(struct ObjectEvent *, struct Sprite *);
+static void SynchroniseSurfPosition(struct ObjectEvent *, struct Sprite *);
 static void UpdateBobbingEffect(struct ObjectEvent *, struct Sprite *, struct Sprite *);
 static void SpriteCB_UnderwaterSurfBlob(struct Sprite *);
 static u32 ShowDisguiseFieldEffect(u8, u8, u8);
@@ -62,6 +68,12 @@ void SetUpReflection(struct ObjectEvent *objectEvent, struct Sprite *sprite, boo
     reflectionSprite->sReflectionObjEventLocalId = objectEvent->localId;
     reflectionSprite->sIsStillReflection = stillReflection;
     LoadObjectReflectionPalette(objectEvent, reflectionSprite);
+#ifdef PLATFORM_3DS
+    // A copy is not bound to the ext palette (CreateCopySpriteAt): the
+    // follower's reflection takes its own colours.
+    if (FollowerMon_IsFollower(objectEvent))
+        SetSpriteExtPalette(reflectionSprite, GetSpriteExtPalette(sprite));
+#endif
 
     if (!stillReflection)
         reflectionSprite->oam.affineMode = ST_OAM_AFFINE_NORMAL;
@@ -234,7 +246,26 @@ u32 FldEff_Shadow(void)
 {
     u8 objectEventId = GetObjectEventIdByLocalIdAndMap(gFieldEffectArguments[0], gFieldEffectArguments[1], gFieldEffectArguments[2]);
     const struct ObjectEventGraphicsInfo *graphicsInfo = GetObjectEventGraphicsInfo(gObjectEvents[objectEventId].graphicsId);
-    u8 spriteId = CreateSpriteAtEnd(gFieldEffectObjectTemplatePointers[sShadowEffectTemplateIds[graphicsInfo->shadowSize]], 0, 0, 148);
+    const struct SpriteTemplate *template = gFieldEffectObjectTemplatePointers[sShadowEffectTemplateIds[graphicsInfo->shadowSize]];
+    u8 spriteId;
+
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0426,
+                        gFieldEffectArguments[0],
+                        objectEventId,
+                        gObjectEvents[objectEventId].graphicsId,
+                        graphicsInfo->shadowSize | (graphicsInfo->height << 8));
+#endif
+
+    spriteId = CreateSpriteAtEnd(template, 0, 0, 148);
+
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0427,
+                        gFieldEffectArguments[0],
+                        objectEventId,
+                        spriteId,
+                        template->tileTag | (template->paletteTag << 16));
+#endif
     if (spriteId != MAX_SPRITES)
     {
         gSprites[spriteId].coordOffsetEnabled = TRUE;
@@ -249,6 +280,14 @@ u32 FldEff_Shadow(void)
 void UpdateShadowFieldEffect(struct Sprite *sprite)
 {
     u8 objectEventId;
+
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0428,
+                        sprite->sLocalId,
+                        sprite->sMapNum | (sprite->sMapGroup << 8),
+                        sprite->sYOffset,
+                        sprite->inUse | (sprite->animBeginning << 8));
+#endif
 
     if (TryGetObjectEventIdByLocalIdAndMap(sprite->sLocalId, sprite->sMapNum, sprite->sMapGroup, &objectEventId))
     {
@@ -1053,13 +1092,13 @@ void UpdateSurfBlobFieldEffect(struct Sprite *sprite)
 {
     struct ObjectEvent *playerObj = &gObjectEvents[sprite->sPlayerObjId];
     struct Sprite *playerSprite = &gSprites[playerObj->spriteId];
-    SynchronizeSurfAnim(playerObj, sprite);
-    SynchronizeSurfPosition(playerObj, sprite);
+    SynchroniseSurfAnim(playerObj, sprite);
+    SynchroniseSurfPosition(playerObj, sprite);
     UpdateBobbingEffect(playerObj, playerSprite, sprite);
     sprite->oam.priority = playerSprite->oam.priority;
 }
 
-static void SynchronizeSurfAnim(struct ObjectEvent *playerObj, struct Sprite *sprite)
+static void SynchroniseSurfAnim(struct ObjectEvent *playerObj, struct Sprite *sprite)
 {
     // Indexes into sAnimTable_SurfBlob
     u8 surfBlobDirectionAnims[] = {
@@ -1078,7 +1117,7 @@ static void SynchronizeSurfAnim(struct ObjectEvent *playerObj, struct Sprite *sp
         StartSpriteAnimIfDifferent(sprite, surfBlobDirectionAnims[playerObj->movementDirection]);
 }
 
-void SynchronizeSurfPosition(struct ObjectEvent *playerObj, struct Sprite *sprite)
+void SynchroniseSurfPosition(struct ObjectEvent *playerObj, struct Sprite *sprite)
 {
     u8 i;
     s16 x = playerObj->currentCoords.x;

@@ -5,41 +5,41 @@
 // for now.
 void *const gMPlayJumpTableTemplate[] =
 {
-    ply_fine,
-    ply_goto,
-    ply_patt,
-    ply_pend,
-    ply_rept,
-    ply_fine,
-    ply_fine,
-    ply_fine,
-    ply_fine,
-    ply_prio,
-    ply_tempo,
-    ply_keysh,
-    ply_voice,
-    ply_vol,
-    ply_pan,
-    ply_bend,
-    ply_bendr,
-    ply_lfos,
-    ply_lfodl,
-    ply_mod,
-    ply_modt,
-    ply_fine,
-    ply_fine,
-    ply_tune,
-    ply_fine,
-    ply_fine,
-    ply_fine,
-    ply_port,
-    ply_fine,
-    ply_endtie,
+    MP2K_event_fine,
+    MP2K_event_goto,
+    MP2K_event_patt,
+    MP2K_event_pend,
+    MP2K_event_rept,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_prio,
+    MP2K_event_tempo,
+    MP2K_event_keysh,
+    MP2K_event_voice,
+    MP2K_event_vol,
+    MP2K_event_pan,
+    MP2K_event_bend,
+    MP2K_event_bendr,
+    MP2K_event_lfos,
+    MP2K_event_lfodl,
+    MP2K_event_mod,
+    MP2K_event_modt,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_tune,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_port,
+    MP2K_event_fine,
+    MP2K_event_endtie,
     SampleFreqSet,
     TrackStop,
     FadeOutBody,
     TrkVolPitSet,
-    RealClearChain,
+    MP2KClearChain,
     SoundMainBTM,
 };
 
@@ -112,7 +112,7 @@ const u16 gPcmSamplesPerVBlankTable[] =
     528,
     608,
     672,
-    704,
+    701,
 };
 
 const u8 gCgbScaleTable[] =
@@ -251,7 +251,6 @@ const u8 gClockTable[] =
 #define xRELE  0x07
 #define xIECV  0x08
 #define xIECL  0x09
-#define xWAIT  0x0c
 
 #define EOT    0xce
 #define TIE    0xcf
@@ -283,8 +282,8 @@ const struct PokemonCrySong gPokemonCrySongTemplate =
     .tieCmd = TIE,
     .tieKeyValue = 60, // default is Cn3
     .tieVelocityValue = 127,
-    .xwaitCmd = {XCMD, xWAIT},
-    .length = 60, // frames to wait
+    .unkCmd0C = {XCMD, 0x0C},
+    .unkCmd0CParam = 60,
     .end = {EOT, FINE}
 };
 
@@ -302,6 +301,6 @@ const XcmdFunc gXcmdTable[] =
     ply_xiecl,
     ply_xleng,
     ply_xswee,
-    ply_xwait,
+    ply_xcmd_0C,
     ply_xcmd_0D,
 };

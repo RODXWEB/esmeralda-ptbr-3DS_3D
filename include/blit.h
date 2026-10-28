@@ -8,6 +8,8 @@ struct Bitmap
     u32 height:16;
 };
 
+// Pass the original asset base, not an interior pointer; offset is in bytes.
+const u8 *ResolveBitmapSource(const u8 *base, u32 offset);
 void BlitBitmapRect4BitWithoutColorKey(const struct Bitmap *src, struct Bitmap *dst, u16 srcX, u16 srcY, u16 dstX, u16 dstY, u16 width, u16 height);
 void BlitBitmapRect4Bit(const struct Bitmap *src, struct Bitmap *dst, u16 srcX, u16 srcY, u16 dstX, u16 dstY, u16 width, u16 height, u8 colorKey);
 void FillBitmapRect4Bit(struct Bitmap *surface, u16 x, u16 y, u16 width, u16 height, u8 fillValue);

@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "main.h"
 #include "bike.h"
 #include "event_data.h"
@@ -651,6 +654,10 @@ static void PlayerNotOnBikeMoving(u8 direction, u16 heldKeys)
         return;
     }
 
+#ifdef PLATFORM_3DS
+    if (CtrPlayer_RunAlways())
+        heldKeys ^= B_BUTTON;
+#endif
     if (!(gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_UNDERWATER) && (heldKeys & B_BUTTON) && FlagGet(FLAG_SYS_B_DASH)
      && IsRunningDisallowed(gObjectEvents[gPlayerAvatar.objectEventId].currentMetatileBehavior) == 0)
     {
@@ -1187,6 +1194,13 @@ u8 GetPlayerMovementDirection(void)
 
 u8 PlayerGetElevation(void)
 {
+#ifdef PORT_BRIDGE
+    struct ObjectEvent *playerObjEvent = &gObjectEvents[gPlayerAvatar.objectEventId];
+    u8 mapElevation = MapGridGetElevationAt(playerObjEvent->currentCoords.x, playerObjEvent->currentCoords.y);
+
+    if (mapElevation != 0 && mapElevation != 15)
+        return mapElevation;
+#endif
     return gObjectEvents[gPlayerAvatar.objectEventId].previousElevation;
 }
 
@@ -1302,6 +1316,12 @@ bool8 PartyHasMonWithSurf(void)
                 break;
             if (MonKnowsMove(&gPlayerParty[i], MOVE_SURF))
                 return TRUE;
+#ifdef PLATFORM_3DS
+            // Field HMs without the move: any Pokemon but an egg (the badge
+            // is checked by the caller).
+            if (CtrExtras_Get("field_hms") && !GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG))
+                return TRUE;
+#endif
         }
     }
     return FALSE;
@@ -1379,11 +1399,20 @@ void InitPlayerAvatar(s16 x, s16 y, u8 direction, u8 gender)
     struct ObjectEventTemplate playerObjEventTemplate;
     u8 objectEventId;
     struct ObjectEvent *objectEvent;
+#ifdef PORT_BRIDGE
+    u8 mapElevation;
+#endif
 
     playerObjEventTemplate.localId = LOCALID_PLAYER;
     playerObjEventTemplate.graphicsId = GetPlayerAvatarGraphicsIdByStateIdAndGender(PLAYER_AVATAR_STATE_NORMAL, gender);
     playerObjEventTemplate.x = x - MAP_OFFSET;
     playerObjEventTemplate.y = y - MAP_OFFSET;
+#ifdef PORT_BRIDGE
+    mapElevation = MapGridGetElevationAt(x, y);
+    if (mapElevation != 0 && mapElevation != 15)
+        playerObjEventTemplate.elevation = mapElevation;
+    else
+#endif
     playerObjEventTemplate.elevation = 0;
     playerObjEventTemplate.movementType = MOVEMENT_TYPE_PLAYER;
     playerObjEventTemplate.movementRangeX = 0;

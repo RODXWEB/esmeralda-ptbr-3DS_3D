@@ -17,5 +17,6 @@ void *Alloc(u32 size);
 void *AllocZeroed(u32 size);
 void Free(void *pointer);
 void InitHeap(void *heapStart, u32 heapSize);
+bool32 CheckHeap(void);
 
 #endif // GUARD_ALLOC_H

@@ -6,6 +6,18 @@
 #include "task.h"
 #include "battle_transition.h"
 #include "fieldmap.h"
+#ifdef PLATFORM_3DS
+#include "3ds_video.h"
+#endif
+
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+
+// Largest simultaneous updates: 30 primary tiles and 96 secondary tiles.
+// This frame-local storage survives game-heap resets without growing a cache.
+static EWRAM_DATA u16 sTilesetAnimData[0x800] = {0};
+static u16 sTilesetAnimDataSize;
+#endif
 
 static EWRAM_DATA struct {
     const u16 *src;
@@ -547,13 +559,29 @@ static const u16 *const sTilesetAnims_BattleDomeFloorLightPals[] = {
 static void ResetTilesetAnimBuffer(void)
 {
     sTilesetDMA3TransferBufferSize = 0;
+#ifdef PORT_BRIDGE
+    sTilesetAnimDataSize = 0;
+#endif
     CpuFill32(0, sTilesetDMA3TransferBuffer, sizeof sTilesetDMA3TransferBuffer);
 }
 
 static void AppendTilesetAnimToBuffer(const u16 *src, u16 *dest, u16 size)
 {
-    if (sTilesetDMA3TransferBufferSize < 20)
+    if (sTilesetDMA3TransferBufferSize < ARRAY_COUNT(sTilesetDMA3TransferBuffer))
     {
+#ifdef PORT_BRIDGE
+        if (Port_IsAssetStub(src))
+        {
+            void *data = (u8 *)sTilesetAnimData + sTilesetAnimDataSize;
+
+            // Do I/O before VBlank and never enqueue a stub or a partial read.
+            if (size > sizeof(sTilesetAnimData) - sTilesetAnimDataSize
+             || !Port_LoadAssetPointerToBufferSized(src, data, size))
+                return;
+            src = data;
+            sTilesetAnimDataSize += size;
+        }
+#endif
         sTilesetDMA3TransferBuffer[sTilesetDMA3TransferBufferSize].src = src;
         sTilesetDMA3TransferBuffer[sTilesetDMA3TransferBufferSize].dest = dest;
         sTilesetDMA3TransferBuffer[sTilesetDMA3TransferBufferSize].size = size;
@@ -566,9 +594,21 @@ void TransferTilesetAnimsBuffer(void)
     int i;
 
     for (i = 0; i < sTilesetDMA3TransferBufferSize; i ++)
+#ifdef PORT_BRIDGE
+        memcpy(sTilesetDMA3TransferBuffer[i].dest, sTilesetDMA3TransferBuffer[i].src, sTilesetDMA3TransferBuffer[i].size);
+#else
         DmaCopy16(3, sTilesetDMA3TransferBuffer[i].src, sTilesetDMA3TransferBuffer[i].dest, sTilesetDMA3TransferBuffer[i].size);
+#endif
 
+#ifdef PLATFORM_3DS
+    for (i = 0; i < sTilesetDMA3TransferBufferSize; ++i)
+        CtrVideo_NotifyTilesetAnimWrite(sTilesetDMA3TransferBuffer[i].dest,
+                                        sTilesetDMA3TransferBuffer[i].size);
+#endif
     sTilesetDMA3TransferBufferSize = 0;
+#ifdef PORT_BRIDGE
+    sTilesetAnimDataSize = 0;
+#endif
 }
 
 void InitTilesetAnimations(void)
@@ -580,6 +620,9 @@ void InitTilesetAnimations(void)
 
 void InitSecondaryTilesetAnimation(void)
 {
+#ifdef PORT_BRIDGE
+    ResetTilesetAnimBuffer();
+#endif
     _InitSecondaryTilesetAnimation();
 }
 

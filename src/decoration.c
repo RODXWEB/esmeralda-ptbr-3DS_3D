@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "malloc.h"
 #include "decompress.h"
 #include "decoration.h"
@@ -42,6 +45,16 @@
 #define PLACE_DECORATION_SELECTOR_TAG 0xbe5
 #define PLACE_DECORATION_PLAYER_TAG   0x008
 #define NUM_DECORATION_FLAGS (FLAG_DECORATION_14 - FLAG_DECORATION_1 + 1)
+
+#ifdef PORT_BRIDGE
+// The secret base tiles and metatiles are INCBIN stubs here and are resolved
+// first, as field_camera.c does; indexed directly, the decorations read the stubs.
+#define SECRET_BASE_TILES     ((const u32 *)Port_ResolveAssetPointer(gTilesetPointer_SecretBase->tiles))
+#define SECRET_BASE_METATILES ((const u16 *)Port_ResolveAssetPointer(gTilesetPointer_SecretBaseRedCave->metatiles))
+#else
+#define SECRET_BASE_TILES     (gTilesetPointer_SecretBase->tiles)
+#define SECRET_BASE_METATILES (gTilesetPointer_SecretBaseRedCave->metatiles)
+#endif
 
 #define tCursorX data[0]
 #define tCursorY data[1]
@@ -1945,7 +1958,7 @@ static void CopyTile(u8 *dest, u16 tile)
     if (tile != 0)
         tile &= 0x03FF;
 
-    CpuFastCopy(&gTilesetPointer_SecretBase->tiles[tile * TILE_SIZE_4BPP / sizeof(u32)], buffer, TILE_SIZE_4BPP);
+    CpuFastCopy(&SECRET_BASE_TILES[tile * TILE_SIZE_4BPP / sizeof(u32)], buffer, TILE_SIZE_4BPP);
     switch (mode)
     {
     case 0:
@@ -1987,7 +2000,7 @@ static void SetDecorSelectionBoxTiles(struct PlaceDecorationGraphicsDataBuffer *
 
 static u16 GetMetatile(u16 tile)
 {
-    return gTilesetPointer_SecretBaseRedCave->metatiles[tile] & 0xFFF;
+    return SECRET_BASE_METATILES[tile] & 0xFFF;
 }
 
 static void SetDecorSelectionMetatiles(struct PlaceDecorationGraphicsDataBuffer *data)
@@ -2058,7 +2071,7 @@ static u8 gpu_pal_decompress_alloc_tag_and_upload(struct PlaceDecorationGraphics
     SetDecorSelectionMetatiles(data);
     SetDecorSelectionBoxOamAttributes(data->decoration->shape);
     SetDecorSelectionBoxTiles(data);
-    CopyPalette(data->palette, gTilesetPointer_SecretBaseRedCave->metatiles[(data->decoration->tiles[0] * NUM_TILES_PER_METATILE) + 7] >> 12);
+    CopyPalette(data->palette, SECRET_BASE_METATILES[(data->decoration->tiles[0] * NUM_TILES_PER_METATILE) + 7] >> 12);
     LoadSpritePalette(&sSpritePal_PlaceDecoration);
     return CreateSprite(&sDecorationSelectorSpriteTemplate, 0, 0, 0);
 }
@@ -2114,7 +2127,7 @@ static u8 AddDecorationIconObjectFromObjectEvent(u16 tilesTag, u16 paletteTag, u
         SetDecorSelectionMetatiles(&sPlaceDecorationGraphicsDataBuffer);
         SetDecorSelectionBoxOamAttributes(sPlaceDecorationGraphicsDataBuffer.decoration->shape);
         SetDecorSelectionBoxTiles(&sPlaceDecorationGraphicsDataBuffer);
-        CopyPalette(sPlaceDecorationGraphicsDataBuffer.palette, gTilesetPointer_SecretBaseRedCave->metatiles[(sPlaceDecorationGraphicsDataBuffer.decoration->tiles[0] * NUM_TILES_PER_METATILE) + 7] >> 12);
+        CopyPalette(sPlaceDecorationGraphicsDataBuffer.palette, SECRET_BASE_METATILES[(sPlaceDecorationGraphicsDataBuffer.decoration->tiles[0] * NUM_TILES_PER_METATILE) + 7] >> 12);
         sheet.data = sPlaceDecorationGraphicsDataBuffer.image;
         sheet.size = sDecorShapeSizes[sPlaceDecorationGraphicsDataBuffer.decoration->shape] * TILE_SIZE_4BPP;
         sheet.tag = tilesTag;
@@ -2236,6 +2249,11 @@ static void ClearRearrangementNonSprites(void)
     int posX;
     int posY;
     u8 perm;
+    const u16 *map = gMapHeader.mapLayout->map;
+
+#ifdef PORT_BRIDGE
+    map = Port_ResolveAssetPointer(map);
+#endif
 
     for (i = 0; i < sCurDecorSelectedInRearrangement; i++)
     {
@@ -2248,7 +2266,7 @@ static void ClearRearrangementNonSprites(void)
             {
                 for (x = 0; x < sDecorRearrangementDataBuffer[i].width; x++)
                 {
-                    MapGridSetMetatileEntryAt(posX + MAP_OFFSET + x, posY + MAP_OFFSET - y, gMapHeader.mapLayout->map[posX + x + gMapHeader.mapLayout->width * (posY - y)] | 0x3000);
+                    MapGridSetMetatileEntryAt(posX + MAP_OFFSET + x, posY + MAP_OFFSET - y, map[posX + x + gMapHeader.mapLayout->width * (posY - y)] | 0x3000);
                 }
             }
 

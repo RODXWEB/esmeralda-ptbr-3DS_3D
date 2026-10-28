@@ -160,9 +160,18 @@ void CreateYesNoMenuWithCallbacks(u8 taskId, const struct WindowTemplate *templa
     gTasks[taskId].func = Task_CallYesOrNoCallback;
 }
 
+#ifdef PLATFORM_3DS
+// menu.c: YES or NO tapped on the 3DS bottom screen, where the bag is shown.
+s8 CtrMenu_YesNoInput(void);
+#endif
+
 static void Task_CallYesOrNoCallback(u8 taskId)
 {
+#ifdef PLATFORM_3DS
+    switch (CtrMenu_YesNoInput())
+#else
     switch (Menu_ProcessInputNoWrapClearOnChoose())
+#endif
     {
     case 0:
         PlaySE(SE_SELECT);

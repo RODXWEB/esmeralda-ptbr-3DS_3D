@@ -1,4 +1,8 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#include "3ds_daynight.h"
+#endif
 #include "overworld.h"
 #include "battle_pyramid.h"
 #include "battle_setup.h"
@@ -27,6 +31,7 @@
 #include "link.h"
 #include "link_rfu.h"
 #include "load_save.h"
+#include "malloc.h"
 #include "main.h"
 #include "malloc.h"
 #include "m4a.h"
@@ -66,6 +71,15 @@
 #include "constants/songs.h"
 #include "constants/trainer_hill.h"
 #include "constants/weather.h"
+
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+#ifdef PORT_BRIDGE
+#define PORT_PROF(label) Port_ProfileMark(label)
+#else
+#define PORT_PROF(label) ((void)0)
+#endif
 
 struct CableClubPlayer
 {
@@ -194,7 +208,7 @@ EWRAM_DATA struct WarpData gLastUsedWarp = {0};
 EWRAM_DATA static struct WarpData sWarpDestination = {0};  // new warp position
 EWRAM_DATA static struct WarpData sFixedDiveWarp = {0};
 EWRAM_DATA static struct WarpData sFixedHoleWarp = {0};
-EWRAM_DATA static mapsec_u16_t sLastMapSectionId = 0;
+EWRAM_DATA static u16 sLastMapSectionId = 0;
 EWRAM_DATA static struct InitialPlayerAvatarState sInitialPlayerAvatarState = {0};
 EWRAM_DATA static u16 sAmbientCrySpecies = 0;
 EWRAM_DATA static bool8 sIsAmbientCryWaterMon = FALSE;
@@ -277,8 +291,13 @@ static const struct BgTemplate sOverworldBgTemplates[] =
     {
         .bg = 1,
         .charBaseIndex = 0,
+#ifdef PORT_BRIDGE
+        .mapBaseIndex = 25,
+        .screenSize = 1,
+#else
         .mapBaseIndex = 29,
         .screenSize = 0,
+#endif
         .paletteMode = 0,
         .priority = 1,
         .baseTile = 0
@@ -286,8 +305,13 @@ static const struct BgTemplate sOverworldBgTemplates[] =
     {
         .bg = 2,
         .charBaseIndex = 0,
+#ifdef PORT_BRIDGE
+        .mapBaseIndex = 27,
+        .screenSize = 1,
+#else
         .mapBaseIndex = 28,
         .screenSize = 0,
+#endif
         .paletteMode = 0,
         .priority = 2,
         .baseTile = 0
@@ -295,8 +319,13 @@ static const struct BgTemplate sOverworldBgTemplates[] =
     {
         .bg = 3,
         .charBaseIndex = 0,
+#ifdef PORT_BRIDGE
+        .mapBaseIndex = 29,
+        .screenSize = 1,
+#else
         .mapBaseIndex = 30,
         .screenSize = 0,
+#endif
         .paletteMode = 0,
         .priority = 3,
         .baseTile = 0
@@ -483,8 +512,14 @@ void LoadSaveblockObjEventScripts(void)
     struct ObjectEventTemplate *savObjTemplates = gSaveBlock1Ptr->objectEventTemplates;
     s32 i;
 
-    for (i = 0; i < OBJECT_EVENT_TEMPLATES_COUNT; i++)
-        savObjTemplates[i].script = mapHeaderObjTemplates[i].script;
+#ifdef UBFIX
+    if (mapHeaderObjTemplates != NULL &&
+        savObjTemplates != NULL)
+#endif
+    {
+        for (i = 0; i < OBJECT_EVENT_TEMPLATES_COUNT; i++)
+            savObjTemplates[i].script = mapHeaderObjTemplates[i].script;
+    }
 }
 
 void SetObjEventTemplateCoords(u8 localId, s16 x, s16 y)
@@ -533,7 +568,19 @@ const struct MapLayout *GetMapLayout(void)
 {
     u16 mapLayoutId = gSaveBlock1Ptr->mapLayoutId;
     if (mapLayoutId)
+    {
+#ifdef PORT_BRIDGE
+        const struct MapLayout *layout = Port_GetMapLayoutById(mapLayoutId);
+        Port_SetAssetDebugEx(0x0320,
+                            mapLayoutId,
+                            layout != NULL ? (u16)layout->width : 0,
+                            layout != NULL ? (u16)layout->height : 0,
+                            layout != NULL ? (u16)((uintptr_t)layout & 0xFFFF) : 0);
+        return layout;
+#else
         return gMapLayouts[mapLayoutId - 1];
+#endif
+    }
     return NULL;
 }
 
@@ -578,7 +625,11 @@ static bool32 IsDummyWarp(struct WarpData *warp)
 
 struct MapHeader const *const Overworld_GetMapHeaderByGroupAndId(u16 mapGroup, u16 mapNum)
 {
+#ifdef PORT_BRIDGE
+    return Port_GetMapHeaderByGroupAndId(mapGroup, mapNum);
+#else
     return gMapGroups[mapGroup][mapNum];
+#endif
 }
 
 struct MapHeader const *const GetDestinationWarpMapHeader(void)
@@ -590,8 +641,22 @@ static void LoadCurrentMapData(void)
 {
     sLastMapSectionId = gMapHeader.regionMapSectionId;
     gMapHeader = *Overworld_GetMapHeaderByGroupAndId(gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum);
+#ifdef PORT_BRIDGE
+    Port_SetAssetDebugEx(0x0321,
+                        gSaveBlock1Ptr->location.mapGroup | (gSaveBlock1Ptr->location.mapNum << 8),
+                        gMapHeader.mapLayoutId,
+                        (u16)((uintptr_t)gMapHeader.mapLayout & 0xFFFF),
+                        CheckHeap());
+#endif
     gSaveBlock1Ptr->mapLayoutId = gMapHeader.mapLayoutId;
     gMapHeader.mapLayout = GetMapLayout();
+#ifdef PORT_BRIDGE
+    Port_SetAssetDebugEx(0x0322,
+                        gSaveBlock1Ptr->mapLayoutId,
+                        gMapHeader.mapLayout != NULL ? (u16)gMapHeader.mapLayout->width : 0,
+                        gMapHeader.mapLayout != NULL ? (u16)gMapHeader.mapLayout->height : 0,
+                        gMapHeader.mapLayout != NULL ? (u16)((uintptr_t)gMapHeader.mapLayout->border & 0xFFFF) : 0);
+#endif
 }
 
 static void LoadSaveblockMapHeader(void)
@@ -621,6 +686,14 @@ static void SetPlayerCoordsFromWarp(void)
         gSaveBlock1Ptr->pos.x = gMapHeader.mapLayout->width / 2;
         gSaveBlock1Ptr->pos.y = gMapHeader.mapLayout->height / 2;
     }
+
+#ifdef PORT_BRIDGE
+    Port_SetAssetDebugEx(0x0323,
+                        gSaveBlock1Ptr->location.warpId & 0xFF,
+                        gSaveBlock1Ptr->pos.x,
+                        gSaveBlock1Ptr->pos.y,
+                        CheckHeap());
+#endif
 }
 
 void WarpIntoMap(void)
@@ -739,10 +812,13 @@ void SetContinueGameWarpToDynamicWarp(int unused)
 
 const struct MapConnection *GetMapConnection(u8 dir)
 {
+#ifdef UBFIX
+    if (gMapHeader.connections == NULL)
+        return NULL;
+#endif
     s32 i;
     s32 count = gMapHeader.connections->count;
     const struct MapConnection *connection = gMapHeader.connections->connections;
-
     if (connection == NULL)
         return NULL;
 
@@ -786,38 +862,62 @@ void LoadMapFromCameraTransition(u8 mapGroup, u8 mapNum)
     s32 paletteIndex;
 
     SetWarpDestination(mapGroup, mapNum, WARP_ID_NONE, -1, -1);
+    PORT_PROF("SetWarpDestination");
 
     // Dont transition map music between BF Outside West/East
     if (gMapHeader.regionMapSectionId != MAPSEC_BATTLE_FRONTIER)
         TransitionMapMusic();
 
     ApplyCurrentWarp();
+    PORT_PROF("ApplyCurrentWarp");
     LoadCurrentMapData();
+    PORT_PROF("LoadCurrentMapData");
     LoadObjEventTemplatesFromHeader();
+    PORT_PROF("LoadObjEventTemplatesFromHeader");
     TrySetMapSaveWarpStatus();
+    PORT_PROF("TrySetMapSaveWarpStatus");
     ClearTempFieldEventData();
+    PORT_PROF("ClearTempFieldEventData");
     ResetCyclingRoadChallengeData();
+    PORT_PROF("ResetCyclingRoadChallengeData");
     RestartWildEncounterImmunitySteps();
+    PORT_PROF("RestartWildEncounterImmunitySteps");
     TryUpdateRandomTrainerRematches(mapGroup, mapNum);
+    PORT_PROF("TryUpdateRandomTrainerRematches");
     DoTimeBasedEvents();
+    PORT_PROF("DoTimeBasedEvents");
     SetSavedWeatherFromCurrMapHeader();
+    PORT_PROF("SetSavedWeatherFromCurrMapHeader");
     ChooseAmbientCrySpecies();
+    PORT_PROF("ChooseAmbientCrySpecies");
     SetDefaultFlashLevel();
+    PORT_PROF("SetDefaultFlashLevel");
     Overworld_ClearSavedMusic();
+    PORT_PROF("Overworld_ClearSavedMusic");
     RunOnTransitionMapScript();
+    PORT_PROF("RunOnTransitionMapScript");
     InitMap();
+    PORT_PROF("InitMap");
     CopySecondaryTilesetToVramUsingHeap(gMapHeader.mapLayout);
+    PORT_PROF("CopySecondaryTilesetToVramUsingHeap");
     LoadSecondaryTilesetPalette(gMapHeader.mapLayout);
+    PORT_PROF("LoadSecondaryTilesetPalette");
 
     for (paletteIndex = NUM_PALS_IN_PRIMARY; paletteIndex < NUM_PALS_TOTAL; paletteIndex++)
         ApplyWeatherColorMapToPal(paletteIndex);
 
     InitSecondaryTilesetAnimation();
+    PORT_PROF("InitSecondaryTilesetAnimation");
     UpdateLocationHistoryForRoamer();
+    PORT_PROF("UpdateLocationHistoryForRoamer");
     RoamerMove();
+    PORT_PROF("RoamerMove");
     DoCurrentWeather();
+    PORT_PROF("DoCurrentWeather");
     ResetFieldTasksArgs();
+    PORT_PROF("ResetFieldTasksArgs");
     RunOnResumeMapScript();
+    PORT_PROF("RunOnResumeMapScript");
 
     if (gMapHeader.regionMapSectionId != MAPSEC_BATTLE_FRONTIER
      || gMapHeader.regionMapSectionId != sLastMapSectionId)
@@ -902,8 +1002,26 @@ static struct InitialPlayerAvatarState *GetInitialPlayerAvatarState(void)
     u8 mapType = GetCurrentMapType();
     u16 metatileBehavior = GetCenterScreenMetatileBehavior();
     u8 transitionFlags = GetAdjustedInitialTransitionFlags(&sInitialPlayerAvatarState, metatileBehavior, mapType);
+
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x021B,
+                        mapType,
+                        metatileBehavior,
+                        transitionFlags,
+                        CheckHeap());
+#endif
+
     playerStruct.transitionFlags = transitionFlags;
     playerStruct.direction = GetAdjustedInitialDirection(&sInitialPlayerAvatarState, transitionFlags, metatileBehavior, mapType);
+
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x021C,
+                        playerStruct.direction,
+                        playerStruct.transitionFlags,
+                        sInitialPlayerAvatarState.direction,
+                        sInitialPlayerAvatarState.transitionFlags);
+#endif
+
     sInitialPlayerAvatarState = playerStruct;
     return &sInitialPlayerAvatarState;
 }
@@ -953,6 +1071,13 @@ static u8 GetAdjustedInitialDirection(struct InitialPlayerAvatarState *playerStr
 
 static u16 GetCenterScreenMetatileBehavior(void)
 {
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x021D,
+                        gSaveBlock1Ptr->pos.x + MAP_OFFSET,
+                        gSaveBlock1Ptr->pos.y + MAP_OFFSET,
+                        gSaveBlock1Ptr->mapLayoutId,
+                        CheckHeap());
+#endif
     return MapGridGetMetatileBehaviorAt(gSaveBlock1Ptr->pos.x + MAP_OFFSET, gSaveBlock1Ptr->pos.y + MAP_OFFSET);
 }
 
@@ -1040,7 +1165,7 @@ static bool16 ShouldLegendaryMusicPlayAtLocation(struct WarpData *warp)
     return FALSE;
 }
 
-static bool16 NoMusicInSootopolisWithLegendaries(struct WarpData *warp)
+static bool16 NoMusicInSotopolisWithLegendaries(struct WarpData *warp)
 {
     if (VarGet(VAR_SKY_PILLAR_STATE) != 1)
         return FALSE;
@@ -1065,7 +1190,7 @@ static bool16 IsInfiltratedWeatherInstitute(struct WarpData *warp)
         return FALSE;
 }
 
-static bool16 IsInfiltratedSpaceCenter(struct WarpData *warp)
+static bool16 IsInflitratedSpaceCenter(struct WarpData *warp)
 {
     if (VarGet(VAR_MOSSDEEP_CITY_STATE) == 0)
         return FALSE;
@@ -1081,11 +1206,11 @@ static bool16 IsInfiltratedSpaceCenter(struct WarpData *warp)
 
 u16 GetLocationMusic(struct WarpData *warp)
 {
-    if (NoMusicInSootopolisWithLegendaries(warp) == TRUE)
+    if (NoMusicInSotopolisWithLegendaries(warp) == TRUE)
         return MUS_NONE;
     else if (ShouldLegendaryMusicPlayAtLocation(warp) == TRUE)
         return MUS_ABNORMAL_WEATHER;
-    else if (IsInfiltratedSpaceCenter(warp) == TRUE)
+    else if (IsInflitratedSpaceCenter(warp) == TRUE)
         return MUS_ENCOUNTER_MAGMA;
     else if (IsInfiltratedWeatherInstitute(warp) == TRUE)
         return MUS_MT_CHIMNEY;
@@ -1383,12 +1508,12 @@ bool8 IsMapTypeIndoors(u8 mapType)
         return FALSE;
 }
 
-mapsec_u8_t GetSavedWarpRegionMapSectionId(void)
+u8 GetSavedWarpRegionMapSectionId(void)
 {
     return Overworld_GetMapHeaderByGroupAndId(gSaveBlock1Ptr->dynamicWarp.mapGroup, gSaveBlock1Ptr->dynamicWarp.mapNum)->regionMapSectionId;
 }
 
-mapsec_u8_t GetCurrentRegionMapSectionId(void)
+u8 GetCurrentRegionMapSectionId(void)
 {
     return Overworld_GetMapHeaderByGroupAndId(gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum)->regionMapSectionId;
 }
@@ -1404,9 +1529,15 @@ static void InitOverworldBgs(void)
     SetBgAttribute(1, BG_ATTR_MOSAIC, 1);
     SetBgAttribute(2, BG_ATTR_MOSAIC, 1);
     SetBgAttribute(3, BG_ATTR_MOSAIC, 1);
+#ifdef PORT_BRIDGE
+    gOverworldTilemapBuffer_Bg1 = AllocZeroed(BG_SCREEN_SIZE * 2);
+    gOverworldTilemapBuffer_Bg2 = AllocZeroed(BG_SCREEN_SIZE * 2);
+    gOverworldTilemapBuffer_Bg3 = AllocZeroed(BG_SCREEN_SIZE * 2);
+#else
     gOverworldTilemapBuffer_Bg1 = AllocZeroed(BG_SCREEN_SIZE);
     gOverworldTilemapBuffer_Bg2 = AllocZeroed(BG_SCREEN_SIZE);
     gOverworldTilemapBuffer_Bg3 = AllocZeroed(BG_SCREEN_SIZE);
+#endif
     SetBgTilemapBuffer(1, gOverworldTilemapBuffer_Bg1);
     SetBgTilemapBuffer(2, gOverworldTilemapBuffer_Bg2);
     SetBgTilemapBuffer(3, gOverworldTilemapBuffer_Bg3);
@@ -1456,10 +1587,19 @@ static void DoCB1_Overworld(u16 newKeys, u16 heldKeys)
     }
 }
 
+#ifdef PLATFORM_3DS
+void VisibleWild_Update(void); // wild_encounter.c
+void FollowerMon_Update(void); // follower_mon.c
+#endif
+
 void CB1_Overworld(void)
 {
     if (gMain.callback2 == CB2_Overworld)
         DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);
+#ifdef PLATFORM_3DS
+    VisibleWild_Update();
+    FollowerMon_Update();
+#endif
 }
 
 static void OverworldBasic(void)
@@ -1484,6 +1624,10 @@ void CB2_OverworldBasic(void)
 void CB2_Overworld(void)
 {
     bool32 fading = (gPaletteFade.active != 0);
+#ifdef PLATFORM_3DS
+    if (CtrDayNight_BerryDue())
+        DoTimeBasedEvents();
+#endif
     if (fading)
         SetVBlankCallback(NULL);
     OverworldBasic();
@@ -1531,6 +1675,13 @@ static bool8 RunFieldCallback(void)
 
 void CB2_NewGame(void)
 {
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0100,
+                        gSaveBlock1Ptr->location.mapGroup | (gSaveBlock1Ptr->location.mapNum << 8),
+                        gSaveBlock1Ptr->mapLayoutId,
+                        gMain.state,
+                        CheckHeap());
+#endif
     FieldClearVBlankHBlankCallbacks();
     StopMapMusic();
     ResetSafariZoneFlag_();
@@ -1725,12 +1876,24 @@ void CB2_ContinueSavedGame(void)
     UnfreezeObjectEvents();
     DoTimeBasedEvents();
     UpdateMiscOverworldStates();
+    
+    #ifdef UBFIX
+    //UBFIX hack: Prevent null pointer dereference when save continuing in petalburg gym
+    //InitMapFromSavedGame runs map scripts which in petalburg's gym case modifies tilemap data before its loaded when loaded from save continue
+    //the hacky solution is to temporarily initialize tileset and then free it so it wouldn't cause memory leaks
+    InitOverworldBgs();
+    #endif
+    
     if (gMapHeader.mapLayoutId == LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR)
         InitBattlePyramidMap(TRUE);
     else if (trainerHillMapId != 0)
         InitTrainerHillMap();
     else
         InitMapFromSavedGame();
+    
+    #ifdef UBFIX
+    CleanupOverworldWindowsAndTilemaps();
+    #endif
 
     PlayTimeCounter_Start();
     ScriptContext_Init();
@@ -1888,6 +2051,13 @@ static bool32 LoadMapInStepsLink(u8 *state)
 
 static bool32 LoadMapInStepsLocal(u8 *state, bool32 a2)
 {
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0200 | *state,
+                        *state,
+                        gSaveBlock1Ptr->location.mapGroup | (gSaveBlock1Ptr->location.mapNum << 8),
+                        gSaveBlock1Ptr->mapLayoutId,
+                        a2);
+#endif
     switch (*state)
     {
     case 0:
@@ -2072,6 +2242,11 @@ static void ResetMirageTowerAndSaveBlockPtrs(void)
 {
     ClearMirageTowerPulseBlend();
     MoveSaveBlocks_ResetHeap();
+#ifdef PORT_BRIDGE
+    // MoveSaveBlocks drains DMA before destroying gHeap. Forget its old
+    // allocations before ResumeMap scripts can enqueue or free tile buffers.
+    ResetTempTileDataBuffers();
+#endif
 }
 
 static void ResetScreenForMapLoad(void)
@@ -2164,17 +2339,62 @@ static void InitObjectEventsLocal(void)
 {
     u16 x, y;
     struct InitialPlayerAvatarState *player;
+#ifdef PORT_BRIDGE
+    u8 activeObjectCount;
+    u8 i;
+#endif
 
     gTotalCameraPixelOffsetX = 0;
     gTotalCameraPixelOffsetY = 0;
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0210, CheckHeap(), gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y, 0);
+#endif
     ResetObjectEvents();
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0211, CheckHeap(), 0, 0, 0);
+#endif
     GetCameraFocusCoords(&x, &y);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0212, x, y, gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y);
+#endif
     player = GetInitialPlayerAvatarState();
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0213, player->direction, player->transitionFlags, GetCurrentMapType(), gSaveBlock2Ptr->playerGender);
+#endif
     InitPlayerAvatar(x, y, player->direction, gSaveBlock2Ptr->playerGender);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0214, gPlayerAvatar.objectEventId, gPlayerAvatar.spriteId, gObjectEvents[gPlayerAvatar.objectEventId].spriteId, CheckHeap());
+#endif
     SetPlayerAvatarTransitionFlags(player->transitionFlags);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0215,
+                        gPlayerAvatar.flags,
+                        gObjectEvents[gPlayerAvatar.objectEventId].graphicsId,
+                        gObjectEvents[gPlayerAvatar.objectEventId].fieldEffectSpriteId,
+                        CheckHeap());
+#endif
     ResetInitialPlayerAvatarState();
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0216, CheckHeap(), 0, 0, 0);
+#endif
     TrySpawnObjectEvents(0, 0);
+#ifdef PORT_BRIDGE
+    activeObjectCount = 0;
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        if (gObjectEvents[i].active)
+            activeObjectCount++;
+    }
+    Port_SetBirchDebugEx(0x0217,
+                        activeObjectCount,
+                        (gMapHeader.events != NULL) ? gMapHeader.events->objectEventCount : 0,
+                        CheckHeap(),
+                        0);
+#endif
     TryRunOnWarpIntoMapScript();
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0218, CheckHeap(), 0, 0, 0);
+#endif
 }
 
 static void InitObjectEventsReturnToField(void)
@@ -2186,8 +2406,18 @@ static void InitObjectEventsReturnToField(void)
 
 static void SetCameraToTrackPlayer(void)
 {
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0219, gPlayerAvatar.objectEventId, gPlayerAvatar.spriteId, 0, CheckHeap());
+#endif
     gObjectEvents[gPlayerAvatar.objectEventId].trackedByCamera = TRUE;
     InitCameraUpdateCallback(gPlayerAvatar.spriteId);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x021A,
+                        gPlayerAvatar.objectEventId,
+                        gPlayerAvatar.spriteId,
+                        gObjectEvents[gPlayerAvatar.objectEventId].trackedByCamera,
+                        CheckHeap());
+#endif
 }
 
 static void SetCameraToTrackGuestPlayer(void)

@@ -153,6 +153,10 @@ void ApplyWeatherColorMapIfIdle_Gradual(u8 colorMapIndex, u8 targetColorMapIndex
 void FadeScreen(u8 mode, s8 delay);
 bool8 IsWeatherNotFadingIn(void);
 void UpdateSpritePaletteWithWeather(u8 spritePaletteIndex);
+#ifdef PLATFORM_3DS
+// Port: the same for an ext palette (include/palette.h), as an NPC's.
+void UpdateSpritePaletteExtWithWeather(u8 extPalette);
+#endif
 void ApplyWeatherColorMapToPal(u8 paletteIndex);
 void LoadCustomWeatherSpritePalette(const u16 *palette);
 void ResetDroughtWeatherPaletteLoading(void);
@@ -230,5 +234,15 @@ void SetWeather(u32 weather);
 void DoCurrentWeather(void);
 void UpdateWeatherPerDay(u16 increment);
 void ResumePausedWeather(void);
+#ifdef PLATFORM_3DS
+bool8 Weather_IsFogSpriteTemplate(const struct SpriteTemplate *template);
+bool8 Weather_IsBubbleSpriteTemplate(const struct SpriteTemplate *template);
+enum {
+    WEATHER_TILING_NONE,
+    WEATHER_TILING_LATTICE,   // one picture on a 64-pixel lattice
+    WEATHER_TILING_PARTICLES, // wrapping round the 240x160 screen
+};
+u8 Weather_SpriteTiling(const struct Sprite *sprite);
+#endif
 
 #endif // GUARD_WEATHER_H

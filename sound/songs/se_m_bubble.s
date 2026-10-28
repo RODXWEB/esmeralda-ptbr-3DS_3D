@@ -13,7 +13,7 @@
 	.global	se_m_bubble
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_bubble_1:
 	.byte	KEYSH , se_m_bubble_key+0
@@ -41,17 +41,17 @@ se_m_bubble_1:
 	.byte	W15
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_bubble:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_bubble_pri	@ Priority
-	.byte	se_m_bubble_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_bubble_pri	/* Priority*/
+	.byte	se_m_bubble_rev	/* Reverb.*/
 
-	.word	se_m_bubble_grp
+	.int	se_m_bubble_grp
 
-	.word	se_m_bubble_1
+	.int	se_m_bubble_1
 
 	.end

@@ -1091,6 +1091,12 @@ void CreateTask_EnterCableClubSeat(TaskFunc followupFunc)
     ScriptContext_Stop();
 }
 
+#ifdef PLATFORM_3DS
+// 3ds_bottom_ui.c: the top screen keeps the world from now until the field
+// is back, while the trade menu and the trade are on the bottom screen.
+void CtrBottom_KeepWorld(void);
+#endif
+
 static void Task_StartWiredTrade(u8 taskId)
 {
     struct Task *task = &gTasks[taskId];
@@ -1099,6 +1105,9 @@ static void Task_StartWiredTrade(u8 taskId)
     {
     case 0:
         LockPlayerFieldControls();
+#ifdef PLATFORM_3DS
+        CtrBottom_KeepWorld();
+#endif
         FadeScreen(FADE_TO_BLACK, 0);
         ClearLinkCallback_2();
         task->tState++;
@@ -1132,6 +1141,9 @@ static void Task_StartWirelessTrade(u8 taskId)
     {
     case 0:
         LockPlayerFieldControls();
+#ifdef PLATFORM_3DS
+        CtrBottom_KeepWorld();
+#endif
         FadeScreen(FADE_TO_BLACK, 0);
         ClearLinkRfuCallback();
         tState++;

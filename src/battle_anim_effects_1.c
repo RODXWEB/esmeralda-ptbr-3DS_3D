@@ -2351,7 +2351,12 @@ static void AnimHyperBeamOrb(struct Sprite *sprite)
     u16 speed;
     u16 animNum = Random2();
 
+    // BUG: gSolarBeamBigOrbAnimTable has 7 anims, so animNum 7 reads past its end
+#ifdef UBFIX
+    StartSpriteAnim(sprite, animNum % ARRAY_COUNT(gSolarBeamBigOrbAnimTable));
+#else
     StartSpriteAnim(sprite, animNum % 8);
+#endif
     sprite->x = GetBattlerSpriteCoord(gBattleAnimAttacker, BATTLER_COORD_X_2);
     sprite->y = GetBattlerSpriteCoord(gBattleAnimAttacker, BATTLER_COORD_Y_PIC_OFFSET);
     if (GetBattlerSide(gBattleAnimAttacker) != B_SIDE_PLAYER)

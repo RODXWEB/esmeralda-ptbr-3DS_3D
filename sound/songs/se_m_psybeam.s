@@ -13,7 +13,7 @@
 	.global	se_m_psybeam
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_psybeam_1:
 	.byte	KEYSH , se_m_psybeam_key+0
@@ -89,7 +89,7 @@ se_m_psybeam_1:
 	.byte		PAN   , c_v+0
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_psybeam_2:
 	.byte	KEYSH , se_m_psybeam_key+0
@@ -127,18 +127,18 @@ se_m_psybeam_2:
 	.byte	W03
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_psybeam:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_psybeam_pri	@ Priority
-	.byte	se_m_psybeam_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_psybeam_pri	/* Priority*/
+	.byte	se_m_psybeam_rev	/* Reverb.*/
 
-	.word	se_m_psybeam_grp
+	.int	se_m_psybeam_grp
 
-	.word	se_m_psybeam_1
-	.word	se_m_psybeam_2
+	.int	se_m_psybeam_1
+	.int	se_m_psybeam_2
 
 	.end

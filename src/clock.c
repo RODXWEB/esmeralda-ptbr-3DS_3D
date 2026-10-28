@@ -1,16 +1,19 @@
 #include "global.h"
-#include "berry.h"
-#include "dewford_trend.h"
 #include "event_data.h"
-#include "field_specials.h"
-#include "field_weather.h"
-#include "main.h"
-#include "lottery_corner.h"
-#include "overworld.h"
 #include "rtc.h"
 #include "time_events.h"
+#include "field_specials.h"
+#include "lottery_corner.h"
+#include "dewford_trend.h"
 #include "tv.h"
+#include "field_weather.h"
+#include "berry.h"
+#include "main.h"
+#include "overworld.h"
 #include "wallclock.h"
+#ifdef PLATFORM_3DS
+#include "3ds_daynight.h"
+#endif
 
 static void UpdatePerDay(struct Time *localTime);
 static void UpdatePerMinute(struct Time *localTime);
@@ -18,6 +21,9 @@ static void UpdatePerMinute(struct Time *localTime);
 static void InitTimeBasedEvents(void)
 {
     FlagSet(FLAG_SYS_CLOCK_SET);
+#ifdef PLATFORM_3DS
+    CtrDayNight_Reset();
+#endif
     RtcCalcLocalTime();
     gSaveBlock2Ptr->lastBerryTreeUpdate = gLocalTime;
     VarSet(VAR_DAYS, gLocalTime.days);
@@ -63,6 +69,15 @@ static void UpdatePerMinute(struct Time *localTime)
 
     CalcTimeDifference(&difference, &gSaveBlock2Ptr->lastBerryTreeUpdate, localTime);
     minutes = 24 * 60 * difference.days + 60 * difference.hours + difference.minutes;
+#ifdef PLATFORM_3DS
+    if (minutes >= 0)
+    {
+        unsigned bonus = CtrDayNight_TakeBerryMinutes();
+
+        if (bonus != 0)
+            BerryTreeTimeUpdate(bonus);
+    }
+#endif
     if (minutes != 0)
     {
         if (minutes >= 0)

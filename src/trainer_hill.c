@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "malloc.h"
 #include "battle.h"
 #include "battle_tower.h"
@@ -200,6 +203,71 @@ static const u16 *const *const sPrizeListSets[] =
 static const u16 sEReader_Pal[] = INCBIN_U16("graphics/trainer_hill/ereader.gbapal");
 static const u8 sRecordWinColors[] = {TEXT_COLOR_TRANSPARENT, TEXT_COLOR_DARK_GRAY, TEXT_COLOR_LIGHT_GRAY};
 
+#ifdef PORT_BRIDGE
+static const struct TrainerHillFloor *const sFloorData[NUM_TRAINER_HILL_MODES] =
+{
+    [HILL_MODE_NORMAL]  = sFloors_Normal,
+    [HILL_MODE_VARIETY] = sFloors_Variety,
+    [HILL_MODE_UNIQUE]  = sFloors_Unique,
+    [HILL_MODE_EXPERT]  = sFloors_Expert,
+};
+
+#if GAME_LANGUAGE == LANGUAGE_ENGLISH // Spanish: tools/localize_spanish.py puts in the ROM's own floors, mazes included
+// A floor's maze is an INCBIN in a field of its struct, which the port's asset
+// table cannot map (it maps whole arrays): the field stayed zeros, a floor of
+// one metatile with no walls. The same files again as arrays of their own.
+static const u8 sFloorMetatiles_Normal0[] = INCBIN_U8("graphics/trainer_hill/maps_normal/floor_0/metatiles.bin");
+static const u16 sFloorCollision_Normal0[] = INCBIN_U16("graphics/trainer_hill/maps_normal/floor_0/collision.bin");
+static const u8 sFloorMetatiles_Normal1[] = INCBIN_U8("graphics/trainer_hill/maps_normal/floor_1/metatiles.bin");
+static const u16 sFloorCollision_Normal1[] = INCBIN_U16("graphics/trainer_hill/maps_normal/floor_1/collision.bin");
+static const u8 sFloorMetatiles_Normal2[] = INCBIN_U8("graphics/trainer_hill/maps_normal/floor_2/metatiles.bin");
+static const u16 sFloorCollision_Normal2[] = INCBIN_U16("graphics/trainer_hill/maps_normal/floor_2/collision.bin");
+static const u8 sFloorMetatiles_Normal3[] = INCBIN_U8("graphics/trainer_hill/maps_normal/floor_3/metatiles.bin");
+static const u16 sFloorCollision_Normal3[] = INCBIN_U16("graphics/trainer_hill/maps_normal/floor_3/collision.bin");
+static const u8 sFloorMetatiles_Variety0[] = INCBIN_U8("graphics/trainer_hill/maps_variety/floor_0/metatiles.bin");
+static const u16 sFloorCollision_Variety0[] = INCBIN_U16("graphics/trainer_hill/maps_variety/floor_0/collision.bin");
+static const u8 sFloorMetatiles_Variety1[] = INCBIN_U8("graphics/trainer_hill/maps_variety/floor_1/metatiles.bin");
+static const u16 sFloorCollision_Variety1[] = INCBIN_U16("graphics/trainer_hill/maps_variety/floor_1/collision.bin");
+static const u8 sFloorMetatiles_Variety2[] = INCBIN_U8("graphics/trainer_hill/maps_variety/floor_2/metatiles.bin");
+static const u16 sFloorCollision_Variety2[] = INCBIN_U16("graphics/trainer_hill/maps_variety/floor_2/collision.bin");
+static const u8 sFloorMetatiles_Variety3[] = INCBIN_U8("graphics/trainer_hill/maps_variety/floor_3/metatiles.bin");
+static const u16 sFloorCollision_Variety3[] = INCBIN_U16("graphics/trainer_hill/maps_variety/floor_3/collision.bin");
+static const u8 sFloorMetatiles_Unique0[] = INCBIN_U8("graphics/trainer_hill/maps_unique/floor_0/metatiles.bin");
+static const u16 sFloorCollision_Unique0[] = INCBIN_U16("graphics/trainer_hill/maps_unique/floor_0/collision.bin");
+static const u8 sFloorMetatiles_Unique1[] = INCBIN_U8("graphics/trainer_hill/maps_unique/floor_1/metatiles.bin");
+static const u16 sFloorCollision_Unique1[] = INCBIN_U16("graphics/trainer_hill/maps_unique/floor_1/collision.bin");
+static const u8 sFloorMetatiles_Unique2[] = INCBIN_U8("graphics/trainer_hill/maps_unique/floor_2/metatiles.bin");
+static const u16 sFloorCollision_Unique2[] = INCBIN_U16("graphics/trainer_hill/maps_unique/floor_2/collision.bin");
+static const u8 sFloorMetatiles_Unique3[] = INCBIN_U8("graphics/trainer_hill/maps_unique/floor_3/metatiles.bin");
+static const u16 sFloorCollision_Unique3[] = INCBIN_U16("graphics/trainer_hill/maps_unique/floor_3/collision.bin");
+static const u8 sFloorMetatiles_Expert0[] = INCBIN_U8("graphics/trainer_hill/maps_expert/floor_0/metatiles.bin");
+static const u16 sFloorCollision_Expert0[] = INCBIN_U16("graphics/trainer_hill/maps_expert/floor_0/collision.bin");
+static const u8 sFloorMetatiles_Expert1[] = INCBIN_U8("graphics/trainer_hill/maps_expert/floor_1/metatiles.bin");
+static const u16 sFloorCollision_Expert1[] = INCBIN_U16("graphics/trainer_hill/maps_expert/floor_1/collision.bin");
+static const u8 sFloorMetatiles_Expert2[] = INCBIN_U8("graphics/trainer_hill/maps_expert/floor_2/metatiles.bin");
+static const u16 sFloorCollision_Expert2[] = INCBIN_U16("graphics/trainer_hill/maps_expert/floor_2/collision.bin");
+static const u8 sFloorMetatiles_Expert3[] = INCBIN_U8("graphics/trainer_hill/maps_expert/floor_3/metatiles.bin");
+static const u16 sFloorCollision_Expert3[] = INCBIN_U16("graphics/trainer_hill/maps_expert/floor_3/collision.bin");
+
+static const u8 *const sFloorMetatilesData[NUM_TRAINER_HILL_MODES][NUM_TRAINER_HILL_FLOORS] =
+{
+    [HILL_MODE_NORMAL] = {sFloorMetatiles_Normal0, sFloorMetatiles_Normal1, sFloorMetatiles_Normal2, sFloorMetatiles_Normal3},
+    [HILL_MODE_VARIETY] = {sFloorMetatiles_Variety0, sFloorMetatiles_Variety1, sFloorMetatiles_Variety2, sFloorMetatiles_Variety3},
+    [HILL_MODE_UNIQUE] = {sFloorMetatiles_Unique0, sFloorMetatiles_Unique1, sFloorMetatiles_Unique2, sFloorMetatiles_Unique3},
+    [HILL_MODE_EXPERT] = {sFloorMetatiles_Expert0, sFloorMetatiles_Expert1, sFloorMetatiles_Expert2, sFloorMetatiles_Expert3},
+};
+
+static const u16 *const sFloorCollisionData[NUM_TRAINER_HILL_MODES][NUM_TRAINER_HILL_FLOORS] =
+{
+    [HILL_MODE_NORMAL] = {sFloorCollision_Normal0, sFloorCollision_Normal1, sFloorCollision_Normal2, sFloorCollision_Normal3},
+    [HILL_MODE_VARIETY] = {sFloorCollision_Variety0, sFloorCollision_Variety1, sFloorCollision_Variety2, sFloorCollision_Variety3},
+    [HILL_MODE_UNIQUE] = {sFloorCollision_Unique0, sFloorCollision_Unique1, sFloorCollision_Unique2, sFloorCollision_Unique3},
+    [HILL_MODE_EXPERT] = {sFloorCollision_Expert0, sFloorCollision_Expert1, sFloorCollision_Expert2, sFloorCollision_Expert3},
+};
+#endif
+
+#endif
+
 static const struct TrainerHillChallenge *const sChallengeData[NUM_TRAINER_HILL_MODES] =
 {
     [HILL_MODE_NORMAL]  = &sChallenge_Normal,
@@ -351,12 +419,36 @@ static void SetUpDataStruct(void)
         sHillData = AllocZeroed(sizeof(*sHillData));
         sHillData->floorId = gMapHeader.mapLayoutId - LAYOUT_TRAINER_HILL_1F;
 
+#ifdef PORT_BRIDGE
+        // Modern compilers place these arrays in independent sections.
+        // Copy each named object instead of relying on their linker order.
+        CpuCopy32(sChallengeData[gSaveBlock1Ptr->trainerHill.mode], &sHillData->challenge, sizeof(sHillData->challenge));
+        CpuCopy32(sFloorData[gSaveBlock1Ptr->trainerHill.mode], sHillData->floors, sizeof(sHillData->floors));
+#if GAME_LANGUAGE == LANGUAGE_ENGLISH
+        {
+            u32 mode = gSaveBlock1Ptr->trainerHill.mode, i;
+
+            for (i = 0; mode < NUM_TRAINER_HILL_MODES && i < NUM_TRAINER_HILL_FLOORS; i++)
+            {
+                struct TrainerHillFloorMap *map = &sHillData->floors[i].map;
+                const void *metatiles = Port_ResolveAssetPointerSized(sFloorMetatilesData[mode][i], sizeof(map->metatileData));
+                const void *collision = Port_ResolveAssetPointerSized(sFloorCollisionData[mode][i], sizeof(map->collisionData));
+
+                if (metatiles != NULL)
+                    memcpy(map->metatileData, metatiles, sizeof(map->metatileData));
+                if (collision != NULL)
+                    memcpy(map->collisionData, collision, sizeof(map->collisionData));
+            }
+        }
+#endif
+#else
         // This copy depends on the floor data for each challenge being directly after the
         // challenge header data, and for the field 'floors' in sHillData to come directly
         // after the field 'challenge'.
         // e.g. for HILL_MODE_NORMAL, it will copy sChallenge_Normal to sHillData->challenge and
         // it will copy sFloors_Normal to sHillData->floors
         CpuCopy32(sChallengeData[gSaveBlock1Ptr->trainerHill.mode], &sHillData->challenge, sizeof(sHillData->challenge) + sizeof(sHillData->floors));
+#endif
         TrainerHillDummy();
     }
 }
@@ -705,6 +797,9 @@ void GenerateTrainerHillFloorLayout(u16 *mapArg)
 
     mapId = GetFloorId();
     src = gMapHeader.mapLayout->map;
+#ifdef PORT_BRIDGE
+    src = Port_ResolveAssetPointer(src);
+#endif
     gBackupMapLayout.map = mapArg;
     // Dimensions include border area loaded beyond map
     gBackupMapLayout.width = HILL_FLOOR_WIDTH + 15;

@@ -134,7 +134,7 @@ static u32 GetCurrentTotalMinutes(struct Time *);
 static u32 GetNumRegisteredTrainers(void);
 static u32 GetActiveMatchCallTrainerId(u32);
 static int GetTrainerMatchCallId(int);
-static mapsec_u16_t GetRematchTrainerLocation(int);
+static u16 GetRematchTrainerLocation(int);
 static bool32 TrainerIsEligibleForRematch(int);
 static void StartMatchCall(void);
 static void ExecuteMatchCall(u8);
@@ -1237,11 +1237,27 @@ static const struct WindowTemplate sMatchCallTextWindow =
     .width = 28,
     .height = 4,
     .paletteNum = 15,
+#ifdef PLATFORM_3DS
+    .baseBlock = 0x008
+#else
     .baseBlock = 0x200
+#endif
 };
 
+#ifdef PLATFORM_3DS
+// BG0's tiles start at charblock 2 (0x8000), and on 3DS the widened 64-column
+// field tilemaps start at screenblock 25 (0xC800 = BG0 tile 0x240). The GBA
+// layout (window 0x200, border 0x270, 128 icon tiles from 0x279, up to 0x2F8)
+// overwrote the BG1 and BG2 maps for the whole call. The call uses the start
+// menu's tiles instead (0x008-0x0FF): the start menu cannot be open during a
+// call, and this leaves the message box (0x194), its frames (0x200) and the
+// map name popup (0x107, frame 0x21D) untouched.
+#define TILE_MC_WINDOW    0x078
+#define TILE_POKENAV_ICON 0x080
+#else
 #define TILE_MC_WINDOW    0x270
 #define TILE_POKENAV_ICON 0x279
+#endif
 
 static bool32 MatchCall_LoadGfx(u8 taskId)
 {
@@ -1253,7 +1269,12 @@ static bool32 MatchCall_LoadGfx(u8 taskId)
         return FALSE;
     }
 
+#ifdef PORT_BRIDGE
+    // sizeof gives the INCBIN stub here; 0x100 is window.4bpp, as in LoadMatchCallWindowGfx.
+    if (LoadBgTiles(0, sMatchCallWindow_Gfx, 0x100, TILE_MC_WINDOW) == 0xFFFF)
+#else
     if (LoadBgTiles(0, sMatchCallWindow_Gfx, sizeof(sMatchCallWindow_Gfx), TILE_MC_WINDOW) == 0xFFFF)
+#endif
     {
         RemoveWindow(tWindowId);
         DestroyTask(taskId);
@@ -1463,7 +1484,7 @@ static bool32 TrainerIsEligibleForRematch(int matchCallId)
     return gSaveBlock1Ptr->trainerRematches[matchCallId] > 0;
 }
 
-static mapsec_u16_t GetRematchTrainerLocation(int matchCallId)
+static u16 GetRematchTrainerLocation(int matchCallId)
 {
     const struct MapHeader *mapHeader = Overworld_GetMapHeaderByGroupAndId(gRematchTable[matchCallId].mapGroup, gRematchTable[matchCallId].mapNum);
     return mapHeader->regionMapSectionId;

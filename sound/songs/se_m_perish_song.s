@@ -13,7 +13,7 @@
 	.global	se_m_perish_song
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_perish_song_1:
 	.byte	KEYSH , se_m_perish_song_key+0
@@ -85,13 +85,13 @@ se_m_perish_song_1_003:
 	.byte		PAN   , c_v+4
 	.byte	W02
 	.byte	PATT
-	 .word	se_m_perish_song_1_000
+	 .int	se_m_perish_song_1_000
 	.byte	PATT
-	 .word	se_m_perish_song_1_001
+	 .int	se_m_perish_song_1_001
 	.byte	PATT
-	 .word	se_m_perish_song_1_002
+	 .int	se_m_perish_song_1_002
 	.byte	PATT
-	 .word	se_m_perish_song_1_003
+	 .int	se_m_perish_song_1_003
 	.byte		PAN   , c_v-4
 	.byte	W06
 	.byte		        c_v+0
@@ -121,7 +121,7 @@ se_m_perish_song_1_003:
 	.byte	W05
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_perish_song_2:
 	.byte	KEYSH , se_m_perish_song_key+0
@@ -171,7 +171,7 @@ se_m_perish_song_2_000:
 	.byte		        40*se_m_perish_song_mvl/mxv
 	.byte	W03
 	.byte	PATT
-	 .word	se_m_perish_song_2_000
+	 .int	se_m_perish_song_2_000
 	.byte		VOL   , 56*se_m_perish_song_mvl/mxv
 	.byte	W03
 	.byte		        62*se_m_perish_song_mvl/mxv
@@ -204,18 +204,18 @@ se_m_perish_song_2_000:
 	.byte	W06
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_perish_song:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_perish_song_pri	@ Priority
-	.byte	se_m_perish_song_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_perish_song_pri	/* Priority*/
+	.byte	se_m_perish_song_rev	/* Reverb.*/
 
-	.word	se_m_perish_song_grp
+	.int	se_m_perish_song_grp
 
-	.word	se_m_perish_song_1
-	.word	se_m_perish_song_2
+	.int	se_m_perish_song_1
+	.int	se_m_perish_song_2
 
 	.end

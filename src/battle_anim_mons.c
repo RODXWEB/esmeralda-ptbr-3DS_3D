@@ -15,6 +15,9 @@
 #include "trig.h"
 #include "util.h"
 #include "constants/battle_anim.h"
+#ifdef PLATFORM_3DS
+#include "ctr_battle_layout.h"
+#endif
 
 #define IS_DOUBLE_BATTLE() ((gBattleTypeFlags & BATTLE_TYPE_DOUBLE))
 
@@ -109,6 +112,24 @@ static const struct SpriteSheet sSpriteSheets_MoveEffectMons[] =
     { gMiscBlank_Gfx, MON_PIC_SIZE, TAG_MOVE_EFFECT_MON_2, },
 };
 
+#ifdef PLATFORM_3DS
+// The top screen has room above and below the GBA's picture: the opponent's
+// side sits higher and the player's lower (ctr_battle_layout.h). Every
+// battler position is read through sBattlerCoords here, so the sprites and
+// the animations aimed at them move together. Contests keep their places.
+int CtrBattleSideShiftOf(u8 side)
+{
+    if (IsContest())
+        return 0;
+    return side == B_SIDE_PLAYER ? CTR_BATTLE_PLAYER_DROP : -CTR_BATTLE_ENEMY_RISE;
+}
+
+int CtrBattleSideShift(u8 battler)
+{
+    return CtrBattleSideShiftOf(GetBattlerSide(battler));
+}
+#endif
+
 u8 GetBattlerSpriteCoord(u8 battler, u8 coordType)
 {
     u8 retVal;
@@ -129,6 +150,9 @@ u8 GetBattlerSpriteCoord(u8 battler, u8 coordType)
         break;
     case BATTLER_COORD_Y:
         retVal = sBattlerCoords[IS_DOUBLE_BATTLE()][GetBattlerPosition(battler)].y;
+#ifdef PLATFORM_3DS
+        retVal += CtrBattleSideShift(battler);
+#endif
         break;
     case BATTLER_COORD_Y_PIC_OFFSET:
     case BATTLER_COORD_Y_PIC_OFFSET_DEFAULT:
@@ -281,12 +305,29 @@ u8 GetBattlerSpriteFinal_Y(u8 battler, u16 species, bool8 a3)
         offset -= GetBattlerElevation(battler, species);
     }
     y = offset + sBattlerCoords[IS_DOUBLE_BATTLE()][GetBattlerPosition(battler)].y;
+#ifdef PLATFORM_3DS
+    {
+        // In s16, so a high opponent cannot wrap round to the bottom.
+        s16 shifted = (s16)y + CtrBattleSideShift(battler);
+
+        y = shifted < 0 ? 0 : shifted;
+    }
+#endif
     if (a3)
     {
         if (GetBattlerSide(battler) == B_SIDE_PLAYER)
             y += 8;
+#ifdef PLATFORM_3DS
+        // The player's side is lower: so is the floor the clamp keeps it on.
+        if (GetBattlerSide(battler) == B_SIDE_PLAYER
+         && y > DISPLAY_HEIGHT - MON_PIC_HEIGHT + 8 + CtrBattleSideShift(battler))
+            y = DISPLAY_HEIGHT - MON_PIC_HEIGHT + 8 + CtrBattleSideShift(battler);
+        else if (GetBattlerSide(battler) != B_SIDE_PLAYER && y > DISPLAY_HEIGHT - MON_PIC_HEIGHT + 8)
+            y = DISPLAY_HEIGHT - MON_PIC_HEIGHT + 8;
+#else
         if (y > DISPLAY_HEIGHT - MON_PIC_HEIGHT + 8)
             y = DISPLAY_HEIGHT - MON_PIC_HEIGHT + 8;
+#endif
     }
     return y;
 }
@@ -422,7 +463,11 @@ void StoreSpriteCallbackInData6(struct Sprite *sprite, void (*callback)(struct S
 
 void SetCallbackToStoredInData6(struct Sprite *sprite)
 {
+#ifndef PORTABLE
     u32 callback = (u16)sprite->data[6] | (sprite->data[7] << 16);
+#else
+    u32 callback = (u16)sprite->data[6] | ((u16)sprite->data[7] << 16);
+#endif
     sprite->callback = (void (*)(struct Sprite *))callback;
 }
 

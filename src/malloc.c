@@ -4,7 +4,9 @@
 static void *sHeapStart;
 static u32 sHeapSize;
 
+#ifndef PORTABLE
 ALIGNED(4) EWRAM_DATA u8 gHeap[HEAP_SIZE] = {0};
+#endif
 
 #define MALLOC_SYSTEM_ID 0xA3A3
 
@@ -214,6 +216,13 @@ bool32 CheckHeap()
 {
     struct MemBlock *pos = (struct MemBlock *)sHeapStart;
 
+#if defined(PORT_BRIDGE) && !defined(PORT_HEAP_CHECK)
+    // The port only feeds this to debug traces, many of them on per-tile and
+    // per-frame paths (every map lookup used to walk the whole heap). Build
+    // with -DPORT_HEAP_CHECK to get the walk back when chasing corruption.
+    return TRUE;
+#endif
+
     do {
         if (!CheckMemBlockInternal(sHeapStart, pos->data))
             return FALSE;
@@ -222,3 +231,21 @@ bool32 CheckHeap()
 
     return TRUE;
 }
+
+#ifdef PORT_BRIDGE
+// Called between game callbacks by the port's resource cache collector. Freed blocks
+// must not keep old script/text/graphics pointers alive indefinitely.
+void Port_VisitGameHeap(void (*visit)(const void *, u32))
+{
+    struct MemBlock *pos = sHeapStart;
+
+    if (pos == NULL)
+        return;
+    do
+    {
+        if (pos->flag)
+            visit(pos->data, pos->size);
+        pos = pos->next;
+    } while (pos != sHeapStart);
+}
+#endif

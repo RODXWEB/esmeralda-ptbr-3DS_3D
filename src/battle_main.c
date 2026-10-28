@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "battle.h"
 #include "battle_anim.h"
 #include "battle_ai_script_commands.h"
@@ -150,8 +153,8 @@ EWRAM_DATA struct MultiPartnerMenuPokemon gMultiPartnerParty[MULTI_PARTY_SIZE] =
 EWRAM_DATA static struct MultiPartnerMenuPokemon *sMultiPartnerPartyBuffer = NULL;
 EWRAM_DATA u8 *gBattleAnimBgTileBuffer = NULL;
 EWRAM_DATA u8 *gBattleAnimBgTilemapBuffer = NULL;
-EWRAM_DATA u8 gBattleBufferA[MAX_BATTLERS_COUNT][0x200] = {0};
-EWRAM_DATA u8 gBattleBufferB[MAX_BATTLERS_COUNT][0x200] = {0};
+EWRAM_DATA u8 ALIGNED(4) gBattleBufferA[MAX_BATTLERS_COUNT][0x200] = {0};
+EWRAM_DATA u8 ALIGNED(4) gBattleBufferB[MAX_BATTLERS_COUNT][0x200] = {0};
 EWRAM_DATA u8 gActiveBattler = 0;
 EWRAM_DATA u32 gBattleControllerExecFlags = 0;
 EWRAM_DATA u8 gBattlersCount = 0;
@@ -237,7 +240,7 @@ EWRAM_DATA u16 gBattleMovePower = 0;
 EWRAM_DATA u16 gMoveToLearn = 0;
 EWRAM_DATA u8 gBattleMonForms[MAX_BATTLERS_COUNT] = {0};
 
-COMMON_DATA MainCallback gPreBattleCallback1 = NULL;
+COMMON_DATA void (*gPreBattleCallback1)(void) = NULL;
 COMMON_DATA void (*gBattleMainFunc)(void) = NULL;
 COMMON_DATA struct BattleResults gBattleResults = {0};
 COMMON_DATA u8 gLeveledUpInBattle = 0;
@@ -4126,10 +4129,67 @@ enum
     STATE_SELECTION_SCRIPT_MAY_RUN
 };
 
+#ifdef PLATFORM_3DS
+// After the cheat's faint: EXP, the next Pokemon or the end of the battle, as
+// BattleTurnPassed handles a faint at the end of a turn.
+static void CheatAfterFaint(void)
+{
+    s32 i;
+
+    if (HandleFaintedMonActions())
+        return;
+    gBattleStruct->faintedActionsState = 0;
+    gHitMarker &= ~(HITMARKER_IGNORE_SUBSTITUTE | HITMARKER_PASSIVE_HP_UPDATE);
+    for (i = 0; i < 5; i++)
+        gBattleCommunication[i] = 0;
+    if (gBattleOutcome != 0)
+    {
+        gCurrentActionFuncId = B_ACTION_FINISHED;
+        gBattleMainFunc = RunTurnActionsFunctions;
+        return;
+    }
+    gBattleMainFunc = HandleTurnActionSelectionState;
+}
+
+// Instant victory (OPTIONS, CHEATS): as a turn starts, before anyone has
+// chosen, an opponent still standing faints. EXP and prize money as usual.
+// Not in link, recorded, Safari or Wally's battles.
+static bool8 TryCheatFaintOpponent(void)
+{
+    u8 battler;
+
+    if (!CtrExtras_Get("instant_victory") || gBattleControllerExecFlags
+     || (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED | BATTLE_TYPE_SAFARI | BATTLE_TYPE_WALLY_TUTORIAL)))
+        return FALSE;
+    for (battler = 0; battler < gBattlersCount; battler++)
+    {
+        if (gBattleCommunication[battler] != STATE_TURN_START_RECORD)
+            return FALSE;
+    }
+    for (battler = 0; battler < gBattlersCount; battler++)
+    {
+        if (GetBattlerSide(battler) != B_SIDE_OPPONENT || gBattleMons[battler].hp == 0
+         || (gAbsentBattlerFlags & gBitTable[battler]))
+            continue;
+        gBattlerAttacker = GetBattlerAtPosition(B_POSITION_PLAYER_LEFT);
+        gBattlerTarget = battler;
+        gBattleMoveDamage = gBattleMons[battler].hp;
+        gBattleMainFunc = CheatAfterFaint;
+        BattleScriptExecute(BattleScript_CheatFaintTarget);
+        return TRUE;
+    }
+    return FALSE;
+}
+#endif
+
 static void HandleTurnActionSelectionState(void)
 {
     s32 i;
 
+#ifdef PLATFORM_3DS
+    if (TryCheatFaintOpponent())
+        return;
+#endif
     gBattleCommunication[ACTIONS_CONFIRMED_COUNT] = 0;
     for (gActiveBattler = 0; gActiveBattler < gBattlersCount; gActiveBattler++)
     {
@@ -5156,8 +5216,23 @@ static void FreeResetData_ReturnToOvOrDoEvolutions(void)
 {
     if (!gPaletteFade.active)
     {
+#ifdef PORTABLE
+    FreeAllWindowBuffers(); // This needs to be moved up here to avoid a use-after-free
+    if (!(gBattleTypeFlags & BATTLE_TYPE_LINK))
+    {
+        FreeMonSpritesGfx();
+        FreeBattleResources();
+        FreeBattleSpritesData();
+    }
+#endif
         ResetSpriteData();
+#ifdef PLATFORM_3DS
+        // EXP for catching (OPTIONS, ENHANCEMENTS): a level gained on a catch
+        // evolves as one gained on a win.
+        if (gLeveledUpInBattle == 0 || (gBattleOutcome != B_OUTCOME_WON && gBattleOutcome != B_OUTCOME_CAUGHT))
+#else
         if (gLeveledUpInBattle == 0 || gBattleOutcome != B_OUTCOME_WON)
+#endif
         {
             gBattleMainFunc = ReturnFromBattleToOverworld;
             return;
@@ -5168,6 +5243,7 @@ static void FreeResetData_ReturnToOvOrDoEvolutions(void)
         }
     }
 
+#ifndef PORTABLE
     FreeAllWindowBuffers();
     if (!(gBattleTypeFlags & BATTLE_TYPE_LINK))
     {
@@ -5175,6 +5251,7 @@ static void FreeResetData_ReturnToOvOrDoEvolutions(void)
         FreeBattleResources();
         FreeBattleSpritesData();
     }
+#endif
 }
 
 static void TryEvolvePokemon(void)

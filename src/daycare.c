@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "pokemon.h"
 #include "battle.h"
 #include "daycare.h"
@@ -830,7 +833,7 @@ void CreateEgg(struct Pokemon *mon, u16 species, bool8 setHotSpringsLocation)
     u8 metLevel;
     u16 ball;
     u8 language;
-    metloc_u8_t metLocation;
+    u8 metLocation;
     u8 isEgg;
 
     CreateMon(mon, species, EGG_HATCH_LEVEL, USE_RANDOM_IVS, FALSE, 0, OT_ID_PLAYER_ID, 0);
@@ -893,6 +896,37 @@ static bool8 TryProduceOrHatchEgg(struct DayCare *daycare)
         if (compatibility > (Random() * 100u) / USHRT_MAX)
             TriggerPendingDaycareEgg();
     }
+
+#ifdef PLATFORM_3DS
+    // Fast egg hatching (OPTIONS, CHEATS): with an egg in the party, one
+    // hatches every 5 steps.
+    {
+        static u8 sFastEggSteps;
+        bool8 fast = CtrExtras_Get("fast_eggs") != 0;
+        s32 egg = -1;
+
+        // the party is read (decrypted) each step only with the option on
+        for (i = 0; fast && i < gPlayerPartyCount && egg < 0; i++)
+        {
+            if (GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG)
+             && !GetMonData(&gPlayerParty[i], MON_DATA_SANITY_IS_BAD_EGG))
+                egg = i;
+        }
+        if (!fast || egg < 0)
+        {
+            sFastEggSteps = 0;
+        }
+        else if (++sFastEggSteps >= 5)
+        {
+            u32 zero = 0;
+
+            sFastEggSteps = 0;
+            SetMonData(&gPlayerParty[egg], MON_DATA_FRIENDSHIP, &zero);
+            gSpecialVar_0x8004 = egg;
+            return TRUE;
+        }
+    }
+#endif
 
     // Try to hatch Egg
     if (++daycare->stepCounter == 255)

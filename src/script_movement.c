@@ -3,6 +3,9 @@
 #include "event_object_movement.h"
 #include "task.h"
 #include "util.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "constants/event_objects.h"
 #include "constants/event_object_movement.h"
 
@@ -22,6 +25,10 @@ bool8 ScriptMovement_StartObjectMovementScript(u8 localId, u8 mapNum, u8 mapGrou
 {
     u8 objEventId;
 
+#ifdef PORT_BRIDGE
+    movementScript = Port_ResolveEventPointer(movementScript);
+#endif
+
     if (TryGetObjectEventIdByLocalIdAndMap(localId, mapNum, mapGroup, &objEventId))
         return TRUE;
     if (!FuncIsActiveTask(ScriptMovement_MoveObjects))
@@ -38,6 +45,8 @@ bool8 ScriptMovement_IsObjectMovementFinished(u8 localId, u8 mapNum, u8 mapGroup
     if (TryGetObjectEventIdByLocalIdAndMap(localId, mapNum, mapGroup, &objEventId))
         return TRUE;
     taskId = GetMoveObjectsTaskId();
+    if (taskId == TASK_NONE)
+        return TRUE;
     moveScrId = GetMovementScriptIdFromObjectEventId(taskId, objEventId);
     if (moveScrId == OBJECT_EVENTS_COUNT)
         return TRUE;
@@ -214,8 +223,27 @@ static void ScriptMovement_TakeStep(u8 taskId, u8 moveScrId, u8 objEventId, cons
         return;
 
     nextMoveActionId = *movementScript;
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0423,
+                        objEventId,
+                        moveScrId,
+                        nextMoveActionId,
+                        (u16)((uintptr_t)movementScript & 0xFFFF));
+#endif
     if (nextMoveActionId == MOVEMENT_ACTION_STEP_END)
     {
+        SetMovementScriptFinished(taskId, moveScrId);
+        FreezeObjectEvent(&gObjectEvents[objEventId]);
+    }
+    else if (nextMoveActionId > MOVEMENT_ACTION_FLY_DOWN)
+    {
+#ifdef PORT_BRIDGE
+        Port_SetBirchDebugEx(0x042F,
+                            objEventId,
+                            moveScrId,
+                            nextMoveActionId,
+                            (u16)((uintptr_t)movementScript & 0xFFFF));
+#endif
         SetMovementScriptFinished(taskId, moveScrId);
         FreezeObjectEvent(&gObjectEvents[objEventId]);
     }
@@ -228,4 +256,3 @@ static void ScriptMovement_TakeStep(u8 taskId, u8 moveScrId, u8 objEventId, cons
         }
     }
 }
-

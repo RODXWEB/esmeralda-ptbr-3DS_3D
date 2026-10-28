@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "battle_setup.h"
 #include "event_data.h"
 #include "event_object_movement.h"
@@ -255,6 +258,10 @@ static u8 CheckTrainer(u8 objectEventId)
         scriptPtr = GetTrainerHillTrainerScript();
     else
         scriptPtr = GetObjectEventScriptPointerByObjectEventId(objectEventId);
+
+#ifdef PORT_BRIDGE
+    scriptPtr = Port_ResolveScriptPointer(scriptPtr);
+#endif
 
     if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
     {
@@ -699,6 +706,9 @@ u8 FldEff_ExclamationMarkIcon(void)
 
     if (spriteId != MAX_SPRITES)
         SetIconSpriteData(&gSprites[spriteId], FLDEFF_EXCLAMATION_MARK_ICON, 0);
+    else
+        // No sprite callback will run to finish the trainer's wait.
+        FieldEffectActiveListRemove(FLDEFF_EXCLAMATION_MARK_ICON);
 
     return 0;
 }
@@ -709,6 +719,8 @@ u8 FldEff_QuestionMarkIcon(void)
 
     if (spriteId != MAX_SPRITES)
         SetIconSpriteData(&gSprites[spriteId], FLDEFF_QUESTION_MARK_ICON, 1);
+    else
+        FieldEffectActiveListRemove(FLDEFF_QUESTION_MARK_ICON);
 
     return 0;
 }
@@ -723,6 +735,10 @@ u8 FldEff_HeartIcon(void)
 
         SetIconSpriteData(sprite, FLDEFF_HEART_ICON, 0);
         sprite->oam.paletteNum = 2;
+    }
+    else
+    {
+        FieldEffectActiveListRemove(FLDEFF_HEART_ICON);
     }
 
     return 0;

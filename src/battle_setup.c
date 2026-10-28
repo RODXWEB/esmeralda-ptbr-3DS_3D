@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "battle.h"
 #include "battle_setup.h"
 #include "battle_transition.h"
@@ -1071,7 +1074,16 @@ static void TrainerBattleLoadArgs(const struct TrainerBattleParameter *specs, co
             data += 2;
             break;
         case TRAINER_PARAM_LOAD_VAL_32BIT:
+#ifdef PORT_BRIDGE
+            // These operands are text or script pointers, not native callbacks.
+            if (specs->varPtr == &sTrainerABattleScriptRetAddr
+                || specs->varPtr == &sTrainerBBattleScriptRetAddr)
+                SetPtr(specs->varPtr, Port_ResolveScriptPointer((const u8 *)TrainerBattleLoadArg32(data)));
+            else
+                SetPtr(specs->varPtr, Port_ResolveTextPointer((const u8 *)TrainerBattleLoadArg32(data)));
+#else
             SetU32(specs->varPtr, TrainerBattleLoadArg32(data));
+#endif
             data += 4;
             break;
         case TRAINER_PARAM_CLEAR_VAL_8BIT:
@@ -1192,6 +1204,9 @@ const u8 *BattleSetup_ConfigureTrainerBattle(const u8 *data)
 
 void ConfigureAndSetUpOneTrainerBattle(u8 trainerObjEventId, const u8 *trainerScript)
 {
+#ifdef PORT_BRIDGE
+    trainerScript = Port_ResolveScriptPointer(trainerScript);
+#endif
     gSelectedObjectEvent = trainerObjEventId;
     gSpecialVar_LastTalked = gObjectEvents[trainerObjEventId].localId;
     BattleSetup_ConfigureTrainerBattle(trainerScript + 1);
@@ -1201,6 +1216,9 @@ void ConfigureAndSetUpOneTrainerBattle(u8 trainerObjEventId, const u8 *trainerSc
 
 void ConfigureTwoTrainersBattle(u8 trainerObjEventId, const u8 *trainerScript)
 {
+#ifdef PORT_BRIDGE
+    trainerScript = Port_ResolveScriptPointer(trainerScript);
+#endif
     gSelectedObjectEvent = trainerObjEventId;
     gSpecialVar_LastTalked = gObjectEvents[trainerObjEventId].localId;
     BattleSetup_ConfigureTrainerBattle(trainerScript + 1);
@@ -1214,6 +1232,9 @@ void SetUpTwoTrainersBattle(void)
 
 bool32 GetTrainerFlagFromScriptPointer(const u8 *data)
 {
+#ifdef PORT_BRIDGE
+    data = Port_ResolveScriptPointer(data);
+#endif
     u32 flag = TrainerBattleLoadArg16(data + 2);
     return FlagGet(TRAINER_FLAGS_START + flag);
 }
@@ -1500,10 +1521,14 @@ void PlayTrainerEncounterMusic(void)
 
 static const u8 *ReturnEmptyStringIfNull(const u8 *string)
 {
+#ifdef PORT_BRIDGE
+    return Port_ResolveTextPointer(string == NULL ? gText_EmptyString2 : string);
+#else
     if (string == NULL)
         return gText_EmptyString2;
     else
         return string;
+#endif
 }
 
 static const u8 *GetIntroSpeechOfApproachingTrainer(void)

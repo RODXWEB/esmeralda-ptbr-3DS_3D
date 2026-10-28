@@ -2481,6 +2481,9 @@ extern const u8 gText_MrStoneMatchCallName[];
 extern const u8 gText_StevenMatchCallDesc[];
 extern const u8 gText_StevenMatchCallName[];
 extern const u8 gText_MayBrendanMatchCallDesc[];
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_SPANISH
+extern const u8 gText_MayMatchCallDesc[];
+#endif
 extern const u8 gText_WallyMatchCallDesc[];
 extern const u8 gText_NormanMatchCallDesc[];
 extern const u8 gText_NormanMatchCallName[];

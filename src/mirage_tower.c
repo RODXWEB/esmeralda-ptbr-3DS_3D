@@ -56,8 +56,20 @@ struct FallAnim_Fossil
 
 #define TAG_CEILING_CRUMBLE 4000
 
+#ifdef PORT_BRIDGE
+// An INCBIN is a one-byte link stub here, so sizeof would give 1 and CpuSet's
+// asset load would then copy the whole file into a one-byte allocation.
+#define MIRAGE_TOWER_GFX_LENGTH 0x920 // graphics/misc/mirage_tower.4bpp
+#define FOSSIL_GFX_LENGTH       0x80  // graphics/object_events/pics/misc/fossil.4bpp
+#else
 #define MIRAGE_TOWER_GFX_LENGTH (sizeof(sMirageTower_Gfx))
+#define FOSSIL_GFX_LENGTH       (sizeof(sFossil_Gfx))
+#endif
 #define FOSSIL_DISINTEGRATE_LENGTH 0x100
+
+#ifdef PORT_BRIDGE
+extern const u32 gObjectEventPic_Fossil[];
+#endif
 
 static void PlayerDescendMirageTower(u8);
 static void DoScreenShake(u8);
@@ -677,19 +689,26 @@ static void Task_FossilFallAndSink(u8 taskId)
     {
     case 1:
         sFallingFossil = AllocZeroed(sizeof(*sFallingFossil));
-        sFallingFossil->frameImageTiles = AllocZeroed(sizeof(sFossil_Gfx));
+        sFallingFossil->frameImageTiles = AllocZeroed(FOSSIL_GFX_LENGTH);
         sFallingFossil->frameImage = AllocZeroed(sizeof(*sFallingFossil->frameImage));
         sFallingFossil->disintegrateRand = AllocZeroed(FOSSIL_DISINTEGRATE_LENGTH * sizeof(u16));
         sFallingFossil->disintegrateIdx = 0;
         break;
     case 2:
         buffer = sFallingFossil->frameImageTiles;
+#ifdef PORT_BRIDGE
+        // Indexing the stub would read whatever follows it; the copy loads the asset.
+        // It comes from the object event's identical file: taking sFossil_Gfx's
+        // address would keep its stub and move every asset linked after it.
+        CpuSet(gObjectEventPic_Fossil, buffer, FOSSIL_GFX_LENGTH / 2);
+#else
         for (i = 0; i < sizeof(sFossil_Gfx); i++, buffer++)
             *buffer = sFossil_Gfx[i];
+#endif
         break;
     case 3:
         sFallingFossil->frameImage->data = sFallingFossil->frameImageTiles;
-        sFallingFossil->frameImage->size = sizeof(sFossil_Gfx);
+        sFallingFossil->frameImage->size = FOSSIL_GFX_LENGTH;
         break;
     case 4:
         {

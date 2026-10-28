@@ -13,7 +13,7 @@
 	.global	se_m_swagger2
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_swagger2_1:
 	.byte	KEYSH , se_m_swagger2_key+0
@@ -40,17 +40,17 @@ se_m_swagger2_1:
 	.byte	W04
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_swagger2:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_swagger2_pri	@ Priority
-	.byte	se_m_swagger2_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_swagger2_pri	/* Priority*/
+	.byte	se_m_swagger2_rev	/* Reverb.*/
 
-	.word	se_m_swagger2_grp
+	.int	se_m_swagger2_grp
 
-	.word	se_m_swagger2_1
+	.int	se_m_swagger2_1
 
 	.end

@@ -34,6 +34,9 @@
 #include "constants/rgb.h"
 #include "trainer_hill.h"
 #include "fldeff.h"
+#ifdef PLATFORM_3DS
+#include "follower_mon.h"
+#endif
 
 static void Task_ExitNonAnimDoor(u8);
 static void Task_ExitNonDoor(u8);
@@ -63,12 +66,12 @@ static const struct ScanlineEffectParams sFlashEffectParams =
 // code
 static void FillPalBufferWhite(void)
 {
-    CpuFastFill16(RGB_WHITE, gPlttBufferFaded, PLTT_SIZE);
+    CpuFastFill16(RGB_WHITE, gPlttBufferFaded, PLTT_BUFFER_BYTES);
 }
 
 static void FillPalBufferBlack(void)
 {
-    CpuFastFill16(RGB_BLACK, gPlttBufferFaded, PLTT_SIZE);
+    CpuFastFill16(RGB_BLACK, gPlttBufferFaded, PLTT_BUFFER_BYTES);
 }
 
 void WarpFadeInScreen(void)
@@ -684,6 +687,9 @@ static void Task_DoDoorWarp(u8 taskId)
     {
     case 0:
         FreezeObjectEvents();
+#ifdef PLATFORM_3DS
+        FollowerMon_DoorBegin();
+#endif
         PlayerGetDestCoords(x, y);
         PlaySE(GetDoorSoundEffect(*x, *y - 1));
         task->data[1] = FieldAnimateDoorOpen(*x, *y - 1);
@@ -704,6 +710,12 @@ static void Task_DoDoorWarp(u8 taskId)
         if (IsPlayerStandingStill())
         {
             u8 objEventId;
+#ifdef PLATFORM_3DS
+            // The follower goes in behind the player before the door closes.
+            SetPlayerVisibility(FALSE);
+            if (!FollowerMon_DoorDone())
+                break;
+#endif
             task->data[1] = FieldAnimateDoorClose(*x, *y - 1);
             objEventId = GetObjectEventIdByLocalIdAndMap(LOCALID_PLAYER, 0, 0);
             ObjectEventClearHeldMovementIfFinished(&gObjectEvents[objEventId]);

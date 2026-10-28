@@ -194,7 +194,12 @@ enum {
     PLIST_CONTACTED,
 };
 
+#ifdef PORT_BRIDGE
+// The nurse can query this before InitUnionRoom has ever run.
+static EWRAM_DATA u8 sUnionRoomPlayerName[12] = {EOS};
+#else
 static EWRAM_DATA u8 sUnionRoomPlayerName[12] = {};
+#endif
 EWRAM_DATA u8 gPlayerCurrActivity = 0;
 static EWRAM_DATA u8 sPlayerActivityGroupSize = 0;
 static EWRAM_DATA union
@@ -1463,6 +1468,12 @@ static u8 GetNewLeaderCandidate(void)
     return ret;
 }
 
+#ifdef PLATFORM_3DS
+// 3ds_bottom_ui.c: the top screen keeps the world from now until the field
+// is back, while the trade menu and the trade are on the bottom screen.
+void CtrBottom_KeepWorld(void);
+#endif
+
 static void Task_CreateTradeMenu(u8 taskId)
 {
     CB2_StartCreateTradeMenu();
@@ -1787,6 +1798,11 @@ static void Task_RunScriptAndFadeToActivity(u8 taskId)
     case 1:
         if (!ScriptContext_IsEnabled())
         {
+#ifdef PLATFORM_3DS
+            // The trade menu is on the bottom screen, the top keeps the room.
+            if (gPlayerCurrActivity == ACTIVITY_29)
+                CtrBottom_KeepWorld();
+#endif
             FadeScreen(FADE_TO_BLACK, 0);
             data[0] = 2;
         }

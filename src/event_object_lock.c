@@ -7,6 +7,9 @@
 #include "task.h"
 #include "trainer_see.h"
 #include "constants/event_objects.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 bool8 IsPlayerStandingStill(void)
 {
@@ -19,6 +22,16 @@ bool8 IsPlayerStandingStill(void)
 // Freeze player once their movement is finished
 static void Task_FreezePlayer(u8 taskId)
 {
+#ifdef PORT_BRIDGE
+    struct ObjectEvent *playerObjEvent = &gObjectEvents[gPlayerAvatar.objectEventId];
+
+    Port_SetBirchDebugEx(0x0411,
+                        taskId | (gTasks[taskId].data[0] << 8),
+                        gPlayerAvatar.tileTransitionState | (gPlayerAvatar.runningState << 8),
+                        playerObjEvent->movementActionId | (playerObjEvent->heldMovementActive << 8) | (playerObjEvent->heldMovementFinished << 9),
+                        gPlayerAvatar.objectEventId);
+#endif
+
     if (IsPlayerStandingStill())
     {
         PlayerFreeze();
@@ -28,6 +41,15 @@ static void Task_FreezePlayer(u8 taskId)
 
 bool8 IsFreezePlayerFinished(void)
 {
+#ifdef PORT_BRIDGE
+    struct ObjectEvent *playerObjEvent = &gObjectEvents[gPlayerAvatar.objectEventId];
+
+    Port_SetBirchDebugEx(0x0412,
+                        FuncIsActiveTask(Task_FreezePlayer),
+                        gPlayerAvatar.tileTransitionState | (gPlayerAvatar.runningState << 8),
+                        playerObjEvent->movementActionId | (playerObjEvent->heldMovementActive << 8) | (playerObjEvent->heldMovementFinished << 9),
+                        gPlayerAvatar.objectEventId);
+#endif
     if (FuncIsActiveTask(Task_FreezePlayer))
     {
         return FALSE;

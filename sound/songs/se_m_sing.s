@@ -13,7 +13,7 @@
 	.global	se_m_sing
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_sing_1:
 	.byte	KEYSH , se_m_sing_key+0
@@ -68,9 +68,9 @@ se_m_sing_1_001:
 	.byte	W06
 	.byte	W06
 	.byte	PATT
-	 .word	se_m_sing_1_000
+	 .int	se_m_sing_1_000
 	.byte	PATT
-	 .word	se_m_sing_1_001
+	 .int	se_m_sing_1_001
 	.byte		VOL   , 95*se_m_sing_mvl/mxv
 	.byte		N66   , Gn4 , v112
 	.byte	W06
@@ -94,7 +94,7 @@ se_m_sing_1_001:
 	.byte	W06
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_sing_2:
 	.byte	KEYSH , se_m_sing_key+0
@@ -151,9 +151,9 @@ se_m_sing_2_001:
 	.byte	W06
 	.byte	W06
 	.byte	PATT
-	 .word	se_m_sing_2_000
+	 .int	se_m_sing_2_000
 	.byte	PATT
-	 .word	se_m_sing_2_001
+	 .int	se_m_sing_2_001
 	.byte		VOL   , 95*se_m_sing_mvl/mxv
 	.byte		PAN   , c_v-12
 	.byte		N66   , Gn4 , v060
@@ -181,18 +181,18 @@ se_m_sing_2_001:
 	.byte		MOD   , 0
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_sing:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_sing_pri	@ Priority
-	.byte	se_m_sing_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_sing_pri	/* Priority*/
+	.byte	se_m_sing_rev	/* Reverb.*/
 
-	.word	se_m_sing_grp
+	.int	se_m_sing_grp
 
-	.word	se_m_sing_1
-	.word	se_m_sing_2
+	.int	se_m_sing_1
+	.int	se_m_sing_2
 
 	.end

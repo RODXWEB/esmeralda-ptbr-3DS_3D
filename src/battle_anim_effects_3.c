@@ -2803,11 +2803,17 @@ static void AnimSweetScentPetal(struct Sprite *sprite)
     {
         sprite->x = 0;
         sprite->y = gBattleAnimArgs[0];
+#ifdef PLATFORM_3DS
+        sprite->y += CtrBattleSideShiftOf(B_SIDE_OPPONENT);
+#endif
     }
     else
     {
         sprite->x = DISPLAY_WIDTH;
         sprite->y = gBattleAnimArgs[0] - 30;
+#ifdef PLATFORM_3DS
+        sprite->y += CtrBattleSideShiftOf(B_SIDE_PLAYER);
+#endif
     }
 
     sprite->data[2] = gBattleAnimArgs[2];

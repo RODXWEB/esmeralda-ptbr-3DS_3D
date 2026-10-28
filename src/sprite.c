@@ -2,6 +2,17 @@
 #include "sprite.h"
 #include "main.h"
 #include "palette.h"
+#if defined(PLATFORM_3DS)
+#include "3ds_video.h"
+bool8 FieldEffect_IsMachineSprite(const struct Sprite *sprite);   /* field_effect.c */
+#endif
+#if defined(PLATFORM_3DS)
+#include "field_weather.h"
+#include "constants/weather.h"
+#endif
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 #define MAX_SPRITE_COPY_REQUESTS 64
 
@@ -272,6 +283,13 @@ static u16 sSpriteTileRangeTags[MAX_SPRITES];
 static u16 sSpriteTileRanges[MAX_SPRITES * 2];
 static struct AffineAnimState sAffineAnimStates[OAM_MATRIX_COUNT];
 static u16 sSpritePaletteTags[16];
+#ifdef PLATFORM_3DS
+// The ext palettes' tags (in use by gPlttExtInUse), and the ext palette each
+// sprite is drawn with, plus one (0: its own oam.paletteNum): OAM has no room
+// for it. gSprites has a spare entry past MAX_SPRITES, reset like the rest.
+static u16 sSpritePaletteExtTags[PLTT_EXT_COUNT];
+static u8 sSpriteExtPalettes[MAX_SPRITES + 1];
+#endif
 
 // iwram common
 COMMON_DATA u32 gOamMatrixAllocBitmap = 0;
@@ -290,6 +308,34 @@ EWRAM_DATA s16 gSpriteCoordOffsetX = 0;
 EWRAM_DATA s16 gSpriteCoordOffsetY = 0;
 EWRAM_DATA struct OamMatrix gOamMatrices[OAM_MATRIX_COUNT] = {0};
 EWRAM_DATA bool8 gAffineAnimsDisabled = FALSE;
+
+#ifdef PORT_BRIDGE
+/*
+ * Port: each sprite's identity, one number for as long as it lives, a new one
+ * whenever a slot takes a new sprite (phase F1 of the engine plan). Kept beside
+ * gSprites rather than in struct Sprite, so nothing of the game's layout
+ * changes. Sprites made by copying another (battle animations' clones) do not
+ * pass through CreateSpriteAt: the port numbers those (CtrSprites_Track).
+ */
+u32 gCtrSpriteId[MAX_SPRITES + 1];
+u32 gCtrSpriteNextId;
+#endif
+
+#ifdef PORT_BRIDGE
+static u32 GetPortSpriteAssetSize(const void *data, u32 declaredSize)
+{
+    u32 assetSize;
+
+    if (declaredSize >= TILE_SIZE_4BPP)
+        return declaredSize;
+
+    assetSize = Port_GetAssetSize(data);
+    if (assetSize != 0)
+        return assetSize;
+
+    return declaredSize;
+}
+#endif
 
 void ResetSpriteData(void)
 {
@@ -479,16 +525,136 @@ void CopyMatricesToOamBuffer(void)
     }
 }
 
+#if defined(PLATFORM_3DS)
+/*
+ * The fog's sprites: one 64x64 picture laid on a 64-pixel lattice, scrolled.
+ * Twenty of them cover a GBA screen, with OAM's own wrap-around closing the
+ * gaps; the compositor lays the same picture over the whole wide view
+ * instead (CtrVideo_MarkFogOam), or the voxel world draws a fog of its own.
+ */
+static bool8 IsFogSprite(const struct Sprite *sprite)
+{
+    // By the template, not by the weather's sprite pointers: those outlive
+    // the field (a battle reuses the slots). Only its address is compared: a
+    // map object's template was a local of the function that spawned it, so
+    // reading it read whatever the stack held there. When that matched the
+    // fog's tag, the object was drawn over the whole screen as fog (the old
+    // lady of Route 111's rest house, mid-step).
+    return Weather_IsFogSpriteTemplate(sprite->template);
+}
+#endif
+
+#if defined(PLATFORM_3DS) && CTR_VOXEL_ENABLED
+/* OAM is sorted by subpriority, so weather cannot be identified by a fixed
+ * index. Tag the entries as the original sprite sorter writes them. */
+static bool8 IsVoxelWeatherSprite(const struct Sprite *sprite)
+{
+    unsigned i;
+    switch (gWeatherPtr->currWeather)
+    {
+    case WEATHER_SUNNY_CLOUDS:
+        for (i = 0; i < NUM_CLOUD_SPRITES; ++i)
+            if (gWeatherPtr->sprites.s1.cloudSprites[i] == sprite) return TRUE;
+        break;
+    case WEATHER_RAIN:
+    case WEATHER_RAIN_THUNDERSTORM:
+    case WEATHER_DOWNPOUR:
+        for (i = 0; i < gWeatherPtr->rainSpriteCount; ++i)
+            if (gWeatherPtr->sprites.s1.rainSprites[i] == sprite) return TRUE;
+        break;
+    case WEATHER_SNOW:
+        for (i = 0; i < gWeatherPtr->snowflakeSpriteCount; ++i)
+            if (gWeatherPtr->sprites.s1.snowflakeSprites[i] == sprite) return TRUE;
+        break;
+    case WEATHER_FOG_HORIZONTAL:
+    case WEATHER_UNDERWATER:
+        for (i = 0; i < NUM_FOG_HORIZONTAL_SPRITES; ++i)
+            if (gWeatherPtr->sprites.s2.fogHSprites[i] == sprite) return TRUE;
+        break;
+    case WEATHER_VOLCANIC_ASH:
+        for (i = 0; i < NUM_ASH_SPRITES; ++i)
+            if (gWeatherPtr->sprites.s2.ashSprites[i] == sprite) return TRUE;
+        break;
+    case WEATHER_SANDSTORM:
+        for (i = 0; i < NUM_SANDSTORM_SPRITES; ++i)
+            if (gWeatherPtr->sprites.s2.sandstormSprites1[i] == sprite) return TRUE;
+        for (i = 0; i < NUM_SWIRL_SANDSTORM_SPRITES; ++i)
+            if (gWeatherPtr->sprites.s2.sandstormSprites2[i] == sprite) return TRUE;
+        break;
+    case WEATHER_FOG_DIAGONAL:
+        for (i = 0; i < NUM_FOG_DIAGONAL_SPRITES; ++i)
+            if (gWeatherPtr->sprites.s2.fogDSprites[i] == sprite) return TRUE;
+        break;
+    case WEATHER_UNDERWATER_BUBBLES:
+        return Weather_IsBubbleSpriteTemplate(sprite->template);
+    }
+    return FALSE;
+}
+
+/* The voxel field draws the other map sprites as cards and the weather over
+ * the view (voxel_entities.c). */
+bool8 CtrSprite_IsVoxelWeather(const struct Sprite *sprite)
+{
+    return IsVoxelWeatherSprite(sprite);
+}
+#endif
+
 void AddSpritesToOamBuffer(void)
 {
     u8 i = 0;
     u8 oamIndex = 0;
 
+#if defined(PLATFORM_3DS)
+    CtrVideo_ClearOamAnchors();
+    CtrVideo_ClearScreenOam();
+    CtrVideo_ClearFogOam();
+    CtrVideo_ClearExtPaletteOam();
+#endif
+#if defined(PLATFORM_3DS) && CTR_VOXEL_ENABLED
+    CtrVideo_ClearVoxelWeatherOam();
+#endif
     while (i < MAX_SPRITES)
     {
         struct Sprite *sprite = &gSprites[sSpriteOrder[i]];
-        if (sprite->inUse && !sprite->invisible && AddSpriteToOamBuffer(sprite, &oamIndex))
-            return;
+        if (sprite->inUse && !sprite->invisible)
+        {
+            u8 first = oamIndex;
+            bool8 full = AddSpriteToOamBuffer(sprite, &oamIndex);
+#if defined(PLATFORM_3DS)
+            CtrVideo_SetOamAnchor(first, oamIndex, sprite->y + sprite->y2 + sprite->centerToCornerVecY
+                                  + (sprite->coordOffsetEnabled ? gSpriteCoordOffsetY : 0));
+            // Placed on the screen, not on the map: a battle transition's
+            // sprites, which the compositor draws with the transition.
+            if (!sprite->coordOffsetEnabled)
+            {
+                CtrVideo_MarkScreenOam(first, oamIndex);
+                if (FieldEffect_IsMachineSprite(sprite))
+                    CtrVideo_MarkMachineOam(first, oamIndex);
+            }
+            if (IsFogSprite(sprite))
+                CtrVideo_MarkFogOam(first, oamIndex);
+            // The rest of the weather, carried over the whole view too.
+            switch (Weather_SpriteTiling(sprite))
+            {
+            case WEATHER_TILING_LATTICE:
+                CtrVideo_MarkWeatherOam(first, oamIndex, TRUE);
+                break;
+            case WEATHER_TILING_PARTICLES:
+                CtrVideo_MarkWeatherOam(first, oamIndex, FALSE);
+                break;
+            }
+            // Drawn with an ext palette, which oam.paletteNum cannot name.
+            if (sSpriteExtPalettes[sSpriteOrder[i]])
+                CtrVideo_MarkExtPaletteOam(first, oamIndex, sSpriteExtPalettes[sSpriteOrder[i]] - 1);
+#endif
+#if defined(PLATFORM_3DS) && CTR_VOXEL_ENABLED
+            if (IsVoxelWeatherSprite(sprite))
+                CtrVideo_MarkVoxelWeatherOam(first, oamIndex);
+#else
+            (void)first;
+#endif
+            if (full) return;
+        }
         i++;
     }
 
@@ -544,6 +710,9 @@ u8 CreateSpriteAt(u8 index, const struct SpriteTemplate *template, s16 x, s16 y,
     ResetSprite(sprite);
 
     sprite->inUse = TRUE;
+#ifdef PORT_BRIDGE
+    gCtrSpriteId[index] = ++gCtrSpriteNextId;
+#endif
     sprite->animBeginning = TRUE;
     sprite->affineAnimBeginning = TRUE;
     sprite->usingSheet = TRUE;
@@ -562,8 +731,19 @@ u8 CreateSpriteAt(u8 index, const struct SpriteTemplate *template, s16 x, s16 y,
     if (template->tileTag == TAG_NONE)
     {
         s16 tileNum;
+        u32 imageSize;
         sprite->images = template->images;
-        tileNum = AllocSpriteTiles((u8)(sprite->images->size / TILE_SIZE_4BPP));
+#ifdef PORT_BRIDGE
+        imageSize = Port_GetSpriteFrameSize(sprite->images->data, sprite->images->size);
+        if (imageSize < TILE_SIZE_4BPP || imageSize % TILE_SIZE_4BPP != 0 || imageSize / TILE_SIZE_4BPP > 255)
+        {
+            ResetSprite(sprite);
+            return MAX_SPRITES;
+        }
+#else
+        imageSize = sprite->images->size;
+#endif
+        tileNum = AllocSpriteTiles((u8)(imageSize / TILE_SIZE_4BPP));
         if (tileNum == -1)
         {
             ResetSprite(sprite);
@@ -584,6 +764,12 @@ u8 CreateSpriteAt(u8 index, const struct SpriteTemplate *template, s16 x, s16 y,
 
     if (template->paletteTag != TAG_NONE)
         sprite->oam.paletteNum = IndexOfSpritePaletteTag(template->paletteTag);
+#ifdef PLATFORM_3DS
+    // A tag only an ext palette holds (LoadSpritePaletteExt).
+    if (template->paletteTag != TAG_NONE && gPlttExtInUse
+     && IndexOfSpritePaletteTag(template->paletteTag) == 0xFF)
+        SetSpriteExtPalette(sprite, IndexOfSpritePaletteExtTag(template->paletteTag));
+#endif
 
     return index;
 }
@@ -622,7 +808,13 @@ void DestroySprite(struct Sprite *sprite)
         if (!sprite->usingSheet)
         {
             u16 i;
-            u16 tileEnd = (sprite->images->size / TILE_SIZE_4BPP) + sprite->oam.tileNum;
+            u32 imageSize;
+#ifdef PORT_BRIDGE
+            imageSize = Port_GetSpriteFrameSize(sprite->images->data, sprite->images->size);
+#else
+            imageSize = sprite->images->size;
+#endif
+            u16 tileEnd = (imageSize / TILE_SIZE_4BPP) + sprite->oam.tileNum;
             for (i = sprite->oam.tileNum; i < tileEnd; i++)
                 FREE_SPRITE_TILE(i);
         }
@@ -682,6 +874,9 @@ void SetOamMatrix(u8 matrixNum, u16 a, u16 b, u16 c, u16 d)
 void ResetSprite(struct Sprite *sprite)
 {
     *sprite = sDummySprite;
+#ifdef PLATFORM_3DS
+    SetSpriteExtPalette(sprite, 0xFF);
+#endif
 }
 
 void CalcCenterToCornerVec(struct Sprite *sprite, u8 shape, u8 size, u8 affineMode)
@@ -791,6 +986,10 @@ void ProcessSpriteCopyRequests(void)
         while (sSpriteCopyRequestCount > 0)
         {
             CpuCopy16(sSpriteCopyRequests[i].src, sSpriteCopyRequests[i].dest, sSpriteCopyRequests[i].size);
+#ifdef PORT_BRIDGE
+            // Completed copies must not pin external asset payloads in the cache.
+            sSpriteCopyRequests[i].src = NULL;
+#endif
             sSpriteCopyRequestCount--;
             i++;
         }
@@ -803,9 +1002,17 @@ void RequestSpriteFrameImageCopy(u16 index, u16 tileNum, const struct SpriteFram
 {
     if (sSpriteCopyRequestCount < MAX_SPRITE_COPY_REQUESTS)
     {
-        sSpriteCopyRequests[sSpriteCopyRequestCount].src = images[index].data;
+        const void *src = images[index].data;
+        u32 size = images[index].size;
+#ifdef PORT_BRIDGE
+        size = Port_GetSpriteFrameSize(src, size);
+        src = Port_ResolveSpriteFramePointer(src, size, images[index].offset);
+        if (src == NULL || size == 0)
+            return;
+#endif
+        sSpriteCopyRequests[sSpriteCopyRequestCount].src = src;
         sSpriteCopyRequests[sSpriteCopyRequestCount].dest = (u8 *)OBJ_VRAM0 + TILE_SIZE_4BPP * tileNum;
-        sSpriteCopyRequests[sSpriteCopyRequestCount].size = images[index].size;
+        sSpriteCopyRequests[sSpriteCopyRequestCount].size = size;
         sSpriteCopyRequestCount++;
     }
 }
@@ -814,6 +1021,9 @@ void RequestSpriteCopy(const u8 *src, u8 *dest, u16 size)
 {
     if (sSpriteCopyRequestCount < MAX_SPRITE_COPY_REQUESTS)
     {
+#ifdef PORT_BRIDGE
+        src = Port_ResolveAssetPointer(src);
+#endif
         sSpriteCopyRequests[sSpriteCopyRequestCount].src = src;
         sSpriteCopyRequests[sSpriteCopyRequestCount].dest = dest;
         sSpriteCopyRequests[sSpriteCopyRequestCount].size = size;
@@ -1485,7 +1695,11 @@ void SetOamMatrixRotationScaling(u8 matrixNum, s16 xScale, s16 yScale, u16 rotat
 
 u16 LoadSpriteSheet(const struct SpriteSheet *sheet)
 {
-    s16 tileStart = AllocSpriteTiles(sheet->size / TILE_SIZE_4BPP);
+    u32 sheetSize = sheet->size;
+#ifdef PORT_BRIDGE
+    sheetSize = GetPortSpriteAssetSize(sheet->data, sheetSize);
+#endif
+    s16 tileStart = AllocSpriteTiles(sheetSize / TILE_SIZE_4BPP);
 
     if (tileStart < 0)
     {
@@ -1493,8 +1707,12 @@ u16 LoadSpriteSheet(const struct SpriteSheet *sheet)
     }
     else
     {
-        AllocSpriteTileRange(sheet->tag, (u16)tileStart, sheet->size / TILE_SIZE_4BPP);
-        CpuCopy16(sheet->data, (u8 *)OBJ_VRAM0 + TILE_SIZE_4BPP * tileStart, sheet->size);
+        const void *src = sheet->data;
+#ifdef PORT_BRIDGE
+        src = Port_ResolveAssetPointerSized(src, sheetSize);
+#endif
+        AllocSpriteTileRange(sheet->tag, (u16)tileStart, sheetSize / TILE_SIZE_4BPP);
+        CpuCopy16(src, (u8 *)OBJ_VRAM0 + TILE_SIZE_4BPP * tileStart, sheetSize);
         return (u16)tileStart;
     }
 }
@@ -1584,6 +1802,9 @@ void FreeAllSpritePalettes(void)
     gReservedSpritePaletteCount = 0;
     for (i = 0; i < 16; i++)
         sSpritePaletteTags[i] = TAG_NONE;
+#ifdef PLATFORM_3DS
+    gPlttExtInUse = 0;
+#endif
 }
 
 u8 LoadSpritePalette(const struct SpritePalette *palette)
@@ -1617,6 +1838,9 @@ void LoadSpritePalettes(const struct SpritePalette *palettes)
 
 void DoLoadSpritePalette(const u16 *src, u16 paletteOffset)
 {
+#ifdef PORT_BRIDGE
+    src = Port_ResolveAssetPointerSized(src, PLTT_SIZE_4BPP);
+#endif
     LoadPalette(src, OBJ_PLTT_OFFSET + paletteOffset, PLTT_SIZE_4BPP);
 }
 
@@ -1654,7 +1878,73 @@ void FreeSpritePaletteByTag(u16 tag)
     u8 index = IndexOfSpritePaletteTag(tag);
     if (index != 0xFF)
         sSpritePaletteTags[index] = TAG_NONE;
+#ifdef PLATFORM_3DS
+    else
+    {
+        index = IndexOfSpritePaletteExtTag(tag);
+        if (index != 0xFF)
+            gPlttExtInUse &= ~(1 << index);
+    }
+#endif
 }
+
+#ifdef PLATFORM_3DS
+u8 LoadSpritePaletteExt(const struct SpritePalette *palette)
+{
+    u8 index = IndexOfSpritePaletteExtTag(palette->tag);
+
+    if (index != 0xFF)
+        return index;
+    index = AllocSpritePaletteExt(palette->tag);
+    // The GBA palettes' load, at the ext palette's place past the OBJ ones.
+    if (index != 0xFF)
+        DoLoadSpritePalette(palette->data, PLTT_EXT_ID(index) - OBJ_PLTT_OFFSET);
+    return index;
+}
+
+u8 AllocSpritePaletteExt(u16 tag)
+{
+    u8 i;
+
+    for (i = 0; i < PLTT_EXT_COUNT; i++)
+    {
+        if (!(gPlttExtInUse & (1 << i)))
+        {
+            gPlttExtInUse |= 1 << i;
+            sSpritePaletteExtTags[i] = tag;
+            return i;
+        }
+    }
+    return 0xFF;
+}
+
+u8 IndexOfSpritePaletteExtTag(u16 tag)
+{
+    u8 i;
+
+    for (i = 0; i < PLTT_EXT_COUNT; i++)
+        if ((gPlttExtInUse & (1 << i)) && sSpritePaletteExtTags[i] == tag)
+            return i;
+    return 0xFF;
+}
+
+void SetSpriteExtPalette(struct Sprite *sprite, u8 extPalette)
+{
+    u32 id = sprite - gSprites;
+
+    if (id <= MAX_SPRITES)
+        sSpriteExtPalettes[id] = extPalette < PLTT_EXT_COUNT ? extPalette + 1 : 0;
+}
+
+u8 GetSpriteExtPalette(const struct Sprite *sprite)
+{
+    u32 id = sprite - gSprites;
+
+    if (id > MAX_SPRITES || sSpriteExtPalettes[id] == 0)
+        return 0xFF;
+    return sSpriteExtPalettes[id] - 1;
+}
+#endif
 
 void SetSubspriteTables(struct Sprite *sprite, const struct SubspriteTable *subspriteTables)
 {

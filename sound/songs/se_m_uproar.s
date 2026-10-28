@@ -13,7 +13,7 @@
 	.global	se_m_uproar
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_uproar_1:
 	.byte	KEYSH , se_m_uproar_key+0
@@ -70,17 +70,17 @@ se_m_uproar_1:
 	.byte	W02
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_uproar:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_uproar_pri	@ Priority
-	.byte	se_m_uproar_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_uproar_pri	/* Priority*/
+	.byte	se_m_uproar_rev	/* Reverb.*/
 
-	.word	se_m_uproar_grp
+	.int	se_m_uproar_grp
 
-	.word	se_m_uproar_1
+	.int	se_m_uproar_1
 
 	.end

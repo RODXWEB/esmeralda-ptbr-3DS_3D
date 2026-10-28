@@ -28,6 +28,10 @@
 extern const u16 gMovesWithQuietBGM[];
 extern const u8 *const gBattleAnims_Moves[];
 
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+
 static void Cmd_loadspritegfx(void);
 static void Cmd_unloadspritegfx(void);
 static void Cmd_createsprite(void);
@@ -88,6 +92,9 @@ static void Task_LoopAndPlaySE(u8 taskId);
 static void Task_WaitAndPlaySE(u8 taskId);
 static void LoadDefaultBg(void);
 static void LoadMoveBg(u16 bgId);
+#ifdef PLATFORM_3DS
+void CtrBattleBg_SetMoveBgShown(bool8 shown); // battle_bg.c
+#endif
 
 EWRAM_DATA static const u8 *sBattleAnimScriptPtr = NULL;
 EWRAM_DATA static const u8 *sBattleAnimScriptRetAddr = NULL;
@@ -237,6 +244,10 @@ void LaunchBattleAnimation(const u8 *const animsTable[], u16 tableId, bool8 isMo
 
     sMonAnimTaskIdArray[0] = TASK_NONE;
     sMonAnimTaskIdArray[1] = TASK_NONE;
+#ifdef PORT_BRIDGE
+    // The table itself is externalized, not just the scripts it points to.
+    animsTable = Port_ResolveEventPointer(animsTable);
+#endif
     sBattleAnimScriptPtr = animsTable[tableId];
     gAnimScriptActive = TRUE;
     sAnimFramesToWait = 0;
@@ -247,9 +258,14 @@ void LaunchBattleAnimation(const u8 *const animsTable[], u16 tableId, bool8 isMo
 
     if (isMoveAnim)
     {
-        for (i = 0; gMovesWithQuietBGM[i] != 0xFFFF; i++)
+        const u16 *quietMoves = gMovesWithQuietBGM;
+
+#ifdef PORT_BRIDGE
+        quietMoves = Port_ResolveEventPointer(quietMoves);
+#endif
+        for (i = 0; quietMoves[i] != 0xFFFF; i++)
         {
-            if (tableId == gMovesWithQuietBGM[i])
+            if (tableId == quietMoves[i])
             {
                 m4aMPlayVolumeControl(&gMPlayInfo_BGM, TRACKS_ALL, 128);
                 break;
@@ -327,6 +343,11 @@ static void RunAnimScriptCommand(void)
 {
     do
     {
+#ifdef PORT_BRIDGE
+        // Resolve entries, jumps/calls/returns and fall-through across cached
+        // labels at the interpreter boundary, for every animation opcode.
+        sBattleAnimScriptPtr = Port_ResolveScriptPointer(sBattleAnimScriptPtr);
+#endif
         sScriptCmdTable[sBattleAnimScriptPtr[0]]();
     } while (sAnimFramesToWait == 0 && gAnimScriptActive);
 }
@@ -1182,6 +1203,59 @@ static void Task_FadeToBg(u8 taskId)
     }
 }
 
+#ifdef PLATFORM_3DS
+/*
+ * The 3DS shows BG3 past the GBA's 240x160: the whole 64x32 map the battle
+ * gives it, as it wraps. A move's background fills only part of that map -
+ * 32 columns, and 20 rows for the psychic, Solar Beam and impact ones - so
+ * the rest still held the battle scenery's entries, drawn with the move's
+ * tiles and palette: stripes above the psychic background and a strip of
+ * other tiles at the sides (#51). Carry the move's own art over that rest:
+ * a repeating pattern by its period, any other picture by the 32 columns it
+ * wraps in, and the rows it leaves missing or empty by its vertical period
+ * or else its top row, as the scenery's map repeats its own above it.
+ */
+static bool32 MoveBgRepeats(const u16 *map, u32 rows, u32 dx, u32 dy)
+{
+    u32 x, y;
+
+    // Only what the GBA shows decides: columns 30 and 31 are often empty.
+    for (y = dy; y < rows; y++)
+        for (x = dx; x < 30; x++)
+            if (map[y * 32 + x] != map[(y - dy) * 32 + x - dx])
+                return FALSE;
+    return TRUE;
+}
+
+static void ExtendMoveBg(u16 *map, u32 size)
+{
+    u32 rows = size / 64, shown = rows < 20 ? rows : 20;
+    u32 periodX = 0, periodY = 0, p, x, y;
+
+    // A 64-column map (4096 bytes) fills BG3 already.
+    if (rows == 0 || rows > 32)
+        return;
+    for (p = 1; p < 30 && periodX == 0; p++)
+        if (64 % p == 0 && MoveBgRepeats(map, shown, p, 0))
+            periodX = p;
+    for (p = 1; p < shown && periodY == 0; p++)
+        if (32 % p == 0 && MoveBgRepeats(map, shown, 0, p))
+            periodY = p;
+    for (y = shown; y < 32; y++)
+    {
+        bool32 empty = TRUE;
+
+        for (x = 0; x < 32 && y < rows && empty; x++)
+            empty = map[y * 32 + x] == 0;
+        if (empty)
+            CpuCopy16(&map[(periodY != 0 ? y % periodY : 0) * 32], &map[y * 32], 32 * sizeof(u16));
+    }
+    for (y = 0; y < 32; y++)
+        for (x = periodX != 0 ? 30 : 32; x < 64; x++)
+            map[(x / 32) * 1024 + y * 32 + x % 32] = map[y * 32 + (periodX != 0 ? x % periodX : x % 32)];
+}
+#endif
+
 static void LoadMoveBg(u16 bgId)
 {
     if (IsContest())
@@ -1200,7 +1274,13 @@ static void LoadMoveBg(u16 bgId)
     }
     else
     {
+#ifdef PLATFORM_3DS
+        CtrBattleBg_SetMoveBgShown(TRUE);
+#endif
         LZDecompressVram(gBattleAnimBackgroundTable[bgId].tilemap, (void *)BG_SCREEN_ADDR(26));
+#ifdef PLATFORM_3DS
+        ExtendMoveBg((u16 *)BG_SCREEN_ADDR(26), GetDecompressedDataSize(gBattleAnimBackgroundTable[bgId].tilemap));
+#endif
         LZDecompressVram(gBattleAnimBackgroundTable[bgId].image, (void *)BG_CHAR_ADDR(2));
         LoadCompressedPalette(gBattleAnimBackgroundTable[bgId].palette, BG_PLTT_ID(2), PLTT_SIZE_4BPP);
     }

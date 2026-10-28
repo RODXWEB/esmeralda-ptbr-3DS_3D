@@ -268,6 +268,14 @@ static void UNUSED StitchObjectsOn8x8Canvas(s32 object_size, s32 object_count, u
 
 u32 GetDecompressedDataSize(const u32 *ptr)
 {
+#ifdef PORT_BRIDGE
+    if (Port_IsAssetStub(ptr))
+    {
+        u32 size = Port_GetDecompressedAssetSize(ptr);
+        if (size != 0)
+            return size;
+    }
+#endif
     const u8 *ptr8 = (const u8 *)ptr;
     return (ptr8[3] << 16) | (ptr8[2] << 8) | (ptr8[1]);
 }
@@ -277,7 +285,7 @@ bool8 LoadCompressedSpriteSheetUsingHeap(const struct CompressedSpriteSheet *src
     struct SpriteSheet dest;
     void *buffer;
 
-    buffer = AllocZeroed(src->data[0] >> 8);
+    buffer = AllocZeroed(GetDecompressedDataSize(src->data));
     LZ77UnCompWram(src->data, buffer);
 
     dest.data = buffer;
@@ -294,7 +302,7 @@ bool8 LoadCompressedSpritePaletteUsingHeap(const struct CompressedSpritePalette 
     struct SpritePalette dest;
     void *buffer;
 
-    buffer = AllocZeroed(src->data[0] >> 8);
+    buffer = AllocZeroed(GetDecompressedDataSize(src->data));
     LZ77UnCompWram(src->data, buffer);
     dest.data = buffer;
     dest.tag = src->tag;

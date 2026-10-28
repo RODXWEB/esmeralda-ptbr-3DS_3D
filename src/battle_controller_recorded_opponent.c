@@ -1239,7 +1239,7 @@ static void RecordedOpponentHandleDrawTrainerPic(void)
     SetMultiuseSpriteTemplateToTrainerBack(trainerPicId, GetBattlerPosition(gActiveBattler));
     gBattlerSpriteIds[gActiveBattler] = CreateSprite(&gMultiuseSpriteTemplate,
                                                xPos,
-                                               (8 - gTrainerFrontPicCoords[trainerPicId].size) * 4 + 40,
+                                               (8 - gTrainerFrontPicCoords[trainerPicId].size) * 4 + 40 + BATTLE_SIDE_SHIFT(B_SIDE_OPPONENT),
                                                GetBattlerSpriteSubpriority(gActiveBattler));
 
     gSprites[gBattlerSpriteIds[gActiveBattler]].x2 = -DISPLAY_WIDTH;

@@ -187,6 +187,11 @@ static void WallyBufferRunCommand(void)
 
 static void WallyHandleActions(void)
 {
+#ifdef PLATFORM_3DS
+    // The menu is on the bottom screen: shown there while Wally picks.
+    if (CtrBattleMenu_Active())
+        CtrBattleMenu_ShowAction();
+#endif
     switch (gBattleStruct->wallyBattleState)
     {
     case 0:
@@ -228,8 +233,15 @@ static void WallyHandleActions(void)
         if (--gBattleStruct->wallyWaitFrames == 0)
         {
             PlaySE(SE_SELECT);
-            ActionSelectionDestroyCursorAt(0);
-            ActionSelectionCreateCursorAt(1, 0);
+#ifdef PLATFORM_3DS
+            if (CtrBattleMenu_Active())
+                gActionSelectionCursor[gActiveBattler] = 1;
+            else
+#endif
+            {
+                ActionSelectionDestroyCursorAt(0);
+                ActionSelectionCreateCursorAt(1, 0);
+            }
             gBattleStruct->wallyWaitFrames = B_WAIT_TIME_LONG;
             gBattleStruct->wallyBattleState++;
         }
@@ -1038,7 +1050,7 @@ static void WallyHandleDrawTrainerPic(void)
     SetMultiuseSpriteTemplateToTrainerBack(TRAINER_BACK_PIC_WALLY, GetBattlerPosition(gActiveBattler));
     gBattlerSpriteIds[gActiveBattler] = CreateSprite(&gMultiuseSpriteTemplate,
                                                80,
-                                               80 + 4 * (8 - gTrainerBackPicCoords[TRAINER_BACK_PIC_WALLY].size),
+                                               80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER) + 4 * (8 - gTrainerBackPicCoords[TRAINER_BACK_PIC_WALLY].size),
                                                30);
     gSprites[gBattlerSpriteIds[gActiveBattler]].oam.paletteNum = gActiveBattler;
     gSprites[gBattlerSpriteIds[gActiveBattler]].x2 = DISPLAY_WIDTH;
@@ -1053,7 +1065,7 @@ static void WallyHandleTrainerSlide(void)
     SetMultiuseSpriteTemplateToTrainerBack(TRAINER_BACK_PIC_WALLY, GetBattlerPosition(gActiveBattler));
     gBattlerSpriteIds[gActiveBattler] = CreateSprite(&gMultiuseSpriteTemplate,
                                                80,
-                                               80 + 4 * (8 - gTrainerBackPicCoords[TRAINER_BACK_PIC_WALLY].size),
+                                               80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER) + 4 * (8 - gTrainerBackPicCoords[TRAINER_BACK_PIC_WALLY].size),
                                                30);
     gSprites[gBattlerSpriteIds[gActiveBattler]].oam.paletteNum = gActiveBattler;
     gSprites[gBattlerSpriteIds[gActiveBattler]].x2 = -96;
@@ -1196,6 +1208,11 @@ static void HandleChooseActionAfterDma3(void)
     {
         gBattle_BG0_X = 0;
         gBattle_BG0_Y = DISPLAY_HEIGHT;
+#ifdef PLATFORM_3DS
+        // The menu is on the bottom screen: the top keeps the message box.
+        if (CtrBattleMenu_Active())
+            gBattle_BG0_Y = 0;
+#endif
         gBattlerControllerFuncs[gActiveBattler] = WallyHandleActions;
     }
 }
@@ -1205,6 +1222,16 @@ static void WallyHandleChooseAction(void)
     s32 i;
 
     gBattlerControllerFuncs[gActiveBattler] = HandleChooseActionAfterDma3;
+#ifdef PLATFORM_3DS
+    if (CtrBattleMenu_Active())
+    {
+        CtrBattleMenu_Begin();
+        gActionSelectionCursor[gActiveBattler] = 0;
+        BattleStringExpandPlaceholdersToDisplayedString(gText_WhatWillWallyDo);
+        CtrBattleMenu_ShowPrompt();
+        return;
+    }
+#endif
     BattlePutTextOnWindow(gText_BattleMenu, B_WIN_ACTION_MENU);
 
     for (i = 0; i < 4; i++)
@@ -1222,9 +1249,24 @@ static void WallyHandleYesNoBox(void)
 
 static void WallyHandleChooseMove(void)
 {
+#ifdef PLATFORM_3DS
+    // The move menu is on the bottom screen, its first move the one chosen.
+    if (CtrBattleMenu_Active())
+    {
+        if (gBattleStruct->wallyMovesState == 0)
+        {
+            CtrBattleMenu_Begin();
+            gMoveSelectionCursor[gActiveBattler] = 0;
+        }
+        CtrBattleMenu_ShowMove();
+    }
+#endif
     switch (gBattleStruct->wallyMovesState)
     {
     case 0:
+#ifdef PLATFORM_3DS
+        if (!CtrBattleMenu_Active())
+#endif
         InitMoveSelectionsVarsAndStrings();
         gBattleStruct->wallyMovesState++;
         gBattleStruct->wallyMoveFrames = 80;
@@ -1234,6 +1276,10 @@ static void WallyHandleChooseMove(void)
         {
             gBattle_BG0_X = 0;
             gBattle_BG0_Y = DISPLAY_HEIGHT * 2;
+#ifdef PLATFORM_3DS
+            if (CtrBattleMenu_Active())
+                gBattle_BG0_Y = 0;
+#endif
             gBattleStruct->wallyMovesState++;
         }
         break;

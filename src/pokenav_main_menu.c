@@ -1,5 +1,8 @@
 #include "global.h"
 #include "pokenav.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "constants/songs.h"
 #include "sound.h"
 #include "constants/rgb.h"
@@ -443,6 +446,17 @@ static u32 LoopedTask_SlideMenuHeaderDown(s32 state)
 
 void CopyPaletteIntoBufferUnfaded(const u16 *palette, u32 bufferOffset, u32 size)
 {
+#ifdef PORT_BRIDGE
+    // As in LoadPalette: sizeof an unsized INCBIN_U16 array is its one
+    // placeholder, not the palette.
+    if (size == sizeof(u16))
+    {
+        u32 assetSize = Port_GetAssetSizeExact(palette);
+
+        if (assetSize > size && assetSize <= PLTT_SIZE && assetSize % sizeof(u16) == 0)
+            size = assetSize;
+    }
+#endif
     CpuCopy16(palette, &gPlttBufferUnfaded[bufferOffset], size);
 }
 
@@ -473,6 +487,10 @@ void PokenavFillPalette(u32 palIndex, u16 fillValue)
 
 void PokenavCopyPalette(const u16 *src, const u16 *dest, int size, int a3, int a4, u16 *palette)
 {
+#ifdef PORT_BRIDGE
+    src = Port_ResolveAssetPointer(src);
+    dest = Port_ResolveAssetPointer(dest);
+#endif
     if (a4 == 0)
     {
         CpuCopy16(src, palette, size * 2);
@@ -683,7 +701,7 @@ static void LoadLeftHeaderGfxForMenu(u32 menuGfxId)
     menu = GetSubstructPtr(POKENAV_SUBSTRUCT_MAIN_MENU);
     tag = sMenuLeftHeaderSpriteSheets[menuGfxId].tag;
     size = GetDecompressedDataSize(sMenuLeftHeaderSpriteSheets[menuGfxId].data);
-    LoadPalette(&gPokenavLeftHeader_Pal[tag * 16], OBJ_PLTT_ID(IndexOfSpritePaletteTag(1)), PLTT_SIZE_4BPP);
+    LoadPaletteWithOffset(gPokenavLeftHeader_Pal, PLTT_SIZEOF(tag * 16), OBJ_PLTT_ID(IndexOfSpritePaletteTag(1)), PLTT_SIZE_4BPP);
     LZ77UnCompWram(sMenuLeftHeaderSpriteSheets[menuGfxId].data, gDecompressionBuffer);
     RequestDma3Copy(gDecompressionBuffer, (void *)OBJ_VRAM0 + (GetSpriteTileStartByTag(2) * 32), size, 1);
     menu->leftHeaderSprites[1]->oam.tileNum = GetSpriteTileStartByTag(2) + sMenuLeftHeaderSpriteSheets[menuGfxId].size;
@@ -703,7 +721,7 @@ static void LoadLeftHeaderGfxForSubMenu(u32 menuGfxId)
 
     tag = sPokenavSubMenuLeftHeaderSpriteSheets[menuGfxId].tag;
     size = GetDecompressedDataSize(sPokenavSubMenuLeftHeaderSpriteSheets[menuGfxId].data);
-    LoadPalette(&gPokenavLeftHeader_Pal[tag * 16], OBJ_PLTT_ID(IndexOfSpritePaletteTag(2)), PLTT_SIZE_4BPP);
+    LoadPaletteWithOffset(gPokenavLeftHeader_Pal, PLTT_SIZEOF(tag * 16), OBJ_PLTT_ID(IndexOfSpritePaletteTag(2)), PLTT_SIZE_4BPP);
     LZ77UnCompWram(sPokenavSubMenuLeftHeaderSpriteSheets[menuGfxId].data, &gDecompressionBuffer[0x1000]);
     RequestDma3Copy(&gDecompressionBuffer[0x1000], (void *)OBJ_VRAM0 + 0x800 + (GetSpriteTileStartByTag(2) * 32), size, 1);
 }
@@ -847,3 +865,21 @@ static void SpriteCB_MoveLeftHeader(struct Sprite *sprite)
         sprite->callback = SpriteCallbackDummy;
     }
 }
+
+#ifdef PLATFORM_3DS
+bool8 CtrPokenav_IsOpen(void);
+
+// The sprite tiles of the tabs naming the screen on show (the left headers,
+// both sizes), [*first, *end): the 3DS bottom screen keeps them on its top
+// edge while it moves the rest of the screen down. FALSE while not loaded.
+bool8 CtrPokenav_HeaderTiles(u16 *first, u16 *end)
+{
+    u16 start = GetSpriteTileStartByTag(2);
+
+    if (!CtrPokenav_IsOpen() || start == 0xFFFF)
+        return FALSE;
+    *first = start;
+    *end = start + sMenuLeftHeaderSpriteSheet.size / TILE_SIZE_4BPP;
+    return TRUE;
+}
+#endif

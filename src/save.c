@@ -1,4 +1,5 @@
 #include "global.h"
+#include "platform.h"
 #include "agb_flash.h"
 #include "gba/flash_internal.h"
 #include "fieldmap.h"
@@ -8,9 +9,15 @@
 #include "load_save.h"
 #include "overworld.h"
 #include "pokemon_storage_system.h"
+#include "main.h"
 #include "trainer_hill.h"
 #include "link.h"
 #include "constants/game_stat.h"
+#ifdef PLATFORM_3DS
+#include "clock.h"
+#include "3ds_clock_store.h"
+#include "3ds_daynight.h"
+#endif
 
 static u16 CalculateChecksum(void *, u16);
 static bool8 ReadFlashSector(u8, struct SaveSector *);
@@ -87,7 +94,7 @@ COMMON_DATA struct SaveSector *gReadWriteSector = NULL; // Pointer to a buffer f
 COMMON_DATA u16 gIncrementalSectorId = 0;
 COMMON_DATA u16 gSaveUnusedVar = 0;
 COMMON_DATA u16 gSaveFileStatus = 0;
-COMMON_DATA MainCallback gGameContinueCallback = NULL;
+COMMON_DATA void (*gGameContinueCallback)(void) = NULL;
 COMMON_DATA struct SaveSectorLocation gRamSaveSectorLocations[NUM_SECTORS_PER_SLOT] = {0};
 COMMON_DATA u16 gSaveUnusedVar2 = 0;
 COMMON_DATA u16 gSaveAttemptStatus = 0;
@@ -338,6 +345,14 @@ static u8 HandleReplaceSector(u16 sectorId, const struct SaveSectorLocation *loc
 
     gReadWriteSector->checksum = CalculateChecksum(data, size);
 
+#ifdef PORT_BRIDGE
+    // Preserve the two-phase signature commit without thousands of filesystem
+    // writes: the sector stays invalid until its signature byte is written.
+    ((u8 *)gReadWriteSector)[SECTOR_SIGNATURE_OFFSET] = 0xFF;
+    status = TryWriteSector(sector, (u8 *)gReadWriteSector);
+    ((u8 *)gReadWriteSector)[SECTOR_SIGNATURE_OFFSET] = SECTOR_SIGNATURE & 0xFF;
+    return status;
+#else
     // Erase old save data
     EraseFlashSector(sector);
 
@@ -388,6 +403,7 @@ static u8 HandleReplaceSector(u16 sectorId, const struct SaveSectorLocation *loc
             return SAVE_STATUS_OK;
         }
     }
+#endif
 }
 
 static u8 WriteSectorSignatureByte_NoOffset(u16 sectorId, const struct SaveSectorLocation *locations)
@@ -475,7 +491,8 @@ static u8 TryLoadSaveSlot(u16 sectorId, struct SaveSectorLocation *locations)
     else
     {
         status = GetSaveValidStatus(locations);
-        CopySaveSlotData(FULL_SAVE_SLOT, locations);
+        if (status == SAVE_STATUS_OK || status == SAVE_STATUS_ERROR)
+            CopySaveSlotData(FULL_SAVE_SLOT, locations);
     }
 
     return status;
@@ -494,6 +511,8 @@ static u8 CopySaveSlotData(u16 sectorId, struct SaveSectorLocation *locations)
         ReadFlashSector(i + slotOffset, gReadWriteSector);
 
         id = gReadWriteSector->id;
+        if (id >= NUM_SECTORS_PER_SLOT || gReadWriteSector->signature != SECTOR_SIGNATURE)
+            continue;
         if (id == 0)
             gLastWrittenSector = i;
 
@@ -529,6 +548,8 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
         if (gReadWriteSector->signature == SECTOR_SIGNATURE)
         {
             signatureValid = TRUE;
+            if (gReadWriteSector->id >= NUM_SECTORS_PER_SLOT)
+                continue;
             checksum = CalculateChecksum(gReadWriteSector->data, locations[gReadWriteSector->id].size);
             if (gReadWriteSector->checksum == checksum)
             {
@@ -561,6 +582,8 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
         if (gReadWriteSector->signature == SECTOR_SIGNATURE)
         {
             signatureValid = TRUE;
+            if (gReadWriteSector->id >= NUM_SECTORS_PER_SLOT)
+                continue;
             checksum = CalculateChecksum(gReadWriteSector->data, locations[gReadWriteSector->id].size);
             if (gReadWriteSector->checksum == checksum)
             {
@@ -710,6 +733,10 @@ u8 HandleSavingData(u8 saveType)
     u32 *backupVar = gTrainerHillVBlankCounter;
     u8 *tempAddr;
 
+#ifdef PLATFORM_3DS
+    if (CtrDayNight_Active())
+        DoTimeBasedEvents();
+#endif
     gTrainerHillVBlankCounter = NULL;
     UpdateSaveAddresses();
     switch (saveType)
@@ -758,7 +785,12 @@ u8 HandleSavingData(u8 saveType)
         WriteSaveSectorOrSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
         break;
     }
+
     gTrainerHillVBlankCounter = backupVar;
+#ifdef PLATFORM_3DS
+    if (!gDamagedSaveSectors)
+        CtrClockStore_Save(FLASH_BASE, sizeof(FLASH_BASE));
+#endif
     return 0;
 }
 
@@ -788,6 +820,10 @@ bool8 LinkFullSave_Init(void)
 {
     if (gFlashMemoryPresent != TRUE)
         return TRUE;
+#ifdef PLATFORM_3DS
+    if (CtrDayNight_Active())
+        DoTimeBasedEvents();
+#endif
     UpdateSaveAddresses();
     CopyPartyAndObjectsToSave();
     RestoreSaveBackupVarsAndIncrement(gRamSaveSectorLocations);
@@ -822,6 +858,10 @@ bool8 LinkFullSave_SetLastSectorSignature(void)
     CopySectorSignatureByte(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
     if (gDamagedSaveSectors)
         DoSaveFailedScreen(SAVE_NORMAL);
+#ifdef PLATFORM_3DS
+    if (!gDamagedSaveSectors)
+        CtrClockStore_Save(FLASH_BASE, sizeof(FLASH_BASE));
+#endif
     return FALSE;
 }
 
@@ -830,6 +870,10 @@ bool8 WriteSaveBlock2(void)
     if (gFlashMemoryPresent != TRUE)
         return TRUE;
 
+#ifdef PLATFORM_3DS
+    if (CtrDayNight_Active())
+        DoTimeBasedEvents();
+#endif
     UpdateSaveAddresses();
     CopyPartyAndObjectsToSave();
     RestoreSaveBackupVars(gRamSaveSectorLocations);
@@ -865,6 +909,10 @@ bool8 WriteSaveBlock1Sector(void)
     if (gDamagedSaveSectors)
         DoSaveFailedScreen(SAVE_LINK);
 
+#ifdef PLATFORM_3DS
+    if (finished && !gDamagedSaveSectors)
+        CtrClockStore_Save(FLASH_BASE, sizeof(FLASH_BASE));
+#endif
     return finished;
 }
 
@@ -886,7 +934,10 @@ u8 LoadGameSave(u8 saveType)
         status = TryLoadSaveSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
         CopyPartyAndObjectsFromSave();
         gSaveFileStatus = status;
-        gGameContinueCallback = NULL;
+#ifdef PLATFORM_3DS
+        CtrClockStore_Load(FLASH_BASE, sizeof(FLASH_BASE));
+#endif
+        gGameContinueCallback = 0;
         break;
     case SAVE_HALL_OF_FAME:
         status = TryLoadSaveSector(SECTOR_ID_HOF_1, gDecompressionBuffer, SECTOR_DATA_SIZE);

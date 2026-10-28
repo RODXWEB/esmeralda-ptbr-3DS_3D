@@ -13,7 +13,7 @@
 	.global	se_m_charm
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_charm_1:
 	.byte	KEYSH , se_m_charm_key+0
@@ -80,17 +80,17 @@ se_m_charm_1:
 	.byte	W02
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_charm:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_charm_pri	@ Priority
-	.byte	se_m_charm_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_charm_pri	/* Priority*/
+	.byte	se_m_charm_rev	/* Reverb.*/
 
-	.word	se_m_charm_grp
+	.int	se_m_charm_grp
 
-	.word	se_m_charm_1
+	.int	se_m_charm_1
 
 	.end

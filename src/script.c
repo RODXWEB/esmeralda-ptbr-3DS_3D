@@ -5,6 +5,9 @@
 #include "util.h"
 #include "constants/event_objects.h"
 #include "constants/map_scripts.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 #define RAM_SCRIPT_MAGIC 51
 
@@ -51,6 +54,9 @@ void InitScriptContext(struct ScriptContext *ctx, void *cmdTable, void *cmdTable
 
 u8 SetupBytecodeScript(struct ScriptContext *ctx, const u8 *ptr)
 {
+#ifdef PORT_BRIDGE
+    ptr = Port_ResolveScriptPointer(ptr);
+#endif
     ctx->scriptPtr = ptr;
     ctx->mode = SCRIPT_MODE_BYTECODE;
     return 1;
@@ -94,6 +100,11 @@ bool8 RunScriptCommand(struct ScriptContext *ctx)
             u8 cmdCode;
             ScrCmdFunc *func;
 
+#ifdef PORT_BRIDGE
+            // A preceding command (or a wait/call return) may have consumed
+            // the last byte of a cached label without an explicit jump.
+            ctx->scriptPtr = Port_ResolveScriptPointer(ctx->scriptPtr);
+#endif
             if (!ctx->scriptPtr)
             {
                 ctx->mode = SCRIPT_MODE_STOPPED;
@@ -103,7 +114,11 @@ bool8 RunScriptCommand(struct ScriptContext *ctx)
             if (ctx->scriptPtr == gNullScriptPtr)
             {
                 while (1)
+#ifndef PORTABLE
                     asm("svc 2"); // HALT
+#else
+                    continue;
+#endif
             }
 
             cmdCode = *(ctx->scriptPtr);
@@ -149,12 +164,18 @@ static const u8 *ScriptPop(struct ScriptContext *ctx)
 
 void ScriptJump(struct ScriptContext *ctx, const u8 *ptr)
 {
+#ifdef PORT_BRIDGE
+    ptr = Port_ResolveScriptPointer(ptr);
+#endif
     ctx->scriptPtr = ptr;
 }
 
 void ScriptCall(struct ScriptContext *ctx, const u8 *ptr)
 {
     ScriptPush(ctx, ctx->scriptPtr);
+#ifdef PORT_BRIDGE
+    ptr = Port_ResolveScriptPointer(ptr);
+#endif
     ctx->scriptPtr = ptr;
 }
 
@@ -264,6 +285,9 @@ void ScriptContext_Enable(void)
 // scripts (except the frame table scripts).
 void RunScriptImmediately(const u8 *ptr)
 {
+#ifdef PORT_BRIDGE
+    ptr = Port_ResolveScriptPointer(ptr);
+#endif
     InitScriptContext(&sImmediateScriptContext, gScriptCmdTable, gScriptCmdTableEnd);
     SetupBytecodeScript(&sImmediateScriptContext, ptr);
     while (RunScriptCommand(&sImmediateScriptContext) == TRUE);
@@ -272,6 +296,10 @@ void RunScriptImmediately(const u8 *ptr)
 u8 *MapHeaderGetScriptTable(u8 tag)
 {
     const u8 *mapScripts = gMapHeader.mapScripts;
+
+#ifdef PORT_BRIDGE
+    mapScripts = Port_ResolveScriptPointer(mapScripts);
+#endif
 
     if (!mapScripts)
         return NULL;
@@ -283,7 +311,13 @@ u8 *MapHeaderGetScriptTable(u8 tag)
         if (*mapScripts == tag)
         {
             mapScripts++;
-            return T2_READ_PTR(mapScripts);
+            {
+                u8 *ptr = T2_READ_PTR(mapScripts);
+#ifdef PORT_BRIDGE
+                ptr = (u8 *)Port_ResolveScriptPointer(ptr);
+#endif
+                return ptr;
+            }
         }
         mapScripts += 5;
     }
@@ -308,7 +342,7 @@ u8 *MapHeaderCheckScriptTable(u8 tag)
         u16 varIndex1;
         u16 varIndex2;
 
-        // Read first var (or .2byte terminal value)
+        // Read first var (or .short terminal value)
         varIndex1 = T1_READ_16(ptr);
         if (!varIndex1)
             return NULL; // Reached end of table

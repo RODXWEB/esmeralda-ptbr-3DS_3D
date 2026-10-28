@@ -65,4 +65,9 @@ void SetPlayerInvisibility(bool8 invisible);
 u8 player_get_pos_including_state_based_drift(s16 *x, s16 *y);
 void StartFishing(u8 rod);
 
+#ifdef PLATFORM_3DS
+// The bottom screen's RUN button: running is the default and B walks.
+bool8 CtrPlayer_RunAlways(void);
+#endif
+
 #endif // GUARD_FIELD_PLAYER_AVATAR_H

@@ -21,9 +21,16 @@
 #include "battle_controllers.h"
 #include "text.h"
 #include "intro.h"
+#include "title_screen.h"
 #include "main.h"
 #include "trainer_hill.h"
+#include "platform.h"
 #include "constants/rgb.h"
+
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#include "port_log.h"
+#endif
 
 static void VBlankIntr(void);
 static void HBlankIntr(void);
@@ -58,16 +65,20 @@ const IntrFunc gIntrTableTemplate[] =
 #define INTR_COUNT ((int)(sizeof(gIntrTableTemplate)/sizeof(IntrFunc)))
 
 static u16 sUnusedVar; // Never read
+static bool8 sMainCallback2JustChanged;
 
-COMMON_DATA u16 gKeyRepeatStartDelay = 0;
-COMMON_DATA bool8 gLinkTransferringData = 0;
-COMMON_DATA struct Main gMain = {0};
-COMMON_DATA u16 gKeyRepeatContinueDelay = 0;
-COMMON_DATA bool8 gSoftResetDisabled = 0;
-COMMON_DATA IntrFunc gIntrTable[INTR_COUNT] = {0};
-COMMON_DATA u8 gLinkVSyncDisabled = 0;
-COMMON_DATA u32 IntrMain_Buffer[0x200] = {0};
-COMMON_DATA s8 gPcmDmaCounter = 0;
+#ifdef PORTABLE
+u8 gHeap[HEAP_SIZE];
+#endif
+u16 gKeyRepeatStartDelay;
+bool8 gLinkTransferringData;
+struct Main gMain;
+u16 gKeyRepeatContinueDelay;
+bool8 gSoftResetDisabled;
+IntrFunc gIntrTable[INTR_COUNT];
+u8 gLinkVSyncDisabled;
+u32 IntrMain_Buffer[0x200];
+s8 gPcmDmaCounter;
 
 static EWRAM_DATA u16 sTrainerId = 0;
 
@@ -86,40 +97,72 @@ void EnableVCountIntrAtLine150(void);
 
 #define B_START_SELECT (B_BUTTON | START_BUTTON | SELECT_BUTTON)
 
+#ifdef PORT_BRIDGE
+#define PORT_BOOT_STEP(tag)                                \
+    do                                                    \
+    {                                                     \
+        if ((tag) < 0xA020)                               \
+            Port_SetBirchDebugEx((tag), gMain.state, 0, 0, 0); \
+    } while (0)
+#else
+#define PORT_BOOT_STEP(tag) ((void)0)
+#endif
+
 void AgbMain(void)
 {
+    PORT_BOOT_STEP(0xA000);
     // Modern compilers are liberal with the stack on entry to this function,
     // so RegisterRamReset may crash if it resets IWRAM.
 #if !MODERN
     RegisterRamReset(RESET_ALL);
 #endif //MODERN
+    PORT_BOOT_STEP(0xA001);
     *(vu16 *)BG_PLTT = RGB_WHITE; // Set the backdrop to white on startup
     InitGpuRegManager();
+    PORT_BOOT_STEP(0xA002);
     REG_WAITCNT = WAITCNT_PREFETCH_ENABLE | WAITCNT_WS0_S_1 | WAITCNT_WS0_N_3;
     InitKeys();
+    PORT_BOOT_STEP(0xA003);
     InitIntrHandlers();
+    PORT_BOOT_STEP(0xA004);
     m4aSoundInit();
+    PORT_BOOT_STEP(0xA005);
     EnableVCountIntrAtLine150();
+    PORT_BOOT_STEP(0xA006);
+#if !defined(PORTABLE) || defined(PLATFORM_3DS)
     InitRFU();
+#endif
     RtcInit();
+    PORT_BOOT_STEP(0xA007);
     CheckForFlashMemory();
+    PORT_BOOT_STEP(0xA008);
     InitMainCallbacks();
+    PORT_BOOT_STEP(0xA009);
     InitMapMusic();
+    PORT_BOOT_STEP(0xA00A);
 #ifdef BUGFIX
     SeedRngWithRtc(); // see comment at SeedRngWithRtc definition below
 #endif
+    PORT_BOOT_STEP(0xA00B);
     ClearDma3Requests();
+    PORT_BOOT_STEP(0xA00C);
     ResetBgs();
+    PORT_BOOT_STEP(0xA00D);
     SetDefaultFontsPointer();
+    PORT_BOOT_STEP(0xA00E);
     InitHeap(gHeap, HEAP_SIZE);
+    PORT_BOOT_STEP(0xA00F);
 
     gSoftResetDisabled = FALSE;
 
+#ifndef PORTABLE
     if (gFlashMemoryPresent != TRUE)
         SetMainCallback2(NULL);
+#endif
 
     gLinkTransferringData = FALSE;
     sUnusedVar = 0xFC0;
+    PORT_BOOT_STEP(0xA010);
 
 #ifndef NDEBUG
 #if (LOG_HANDLER == LOG_HANDLER_MGBA_PRINT)
@@ -130,14 +173,21 @@ void AgbMain(void)
 #endif
     for (;;)
     {
+#ifdef PORT_BRIDGE
+        Port_RecordMainLoopIteration();
+#endif
+        PORT_BOOT_STEP(0xA020);
         ReadKeys();
+        sMainCallback2JustChanged = FALSE;
 
         if (gSoftResetDisabled == FALSE
          && JOY_HELD_RAW(A_BUTTON)
          && JOY_HELD_RAW(B_START_SELECT) == B_START_SELECT)
         {
+#if !defined(PORTABLE) || defined(PLATFORM_3DS)
             rfu_REQ_stopMode();
             rfu_waitREQComplete();
+#endif
             DoSoftReset();
         }
 
@@ -150,7 +200,9 @@ void AgbMain(void)
         else
         {
             gLinkTransferringData = FALSE;
+            PORT_BOOT_STEP(0xA021);
             UpdateLinkAndCallCallbacks();
+            PORT_BOOT_STEP(0xA022);
 
             if (Overworld_RecvKeysFromLinkIsRunning() == TRUE)
             {
@@ -162,9 +214,23 @@ void AgbMain(void)
             }
         }
 
+        if (sMainCallback2JustChanged)
+        {
+#ifdef PORT_BRIDGE
+            Port_SetBirchDebugEx(0x0190,
+                                (u16)((uintptr_t)gMain.callback2 >> 16),
+                                (u16)(uintptr_t)gMain.callback2,
+                                gMain.state,
+                                0);
+#endif
+            continue;
+        }
+
         PlayTimeCounter_Update();
         MapMusicMain();
+        PORT_BOOT_STEP(0xA023);
         WaitForVBlank();
+        PORT_BOOT_STEP(0xA024);
     }
 }
 
@@ -196,6 +262,20 @@ static void CallCallbacks(void)
 
 void SetMainCallback2(MainCallback callback)
 {
+#ifdef PORT_BRIDGE
+    {
+        uintptr_t cb = (uintptr_t)callback;
+
+        if (cb != 0)
+        {
+            callback = (MainCallback)cb;
+        }
+
+        Port_SetBirchDebugEx(0x0182, (u16)(cb >> 16), (u16)cb, gMain.state, 0);
+        Port_SetAssetDebugEx(0x0301, (u16)(cb >> 16), (u16)cb, gMain.state, 0);
+    }
+#endif
+    sMainCallback2JustChanged = TRUE;
     gMain.callback2 = callback;
     gMain.state = 0;
 }
@@ -249,7 +329,11 @@ void InitKeys(void)
 
 static void ReadKeys(void)
 {
+#ifndef PORTABLE
     u16 keyInput = REG_KEYINPUT ^ KEYS_MASK;
+#else
+    u16 keyInput = Platform_GetKeyInput();
+#endif
     gMain.newKeysRaw = keyInput & ~gMain.heldKeysRaw;
     gMain.newKeys = gMain.newKeysRaw;
     gMain.newAndRepeatedKeys = gMain.newKeysRaw;
@@ -298,9 +382,10 @@ void InitIntrHandlers(void)
     for (i = 0; i < INTR_COUNT; i++)
         gIntrTable[i] = gIntrTableTemplate[i];
 
+#ifndef PORT_BRIDGE
     DmaCopy32(3, IntrMain, IntrMain_Buffer, sizeof(IntrMain_Buffer));
-
     INTR_VECTOR = IntrMain_Buffer;
+#endif
 
     SetVBlankCallback(NULL);
     SetHBlankCallback(NULL);
@@ -339,33 +424,93 @@ void SetSerialCallback(IntrCallback callback)
 
 static void VBlankIntr(void)
 {
+#ifdef PORT_BRIDGE
+    Port_ProfBegin();
+#endif
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E00, gMain.vblankCounter1, gMain.state, 0, 0);
+#endif
     if (gWirelessCommType != 0)
         RfuVSync();
     else if (gLinkVSyncDisabled == FALSE)
         LinkVSync();
+#ifdef PORT_BRIDGE
+    Port_ProfAcc("link");
+#endif
+
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E01, gMain.vblankCounter1, gMain.state, 0, 0);
+#endif
 
     gMain.vblankCounter1++;
 
     if (gTrainerHillVBlankCounter && *gTrainerHillVBlankCounter < 0xFFFFFFFF)
         (*gTrainerHillVBlankCounter)++;
 
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E02, gMain.vblankCounter1, gMain.state, 0, 0);
+#endif
     if (gMain.vblankCallback)
         gMain.vblankCallback();
+#ifdef PORT_BRIDGE
+    Port_ProfAcc("callback");
+#endif
+
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E03, gMain.vblankCounter1, gMain.state, 0, 0);
+#endif
 
     gMain.vblankCounter2++;
 
     CopyBufferedValuesToGpuRegs();
+#ifdef PORT_BRIDGE
+    Port_ProfAcc("gpuregs");
+#endif
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E04, gMain.vblankCounter1, gMain.state, 0, 0);
+#endif
     ProcessDma3Requests();
+#ifdef PORT_BRIDGE
+    Port_ProfAcc("dma3");
+#endif
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E05, gMain.vblankCounter1, gMain.state, 0, 0);
+#endif
 
+#ifdef PORT_BRIDGE
+    // The port drives the GBA VBlank handler from VBlankIntrWait(), but
+    // does not currently synthesize the separate GBA VCount interrupt.
+    m4aSoundVSync();
+#endif
+#ifdef PORT_BRIDGE
+    Port_ProfAcc("m4aVSync");
+#endif
     gPcmDmaCounter = gSoundInfo.pcmDmaCounter;
-
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E06, gSoundInfo.pcmDmaCounter, gMain.state, 0, 0);
+#endif
     m4aSoundMain();
+#ifdef PORT_BRIDGE
+    Port_ProfAcc("m4aMain");
+#endif
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E07, gSoundInfo.pcmDmaCounter, gMain.state, 0, 0);
+#endif
     TryReceiveLinkBattleData();
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E08, gMain.vblankCounter1, gMain.state, 0, 0);
+#endif
 
     if (!gMain.inBattle || !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_RECORDED)))
         Random();
 
     UpdateWirelessStatusIndicatorSprite();
+#ifdef PORT_BRIDGE
+    Port_ProfAcc("rest");
+#endif
+#ifdef PORT_BRIDGE
+    Port_SetDmaDebugEx(0x0E09, gMain.vblankCounter1, gMain.state, 0, 0);
+#endif
 
     INTR_CHECK |= INTR_FLAG_VBLANK;
     gMain.intrCheck |= INTR_FLAG_VBLANK;
@@ -409,10 +554,14 @@ static void IntrDummy(void)
 
 static void WaitForVBlank(void)
 {
+#ifdef PORTABLE
+    VBlankIntrWait();
+#else
     gMain.intrCheck &= ~INTR_FLAG_VBLANK;
 
     while (!(gMain.intrCheck & INTR_FLAG_VBLANK))
         ;
+#endif
 }
 
 void SetTrainerHillVBlankCounter(u32 *counter)

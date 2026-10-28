@@ -5,6 +5,9 @@
 #include "pokemon_icon.h"
 #include "sprite.h"
 #include "constants/pokemon_icon.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 #define INVALID_ICON_SPECIES SPECIES_OLD_UNOWN_J // Oddly specific, used when an icon should be a ?. Any of the 'old unown' would work
 
@@ -1185,12 +1188,22 @@ void SpriteCB_MonIcon(struct Sprite *sprite)
     UpdateMonIconFrame(sprite);
 }
 
+#ifdef PORT_BRIDGE
+extern const u8 gMonIcon_DeoxysSpeed[];
+#endif
+
 const u8 *GetMonIconTiles(u16 species, bool32 handleDeoxys)
 {
     const u8 *iconSprite = gMonIconTable[species];
     if (species == SPECIES_DEOXYS && handleDeoxys == TRUE)
     {
+#ifdef PORT_BRIDGE
+        // The icon that follows Deoxys's in the ROM, named: an INCBIN here is
+        // a stub, and 0x400 past it is some other asset's.
+        iconSprite = gMonIcon_DeoxysSpeed;
+#else
         iconSprite = (const u8 *)(0x400 + (u32)iconSprite); // use the specific Deoxys form icon (Speed in this case)
+#endif
     }
     return iconSprite;
 }
@@ -1243,6 +1256,17 @@ u8 UpdateMonIconFrame(struct Sprite *sprite)
             sprite->animCmdIndex = 0;
             break;
         default:
+#ifdef PORT_BRIDGE
+        {
+            // The icon is an INCBIN's stub: its second frame is read from the
+            // loaded asset, not from whatever lies after the stub.
+            u32 size = sSpriteImageSizes[sprite->oam.shape][sprite->oam.size];
+            const u8 *src = Port_ResolveSpriteFramePointer(sprite->images, size, size * frame);
+
+            if (src != NULL)
+                RequestSpriteCopy(src, (u8 *)(OBJ_VRAM0 + sprite->oam.tileNum * TILE_SIZE_4BPP), size);
+        }
+#else
             RequestSpriteCopy(
                 // pointer arithmetic is needed to get the correct pointer to perform the sprite copy on.
                 // because sprite->images is a struct def, it has to be casted to (u8 *) before any
@@ -1250,6 +1274,7 @@ u8 UpdateMonIconFrame(struct Sprite *sprite)
                 (u8 *)sprite->images + (sSpriteImageSizes[sprite->oam.shape][sprite->oam.size] * frame),
                 (u8 *)(OBJ_VRAM0 + sprite->oam.tileNum * TILE_SIZE_4BPP),
                 sSpriteImageSizes[sprite->oam.shape][sprite->oam.size]);
+#endif
             sprite->animDelayCounter = sprite->anims[sprite->animNum][sprite->animCmdIndex].frame.duration & 0xFF;
             sprite->animCmdIndex++;
             result = sprite->animCmdIndex;

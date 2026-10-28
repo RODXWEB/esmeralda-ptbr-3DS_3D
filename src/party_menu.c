@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "malloc.h"
 #include "battle.h"
 #include "battle_anim.h"
@@ -485,11 +488,38 @@ static bool8 SetUpFieldMove_Dive(void);
 #include "data/pokemon/tutor_learnsets.h"
 #include "data/party_menu.h"
 
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+
+#ifdef PLATFORM_3DS
+// The party menu is shown on the 3DS bottom screen as the game draws it
+// (CTR_CENTRED_PARTY) and takes touch directly: a tap is the one action it
+// stands for, never a string of presses. menu.c holds the tap.
+bool8 CtrMenu_TakeAck(void);
+bool8 CtrMenu_TakeTap(s16 *x, s16 *y);
+s8 CtrMenu_YesNoInput(void);
+s8 CtrMenu_EntryAt(s16 x, s16 y);
+s8 CtrMenu_Choose(s8 entry, bool8 sound);
+// A message waiting for A or B goes on with a tap.
+#define PARTY_AB_NEW() (JOY_NEW(A_BUTTON | B_BUTTON) || CtrMenu_TakeAck())
+// A yes/no box: YES or NO tapped is chosen, a tap away from it is B.
+#define Menu_ProcessInputNoWrapClearOnChoose CtrMenu_YesNoInput
+// The column asked the party menu to close (CtrParty_Close): B once, or B
+// every time the mon list takes input until the menu is gone (leaving).
+static bool8 sCtrCloseAsked, sCtrLeaving;
+#else
+#define PARTY_AB_NEW() JOY_NEW(A_BUTTON | B_BUTTON)
+#endif
+
 // code
 static void InitPartyMenu(u8 menuType, u8 layout, u8 partyAction, bool8 keepCursorPos, u8 messageId, TaskFunc task, MainCallback callback)
 {
     u16 i;
 
+#ifdef PLATFORM_3DS
+    sCtrCloseAsked = sCtrLeaving = FALSE;
+#endif
     ResetPartyMenu();
     sPartyMenuInternal = Alloc(sizeof(struct PartyMenuInternal));
     if (sPartyMenuInternal == NULL)
@@ -1198,8 +1228,19 @@ static bool8 PartyBoxPal_ParnterOrDisqualifiedInArena(u8 slot)
 
 static void DrawCancelConfirmButtons(void)
 {
+#ifdef PORT_BRIDGE
+    // Read from the loaded tilemaps, not from the INCBINs' stubs.
+    const void *confirm = Port_ResolveAssetPointerSized(sConfirmButton_Tilemap, 7 * 2 * sizeof(u16));
+    const void *cancel = Port_ResolveAssetPointerSized(sCancelButton_Tilemap, 7 * 2 * sizeof(u16));
+
+    if (confirm == NULL || cancel == NULL)
+        return;
+    CopyToBgTilemapBufferRect_ChangePalette(1, confirm, 23, 16, 7, 2, 17);
+    CopyToBgTilemapBufferRect_ChangePalette(1, cancel, 23, 18, 7, 2, 17);
+#else
     CopyToBgTilemapBufferRect_ChangePalette(1, sConfirmButton_Tilemap, 23, 16, 7, 2, 17);
     CopyToBgTilemapBufferRect_ChangePalette(1, sCancelButton_Tilemap, 23, 18, 7, 2, 17);
+#endif
     ScheduleBgCopyTilemapToVram(1);
 }
 
@@ -1256,13 +1297,126 @@ u8 GetPartyMenuType(void)
     return gPartyMenu.menuType;
 }
 
+#ifdef PLATFORM_3DS
+// The party slot whose box holds the pixel (x, y) of the screen, or -1.
+static s8 CtrParty_SlotAt(s16 x, s16 y)
+{
+    u8 i;
+
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        u8 windowId = sPartyMenuBoxes[i].windowId;
+        s16 left, top;
+
+        if (GetMonData(&gPlayerParty[i], MON_DATA_SPECIES) == SPECIES_NONE || windowId == WINDOW_NONE)
+            continue;
+        left = GetWindowAttribute(windowId, WINDOW_TILEMAP_LEFT) * 8;
+        top = GetWindowAttribute(windowId, WINDOW_TILEMAP_TOP) * 8;
+        if (x >= left && x < left + (s16)GetWindowAttribute(windowId, WINDOW_WIDTH) * 8
+         && y >= top && y < top + (s16)GetWindowAttribute(windowId, WINDOW_HEIGHT) * 8)
+            return i;
+    }
+    return -1;
+}
+
+// What the mon list takes from the bottom screen this frame, as the key it
+// stands for: a mon's box moves the cursor there (without a sound of its
+// own) and is A, the Confirm button is A on it, Cancel is B. 0 when nothing
+// was tapped, and then the buttons are read as always.
+static u16 CtrParty_Touch(s8 *slotPtr)
+{
+    s16 x, y;
+    s8 slot;
+
+    if (sCtrCloseAsked)
+    {
+        sCtrCloseAsked = sCtrLeaving;
+        return B_BUTTON;
+    }
+    if (!CtrMenu_TakeTap(&x, &y))
+        return 0;
+    slot = CtrParty_SlotAt(x, y);
+    if (slot < 0)
+    {
+        // The buttons at the bottom right: Confirm over Cancel when both
+        // are there, Cancel alone lower otherwise.
+        if (gPartyMenu.menuType == PARTY_MENU_TYPE_MULTI_SHOWCASE || x < 184)
+            return 0;
+        if (sPartyMenuInternal->chooseHalf)
+        {
+            if (y >= 128 && y < 144)
+                slot = PARTY_SIZE;
+            else if (y >= 144)
+                return B_BUTTON;
+        }
+        else if (y >= 136)
+        {
+            return B_BUTTON;
+        }
+        if (slot < 0)
+            return 0;
+    }
+    if (slot != *slotPtr)
+    {
+        AnimatePartySlot(*slotPtr, 0);
+        *slotPtr = slot;
+        AnimatePartySlot(slot, 1);
+    }
+    return A_BUTTON;
+}
+
+// The column's POKéMON button closes the party menu as B does; any other
+// button leaves it for its own screen (leaving: B every time the list takes
+// input, through the menus on the way, until it is gone). FALSE when the
+// menu is not where B can do that.
+bool8 CtrParty_Close(bool8 leaving)
+{
+    if (sPartyMenuInternal == NULL || gPaletteFade.active || gMain.callback2 != CB2_UpdatePartyMenu)
+        return FALSE;
+    if (leaving && gPartyMenu.action != PARTY_ACTION_CHOOSE_MON)
+        return FALSE;
+    sCtrCloseAsked = TRUE;
+    sCtrLeaving = leaving;
+    return TRUE;
+}
+
+// A tap on the open menu of the party menu (the mon's actions, the moves to
+// choose among): the entry tapped, as A chooses it; anywhere else B.
+// MENU_NOTHING_CHOSEN without one.
+static s8 CtrParty_MenuTouch(void)
+{
+    s16 x, y;
+    s8 entry;
+
+    if (!CtrMenu_TakeTap(&x, &y))
+    {
+        if (!sCtrCloseAsked)
+            return MENU_NOTHING_CHOSEN;
+        sCtrCloseAsked = sCtrLeaving;
+        return MENU_B_PRESSED;
+    }
+    entry = CtrMenu_EntryAt(x, y);
+    if (entry < 0)
+        return MENU_B_PRESSED;
+    CtrMenu_Choose(entry, TRUE);
+    return entry;
+}
+#endif
+
 void Task_HandleChooseMonInput(u8 taskId)
 {
     if (!gPaletteFade.active && MenuHelpers_ShouldWaitForLinkRecv() != TRUE)
     {
         s8 *slotPtr = GetCurrentPartySlotPtr();
+#ifdef PLATFORM_3DS
+        u16 touch = CtrParty_Touch(slotPtr);
+#endif
 
+#ifdef PLATFORM_3DS
+        switch (touch ? touch : PartyMenuButtonHandler(slotPtr))
+#else
         switch (PartyMenuButtonHandler(slotPtr))
+#endif
         {
         case A_BUTTON: // Selected mon
             HandleChooseMonSelection(taskId, slotPtr);
@@ -2152,6 +2306,15 @@ static void BlitBitmapToPartyWindow(u8 windowId, const u8 *b, u8 c, u8 x, u8 y, 
     u8 *pixels = AllocZeroed(height * width * 32);
     u8 i, j;
 
+#ifdef PORT_BRIDGE
+    // Read from the loaded tilemap, not from the INCBIN's stub.
+    b = Port_ResolveAssetPointerSized(b, (y + height) * c);
+    if (b == NULL)
+    {
+        Free(pixels);
+        return;
+    }
+#endif
     if (pixels != NULL)
     {
         for (i = 0; i < height; i++)
@@ -2744,10 +2907,16 @@ static void Task_HandleSelectionMenuInput(u8 taskId)
         s8 input;
         s16 *data = gTasks[taskId].data;
 
-        if (sPartyMenuInternal->numActions <= 3)
-            input = Menu_ProcessInputNoWrapAround_other();
-        else
-            input = ProcessMenuInput_other();
+#ifdef PLATFORM_3DS
+        input = CtrParty_MenuTouch();
+        if (input == MENU_NOTHING_CHOSEN)
+#endif
+        {
+            if (sPartyMenuInternal->numActions <= 3)
+                input = Menu_ProcessInputNoWrapAround_other();
+            else
+                input = ProcessMenuInput_other();
+        }
 
         data[0] = Menu_GetCursorPos();
         switch (input)
@@ -3837,7 +4006,7 @@ static u16 GetFieldMoveMonSpecies(void)
 
 static void Task_CancelAfterAorBPress(u8 taskId)
 {
-    if ((JOY_NEW(A_BUTTON)) || (JOY_NEW(B_BUTTON)))
+    if (PARTY_AB_NEW())
         CursorCb_Cancel1(taskId);
 }
 
@@ -4590,7 +4759,14 @@ static void ShowMoveSelectWindow(u8 slot)
 
 static void Task_HandleWhichMoveInput(u8 taskId)
 {
+#ifdef PLATFORM_3DS
+    s8 input = CtrParty_MenuTouch();
+
+    if (input == MENU_NOTHING_CHOSEN)
+        input = Menu_ProcessInput();
+#else
     s8 input = Menu_ProcessInput();
+#endif
 
     if (input != MENU_NOTHING_CHOSEN)
     {
@@ -4775,7 +4951,12 @@ static void Task_LearnedMove(u8 taskId)
     if (move[1] == 0)
     {
         AdjustFriendship(mon, FRIENDSHIP_EVENT_LEARN_TMHM);
+#ifdef PLATFORM_3DS
+        // Infinite TMs (OPTIONS, ENHANCEMENTS): a TM is kept, as an HM is.
+        if (item < ITEM_HM01 && !CtrExtras_Get("infinite_tms"))
+#else
         if (item < ITEM_HM01)
+#endif
             RemoveBagItem(item, 1);
     }
     GetMonNickname(mon, gStringVar1);
@@ -4797,7 +4978,7 @@ static void Task_DoLearnedMoveFanfareAfterText(u8 taskId)
 
 static void Task_LearnNextMoveOrClosePartyMenu(u8 taskId)
 {
-    if (IsFanfareTaskInactive() && ((JOY_NEW(A_BUTTON)) || (JOY_NEW(B_BUTTON))))
+    if (IsFanfareTaskInactive() && (PARTY_AB_NEW()))
     {
         if (gPartyMenu.learnMoveState == 1)
         {
@@ -5008,7 +5189,7 @@ static void UpdateMonDisplayInfoAfterRareCandy(u8 slot, struct Pokemon *mon)
 
 static void Task_DisplayLevelUpStatsPg1(u8 taskId)
 {
-    if (WaitFanfare(FALSE) && IsPartyMenuTextPrinterActive() != TRUE && ((JOY_NEW(A_BUTTON)) || (JOY_NEW(B_BUTTON))))
+    if (WaitFanfare(FALSE) && IsPartyMenuTextPrinterActive() != TRUE && (PARTY_AB_NEW()))
     {
         PlaySE(SE_SELECT);
         DisplayLevelUpStatsPg1(taskId);
@@ -5018,7 +5199,7 @@ static void Task_DisplayLevelUpStatsPg1(u8 taskId)
 
 static void Task_DisplayLevelUpStatsPg2(u8 taskId)
 {
-    if ((JOY_NEW(A_BUTTON)) || (JOY_NEW(B_BUTTON)))
+    if (PARTY_AB_NEW())
     {
         PlaySE(SE_SELECT);
         DisplayLevelUpStatsPg2(taskId);
@@ -5049,7 +5230,7 @@ static void Task_TryLearnNewMoves(u8 taskId)
 {
     u16 learnMove;
 
-    if (WaitFanfare(FALSE) && ((JOY_NEW(A_BUTTON)) || (JOY_NEW(B_BUTTON))))
+    if (WaitFanfare(FALSE) && (PARTY_AB_NEW()))
     {
         RemoveLevelUpStatsWindow();
         learnMove = MonTryLearningNewMove(&gPlayerParty[gPartyMenu.slotId], TRUE);
@@ -5686,7 +5867,7 @@ static void Task_ValidateChosenHalfParty(u8 taskId)
 
 static void Task_ContinueChoosingHalfParty(u8 taskId)
 {
-    if ((JOY_NEW(A_BUTTON)) || (JOY_NEW(B_BUTTON)))
+    if (PARTY_AB_NEW())
     {
         PlaySE(SE_SELECT);
         DisplayPartyMenuStdMessage(PARTY_MSG_CHOOSE_MON);

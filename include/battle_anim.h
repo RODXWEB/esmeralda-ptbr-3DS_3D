@@ -179,6 +179,14 @@ enum
 };
 
 u8 GetBattlerSpriteCoord(u8 battler, u8 coordType);
+#ifdef PLATFORM_3DS
+// How far a side of the 2D battle is moved on the 3DS (3ds_port/include/ctr_battle_layout.h).
+int CtrBattleSideShift(u8 battler);
+int CtrBattleSideShiftOf(u8 side);
+#define BATTLE_SIDE_SHIFT(side) CtrBattleSideShiftOf(side)
+#else
+#define BATTLE_SIDE_SHIFT(side) 0
+#endif
 
 bool8 IsBattlerSpritePresent(u8 battler);
 void ClearBattleAnimBg(u32 bgId);

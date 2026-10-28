@@ -137,6 +137,18 @@ void HandleIntroSlide(u8 environment)
     gTasks[taskId].data[6] = 0;
 }
 
+#ifdef PLATFORM_3DS
+// Whether the scenery is still sliding in. The 3DS's 3D battle draws the
+// overworld in its place and has the camera glide in instead; BG1 holds the
+// entry picture of the scenery meanwhile (DrawBattleEntryBackground).
+bool8 CtrBattleIntro_Sliding(void)
+{
+    return FuncIsActiveTask(BattleIntroSlide1) || FuncIsActiveTask(BattleIntroSlide2)
+        || FuncIsActiveTask(BattleIntroSlide3) || FuncIsActiveTask(BattleIntroSlideLink)
+        || FuncIsActiveTask(BattleIntroSlidePartner);
+}
+#endif
+
 static void BattleIntroSlideEnd(u8 taskId)
 {
     DestroyTask(taskId);

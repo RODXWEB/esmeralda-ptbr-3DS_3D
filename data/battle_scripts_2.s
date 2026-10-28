@@ -9,43 +9,43 @@
 	.include "asm/macros/battle_script.inc"
 	.include "constants/constants.inc"
 
-	.section script_data, "aw", %progbits
+	.section script_data, "aw"
 
 	.align 2
 gBattlescriptsForBallThrow::
-	.4byte BattleScript_BallThrow        @ ITEM_NONE
-	.4byte BattleScript_BallThrow        @ ITEM_MASTER_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_ULTRA_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_GREAT_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_POKE_BALL
-	.4byte BattleScript_SafariBallThrow  @ ITEM_SAFARI_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_NET_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_DIVE_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_NEST_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_REPEAT_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_TIMER_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_LUXURY_BALL
-	.4byte BattleScript_BallThrow        @ ITEM_PREMIER_BALL
+	.int BattleScript_BallThrow        /* ITEM_NONE*/
+	.int BattleScript_BallThrow        /* ITEM_MASTER_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_ULTRA_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_GREAT_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_POKE_BALL*/
+	.int BattleScript_SafariBallThrow  /* ITEM_SAFARI_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_NET_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_DIVE_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_NEST_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_REPEAT_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_TIMER_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_LUXURY_BALL*/
+	.int BattleScript_BallThrow        /* ITEM_PREMIER_BALL*/
 
 	.align 2
 gBattlescriptsForUsingItem::
-	.4byte BattleScript_PlayerUsesItem
-	.4byte BattleScript_OpponentUsesHealItem        @ AI_ITEM_FULL_RESTORE
-	.4byte BattleScript_OpponentUsesHealItem        @ AI_ITEM_HEAL_HP
-	.4byte BattleScript_OpponentUsesStatusCureItem  @ AI_ITEM_CURE_CONDITION
-	.4byte BattleScript_OpponentUsesXItem           @ AI_ITEM_X_STAT
-	.4byte BattleScript_OpponentUsesGuardSpec       @ AI_ITEM_GUARD_SPEC
+	.int BattleScript_PlayerUsesItem
+	.int BattleScript_OpponentUsesHealItem        /* AI_ITEM_FULL_RESTORE*/
+	.int BattleScript_OpponentUsesHealItem        /* AI_ITEM_HEAL_HP*/
+	.int BattleScript_OpponentUsesStatusCureItem  /* AI_ITEM_CURE_CONDITION*/
+	.int BattleScript_OpponentUsesXItem           /* AI_ITEM_X_STAT*/
+	.int BattleScript_OpponentUsesGuardSpec       /* AI_ITEM_GUARD_SPEC*/
 
 	.align 2
 gBattlescriptsForRunningByItem::
-	.4byte BattleScript_RunByUsingItem
+	.int BattleScript_RunByUsingItem
 
 	.align 2
 gBattlescriptsForSafariActions::
-	.4byte BattleScript_ActionWatchesCarefully
-	.4byte BattleScript_ActionGetNear
-	.4byte BattleScript_ActionThrowPokeblock
-	.4byte BattleScript_ActionWallyThrow
+	.int BattleScript_ActionWatchesCarefully
+	.int BattleScript_ActionGetNear
+	.int BattleScript_ActionThrowPokeblock
+	.int BattleScript_ActionWallyThrow
 
 BattleScript_BallThrow::
 	jumpifword CMP_COMMON_BITS, gBattleTypeFlags, BATTLE_TYPE_WALLY_TUTORIAL, BattleScript_BallThrowByWally
@@ -66,6 +66,8 @@ BattleScript_SuccessBallThrow::
 	incrementgamestat GAME_STAT_POKEMON_CAPTURES
 BattleScript_PrintCaughtMonInfo::
 	printstring STRINGID_GOTCHAPKMNCAUGHTPLAYER
+	setbyte sGIVEEXP_STATE, 0
+	getexp BS_TARGET
 	trysetcaughtmondexflags BattleScript_TryNicknameCaughtMon
 	printstring STRINGID_PKMNDATAADDEDTODEX
 	waitstate
@@ -85,6 +87,14 @@ BattleScript_GiveCaughtMonEnd::
 BattleScript_SuccessBallThrowEnd::
 	setbyte gBattleOutcome, B_OUTCOME_CAUGHT
 	finishturn
+
+@ Instant victory (3DS port, OPTIONS, CHEATS): the target faints at once.
+BattleScript_CheatFaintTarget::
+	orword gHitMarker, HITMARKER_IGNORE_SUBSTITUTE | HITMARKER_PASSIVE_HP_UPDATE
+	healthbarupdate BS_TARGET
+	datahpupdate BS_TARGET
+	tryfaintmon BS_TARGET
+	end2
 
 BattleScript_WallyBallThrow::
 	printstring STRINGID_GOTCHAPKMNCAUGHTWALLY

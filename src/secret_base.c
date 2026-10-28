@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "malloc.h"
 #include "battle.h"
 #include "battle_setup.h"
@@ -302,12 +305,17 @@ static void FindMetatileIdMapCoords(s16 *x, s16 *y, u16 metatileId)
 {
     s16 i, j;
     const struct MapLayout *mapLayout = gMapHeader.mapLayout;
+    const u16 *map = mapLayout->map;
+
+#ifdef PORT_BRIDGE
+    map = Port_ResolveAssetPointer(map);
+#endif
 
     for (j = 0; j < mapLayout->height; j++)
     {
         for (i = 0; i < mapLayout->width; i++)
         {
-            if ((mapLayout->map[j * mapLayout->width + i] & MAPGRID_METATILE_ID_MASK) == metatileId)
+            if ((map[j * mapLayout->width + i] & MAPGRID_METATILE_ID_MASK) == metatileId)
             {
                 *x = i;
                 *y = j;

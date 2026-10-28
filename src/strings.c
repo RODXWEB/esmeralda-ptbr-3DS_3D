@@ -1775,7 +1775,12 @@ const u8 gText_MrStoneMatchCallDesc[] = _("DEVON PRES");
 const u8 gText_MrStoneMatchCallName[] = _("MR. STONE");
 const u8 gText_StevenMatchCallDesc[] = _("HARD AS ROCK");
 const u8 gText_StevenMatchCallName[] = _("STEVEN");
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_SPANISH
+const u8 gText_MayBrendanMatchCallDesc[] = _("VECINO GUAY");
+const u8 gText_MayMatchCallDesc[] = _("VECINA GUAY");
+#else
 const u8 gText_MayBrendanMatchCallDesc[] = _("RAD NEIGHBOR");
+#endif
 const u8 gText_NormanMatchCallDesc[] = _("RELIABLE ONE");
 const u8 gText_MomMatchCallDesc[] = _("CALM & KIND");
 const u8 gText_WallyMatchCallDesc[] = _("{PKMN} LOVER");
@@ -1817,5 +1822,13 @@ const u8 gText_Ok2[] = _("OK");
 const u8 gText_Quiz[] = _("QUIZ");
 const u8 gText_Answer[] = _("ANSWER");
 const u8 gText_PokeBalls[] = _("POKé BALLS");
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_SPANISH
+const u8 gText_Berry[] = _("BAYA");
+#else
 const u8 gText_Berry[] = _("BERRY");
+#endif
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_SPANISH
+const u8 gText_Berries[] = _("BAYAS");
+#else
 const u8 gText_Berries[] = _("BERRIES");
+#endif

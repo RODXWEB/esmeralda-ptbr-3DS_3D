@@ -25,6 +25,9 @@
 #include "window.h"
 #include "constants/songs.h"
 #include "gba/io_reg.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 extern const struct CompressedSpriteSheet gMonFrontPicTable[];
 
@@ -1197,6 +1200,11 @@ void LoadConditionMonPicTemplate(struct SpriteSheet *sheet, struct SpriteTemplat
 void LoadConditionSelectionIcons(struct SpriteSheet *sheets, struct SpriteTemplate *template, struct SpritePalette *pals)
 {
     u8 i;
+#ifdef PORT_BRIDGE
+    // gPokenavConditionCancel_Pal is a stub here: + 16 is the address of the
+    // next asset, not the second palette. Offset the loaded data (cancel.gbapal, 0x40 bytes).
+    const u16 *cancelPal = Port_ResolveAssetPointerSized(gPokenavConditionCancel_Pal, 0x40);
+#endif
 
     struct SpriteSheet dataSheets[] =
     {
@@ -1209,7 +1217,11 @@ void LoadConditionSelectionIcons(struct SpriteSheet *sheets, struct SpriteTempla
     struct SpritePalette dataPals[] =
     {
         {gPokenavConditionCancel_Pal, TAG_CONDITION_BALL},
+#ifdef PORT_BRIDGE
+        {cancelPal + 16, TAG_CONDITION_CANCEL},
+#else
         {gPokenavConditionCancel_Pal + 16, TAG_CONDITION_CANCEL},
+#endif
         {},
     };
 

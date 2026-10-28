@@ -13,7 +13,7 @@
 	.global	se_wall_hit
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_wall_hit_1:
 	.byte	KEYSH , se_wall_hit_key+0
@@ -25,17 +25,17 @@ se_wall_hit_1:
 	.byte	W24
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_wall_hit:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_wall_hit_pri	@ Priority
-	.byte	se_wall_hit_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_wall_hit_pri	/* Priority*/
+	.byte	se_wall_hit_rev	/* Reverb.*/
 
-	.word	se_wall_hit_grp
+	.int	se_wall_hit_grp
 
-	.word	se_wall_hit_1
+	.int	se_wall_hit_1
 
 	.end

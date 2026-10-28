@@ -13,7 +13,7 @@
 	.global	se_m_encore2
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_encore2_1:
 	.byte	KEYSH , se_m_encore2_key+0
@@ -100,17 +100,17 @@ se_m_encore2_1_000:
 	.byte	W02
 	.byte	PEND
 	.byte	PATT
-	 .word	se_m_encore2_1_000
+	 .int	se_m_encore2_1_000
 	.byte	PATT
-	 .word	se_m_encore2_1_000
+	 .int	se_m_encore2_1_000
 	.byte	PATT
-	 .word	se_m_encore2_1_000
+	 .int	se_m_encore2_1_000
 	.byte	PATT
-	 .word	se_m_encore2_1_000
+	 .int	se_m_encore2_1_000
 	.byte	PATT
-	 .word	se_m_encore2_1_000
+	 .int	se_m_encore2_1_000
 	.byte	PATT
-	 .word	se_m_encore2_1_000
+	 .int	se_m_encore2_1_000
 	.byte		VOL   , 96*se_m_encore2_mvl/mxv
 	.byte		PAN   , c_v+0
 	.byte	W01
@@ -157,17 +157,17 @@ se_m_encore2_1_000:
 	.byte		EOT   , Cn3
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_encore2:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_encore2_pri	@ Priority
-	.byte	se_m_encore2_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_encore2_pri	/* Priority*/
+	.byte	se_m_encore2_rev	/* Reverb.*/
 
-	.word	se_m_encore2_grp
+	.int	se_m_encore2_grp
 
-	.word	se_m_encore2_1
+	.int	se_m_encore2_1
 
 	.end

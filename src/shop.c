@@ -33,6 +33,9 @@
 #include "strings.h"
 #include "text_window.h"
 #include "tv.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "constants/decorations.h"
 #include "constants/items.h"
 #include "constants/metatile_behaviors.h"
@@ -155,6 +158,23 @@ static void Task_HandleShopMenuBuy(u8 taskId);
 static void Task_HandleShopMenuSell(u8 taskId);
 static void BuyMenuPrintItemDescriptionAndShowItemIcon(s32 item, bool8 onInit, struct ListMenu *list);
 static void BuyMenuPrintPriceInList(u8 windowId, u32 itemId, u8 y);
+
+#ifdef PLATFORM_3DS
+enum {
+    CTR_QUANTITY_NONE,
+    CTR_QUANTITY_CHANGED,
+    CTR_QUANTITY_OK,
+    CTR_QUANTITY_CANCEL,
+};
+static void CtrShop_ListTouch(u8 listTaskId, s32 *itemId);
+static u8 CtrShop_QuantityTouch(s16 *count, u16 max);
+bool8 CtrMenu_TakeAck(void);
+#define SHOP_ACK(keys) (JOY_NEW(keys) || CtrMenu_TakeAck())
+#define SHOP_TOUCHED(what) (ctrTouch == CTR_QUANTITY_##what)
+#else
+#define SHOP_ACK(keys) JOY_NEW(keys)
+#define SHOP_TOUCHED(what) FALSE
+#endif
 
 static const struct YesNoFuncTable sShopPurchaseYesNoFuncs =
 {
@@ -413,13 +433,34 @@ static void Task_ShopMenu(u8 taskId)
 #define tCallbackHi data[8]
 #define tCallbackLo data[9]
 
+#ifdef PLATFORM_3DS
+// 3ds_bottom_ui.c: the top screen keeps the world from now until the field
+// is back, while the BUY screen or the bag is on the bottom screen.
+void CtrBottom_KeepWorld(void);
+
+static void Task_CtrKeepWorldFadeOut(u8 taskId)
+{
+    CtrBottom_KeepWorld();
+    gTasks[taskId].func = Task_GoToBuyOrSellMenu;
+    FadeScreen(FADE_TO_BLACK, 0);
+}
+#endif
+
 static void Task_HandleShopMenuBuy(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
     tCallbackHi = (u32)CB2_InitBuyMenu >> 16;
     tCallbackLo = (u32)CB2_InitBuyMenu;
+#ifdef PLATFORM_3DS
+    // The BUY screen is on the bottom screen (CTR_CENTRED_SHOP), as the bag
+    // to sell from is: the menu goes first, the top keeps the world.
+    ClearStdWindowAndFrame(sMartInfo.windowId, TRUE);
+    ClearDialogWindowAndFrame(0, TRUE);
+    gTasks[taskId].func = Task_CtrKeepWorldFadeOut;
+#else
     gTasks[taskId].func = Task_GoToBuyOrSellMenu;
     FadeScreen(FADE_TO_BLACK, 0);
+#endif
 }
 
 static void Task_HandleShopMenuSell(u8 taskId)
@@ -427,8 +468,16 @@ static void Task_HandleShopMenuSell(u8 taskId)
     s16 *data = gTasks[taskId].data;
     tCallbackHi = (u32)CB2_GoToSellMenu >> 16;
     tCallbackLo = (u32)CB2_GoToSellMenu;
+#ifdef PLATFORM_3DS
+    // The bag to sell from is on the bottom screen: the menu goes first, and
+    // the top screen keeps the world through the fade, on the next frame.
+    ClearStdWindowAndFrame(sMartInfo.windowId, TRUE);
+    ClearDialogWindowAndFrame(0, TRUE);
+    gTasks[taskId].func = Task_CtrKeepWorldFadeOut;
+#else
     gTasks[taskId].func = Task_GoToBuyOrSellMenu;
     FadeScreen(FADE_TO_BLACK, 0);
+#endif
 }
 
 void CB2_ExitSellMenu(void)
@@ -455,7 +504,7 @@ static void Task_GoToBuyOrSellMenu(u8 taskId)
     if (!gPaletteFade.active)
     {
         DestroyTask(taskId);
-        SetMainCallback2((MainCallback)((u16)tCallbackHi << 16 | (u16)tCallbackLo));
+        SetMainCallback2((void *)((u16)tCallbackHi << 16 | (u16)tCallbackLo));
     }
 }
 
@@ -780,6 +829,11 @@ static void BuyMenuDrawGraphics(void)
 
 static void BuyMenuDrawMapGraphics(void)
 {
+#ifdef PLATFORM_3DS
+    // On the bottom screen, with the world on the top one: no copy of the map
+    // and of the people round the player, the bag's green behind the menu.
+    return;
+#endif
     BuyMenuCollectObjectEventData();
     BuyMenuDrawObjectEvents();
     BuyMenuDrawMapBg();
@@ -792,8 +846,18 @@ static void BuyMenuDrawMapBg(void)
     const struct MapLayout *mapLayout;
     u16 metatile;
     u8 metatileLayerType;
+    const u16 *primaryMetatiles, *secondaryMetatiles;
 
     mapLayout = gMapHeader.mapLayout;
+#ifdef PORT_BRIDGE
+    // The tilesets' metatile tables are INCBIN stubs here (field_camera.c does
+    // the same); read through the stubs, the map behind the menu stayed black.
+    primaryMetatiles = Port_ResolveAssetPointer(mapLayout->primaryTileset->metatiles);
+    secondaryMetatiles = Port_ResolveAssetPointer(mapLayout->secondaryTileset->metatiles);
+#else
+    primaryMetatiles = mapLayout->primaryTileset->metatiles;
+    secondaryMetatiles = mapLayout->secondaryTileset->metatiles;
+#endif
     GetXYCoordsOneStepInFrontOfPlayer(&x, &y);
     x -= 4;
     y -= 4;
@@ -809,9 +873,9 @@ static void BuyMenuDrawMapBg(void)
                 metatileLayerType = METATILE_LAYER_TYPE_COVERED;
 
             if (metatile < NUM_METATILES_IN_PRIMARY)
-                BuyMenuDrawMapMetatile(i, j, mapLayout->primaryTileset->metatiles + metatile * NUM_TILES_PER_METATILE, metatileLayerType);
+                BuyMenuDrawMapMetatile(i, j, primaryMetatiles + metatile * NUM_TILES_PER_METATILE, metatileLayerType);
             else
-                BuyMenuDrawMapMetatile(i, j, mapLayout->secondaryTileset->metatiles + ((metatile - NUM_METATILES_IN_PRIMARY) * NUM_TILES_PER_METATILE), metatileLayerType);
+                BuyMenuDrawMapMetatile(i, j, secondaryMetatiles + ((metatile - NUM_METATILES_IN_PRIMARY) * NUM_TILES_PER_METATILE), metatileLayerType);
         }
     }
 }
@@ -968,6 +1032,10 @@ static void Task_BuyMenu(u8 taskId)
     if (!gPaletteFade.active)
     {
         s32 itemId = ListMenu_ProcessInput(tListTaskId);
+#ifdef PLATFORM_3DS
+        if (itemId == LIST_NOTHING_CHOSEN)
+            CtrShop_ListTouch(tListTaskId, &itemId);
+#endif
         ListMenuGetScrollAndRow(tListTaskId, &sShopData->scrollOffset, &sShopData->selectedRow);
 
         switch (itemId)
@@ -1056,15 +1124,18 @@ static void Task_BuyHowManyDialogueInit(u8 taskId)
 static void Task_BuyHowManyDialogueHandleInput(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
+#ifdef PLATFORM_3DS
+    u8 ctrTouch = CtrShop_QuantityTouch(&tItemCount, sShopData->maxQuantity);
+#endif
 
-    if (AdjustQuantityAccordingToDPadInput(&tItemCount, sShopData->maxQuantity) == TRUE)
+    if (SHOP_TOUCHED(CHANGED) || AdjustQuantityAccordingToDPadInput(&tItemCount, sShopData->maxQuantity) == TRUE)
     {
         sShopData->totalCost = (GetItemPrice(tItemId) >> IsPokeNewsActive(POKENEWS_SLATEPORT)) * tItemCount;
         BuyMenuPrintItemQuantityAndPrice(taskId);
     }
     else
     {
-        if (JOY_NEW(A_BUTTON))
+        if (JOY_NEW(A_BUTTON) || SHOP_TOUCHED(OK))
         {
             PlaySE(SE_SELECT);
             ClearStdWindowAndFrameToTransparent(WIN_QUANTITY_PRICE, FALSE);
@@ -1077,7 +1148,7 @@ static void Task_BuyHowManyDialogueHandleInput(u8 taskId)
             ConvertIntToDecimalStringN(gStringVar3, sShopData->totalCost, STR_CONV_MODE_LEFT_ALIGN, 6);
             BuyMenuDisplayMessage(taskId, gText_Var1AndYouWantedVar2, BuyMenuConfirmPurchase);
         }
-        else if (JOY_NEW(B_BUTTON))
+        else if (JOY_NEW(B_BUTTON) || SHOP_TOUCHED(CANCEL))
         {
             PlaySE(SE_SELECT);
             ClearStdWindowAndFrameToTransparent(WIN_QUANTITY_PRICE, FALSE);
@@ -1145,7 +1216,7 @@ static void Task_ReturnToItemListAfterItemPurchase(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
 
-    if (JOY_NEW(A_BUTTON | B_BUTTON))
+    if (SHOP_ACK(A_BUTTON | B_BUTTON))
     {
         PlaySE(SE_SELECT);
 
@@ -1159,7 +1230,7 @@ static void Task_ReturnToItemListAfterItemPurchase(u8 taskId)
 
 static void Task_ReturnToItemListAfterDecorationPurchase(u8 taskId)
 {
-    if (JOY_NEW(A_BUTTON | B_BUTTON))
+    if (SHOP_ACK(A_BUTTON | B_BUTTON))
     {
         PlaySE(SE_SELECT);
         BuyMenuReturnToItemList(taskId);
@@ -1248,6 +1319,9 @@ static void RecordItemPurchase(u8 taskId)
 
 void CreatePokemartMenu(const u16 *itemsForSale)
 {
+#ifdef PORT_BRIDGE
+    itemsForSale = Port_ResolveEventPointer(itemsForSale);
+#endif
     CreateShopMenu(MART_TYPE_NORMAL);
     SetShopItemsForSale(itemsForSale);
     ClearItemPurchases();
@@ -1256,6 +1330,9 @@ void CreatePokemartMenu(const u16 *itemsForSale)
 
 void CreateDecorationShop1Menu(const u16 *itemsForSale)
 {
+#ifdef PORT_BRIDGE
+    itemsForSale = Port_ResolveEventPointer(itemsForSale);
+#endif
     CreateShopMenu(MART_TYPE_DECOR);
     SetShopItemsForSale(itemsForSale);
     SetShopMenuCallback(ScriptContext_Enable);
@@ -1263,7 +1340,164 @@ void CreateDecorationShop1Menu(const u16 *itemsForSale)
 
 void CreateDecorationShop2Menu(const u16 *itemsForSale)
 {
+#ifdef PORT_BRIDGE
+    itemsForSale = Port_ResolveEventPointer(itemsForSale);
+#endif
     CreateShopMenu(MART_TYPE_DECOR2);
     SetShopItemsForSale(itemsForSale);
     SetShopMenuCallback(ScriptContext_Enable);
 }
+
+#ifdef PLATFORM_3DS
+//------------------------------------------------------------------------------
+//  Touch on the BUY screen, on the 3DS bottom screen (CTR_CENTRED_SHOP), as
+//  the bag's (item_menu.c): 3ds_bottom_ui.c hands over the touches in pixels
+//  of the screen's own picture; a tap ends up in menu.c's tap, where the list,
+//  the quantity, the yes/no box and the messages take it.
+//------------------------------------------------------------------------------
+
+enum {
+    CTR_SHOP_TOUCH_DOWN,
+    CTR_SHOP_TOUCH_MOVE,
+    CTR_SHOP_TOUCH_UP,
+    CTR_SHOP_TOUCH_CANCEL, // the touch went to another screen
+};
+
+// The item list's window (WIN_ITEM_LIST), its scroll arrows just above and
+// below it.
+#define CTR_LIST_LEFT   112
+#define CTR_LIST_RIGHT  232
+#define CTR_LIST_TOP    16
+#define CTR_LIST_BOTTOM 144
+
+static struct {
+    bool8 held, dragged;
+    s16 x0, y0, x, y;
+    s16 applied; // steps of the drag already acted on
+} sCtrTouch;
+
+void CtrMenu_PostTap(s16 x, s16 y);
+bool8 CtrMenu_TakeTap(s16 *x, s16 *y);
+s16 CtrListMenu_RowAt(u8 listTaskId, s16 x, s16 y);
+void CtrListMenu_Select(u8 listTaskId, u16 row);
+s16 CtrListMenu_Scroll(u8 listTaskId, s16 rows);
+
+bool8 CtrShop_IsOpen(void)
+{
+    return sShopData != NULL && gMain.callback2 == CB2_BuyMenu;
+}
+
+void CtrShop_Touch(u8 phase, s16 x, s16 y)
+{
+    switch (phase)
+    {
+    case CTR_SHOP_TOUCH_DOWN:
+        memset(&sCtrTouch, 0, sizeof(sCtrTouch));
+        sCtrTouch.held = TRUE;
+        sCtrTouch.x0 = sCtrTouch.x = x;
+        sCtrTouch.y0 = sCtrTouch.y = y;
+        break;
+    case CTR_SHOP_TOUCH_MOVE:
+        if (!sCtrTouch.held)
+            break;
+        sCtrTouch.x = x;
+        sCtrTouch.y = y;
+        if (x - sCtrTouch.x0 > 8 || sCtrTouch.x0 - x > 8 || y - sCtrTouch.y0 > 8 || sCtrTouch.y0 - y > 8)
+            sCtrTouch.dragged = TRUE;
+        break;
+    case CTR_SHOP_TOUCH_UP:
+        if (!sCtrTouch.held)
+            break;
+        sCtrTouch.held = FALSE;
+        if (!sCtrTouch.dragged)
+            CtrMenu_PostTap(sCtrTouch.x, sCtrTouch.y);
+        break;
+    case CTR_SHOP_TOUCH_CANCEL:
+        sCtrTouch.held = FALSE;
+        break;
+    }
+}
+
+// How many steps of step pixels the finger has gone up since it was last
+// asked (down: fewer than 0).
+static s16 CtrShop_DragSteps(s16 step)
+{
+    s16 total = (sCtrTouch.y0 - sCtrTouch.y) / step;
+    s16 steps = total - sCtrTouch.applied;
+
+    sCtrTouch.applied = total;
+    return steps;
+}
+
+// The item list: dragging it scrolls it a row's height at a time, the scroll
+// arrows are a page up or down, a row takes the cursor and on the cursor's row
+// is chosen, as A chooses it (CANCEL, its last row, leaves).
+static void CtrShop_ListTouch(u8 listTaskId, s32 *itemId)
+{
+    s16 x, y, row;
+
+    if (sCtrTouch.held)
+    {
+        s16 steps;
+
+        if (sCtrTouch.dragged && sCtrTouch.x0 >= CTR_LIST_LEFT && sCtrTouch.x0 < CTR_LIST_RIGHT
+         && (steps = CtrShop_DragSteps(GetFontAttribute(gMultiuseListMenuTemplate.fontId,
+                                                        FONTATTR_MAX_LETTER_HEIGHT))) != 0)
+            CtrListMenu_Scroll(listTaskId, steps);
+        return;
+    }
+    if (!CtrMenu_TakeTap(&x, &y) || x < CTR_LIST_LEFT || x >= CTR_LIST_RIGHT)
+        return;
+    if (y < CTR_LIST_TOP || y >= CTR_LIST_BOTTOM)
+    {
+        CtrListMenu_Scroll(listTaskId, y < CTR_LIST_TOP ? -MAX_ITEMS_SHOWN : MAX_ITEMS_SHOWN);
+        return;
+    }
+    row = CtrListMenu_RowAt(listTaskId, x, y);
+    if (row < 0)
+        return;
+    ListMenuGetScrollAndRow(listTaskId, &sShopData->scrollOffset, &sShopData->selectedRow);
+    if (row != sShopData->selectedRow)
+        CtrListMenu_Select(listTaskId, row);
+    else
+        *itemId = sListMenuItems[sShopData->scrollOffset + row].id;
+}
+
+// How many: dragging up or down counts up or down, one every 8 pixels; a tap
+// on the quantity or on the count in the bag is A, anywhere else B.
+static u8 CtrShop_QuantityTouch(s16 *count, u16 max)
+{
+    static const u8 windows[] = {WIN_QUANTITY_PRICE, WIN_QUANTITY_IN_BAG};
+    s16 x, y, steps, value;
+    u8 i;
+
+    if (sCtrTouch.held)
+    {
+        if (!sCtrTouch.dragged || (steps = CtrShop_DragSteps(8)) == 0)
+            return CTR_QUANTITY_NONE;
+        value = *count + steps;
+        if (value > (s16)max)
+            value = max;
+        if (value < 1)
+            value = 1;
+        if (value == *count)
+            return CTR_QUANTITY_NONE;
+        *count = value;
+        PlaySE(SE_SELECT);
+        return CTR_QUANTITY_CHANGED;
+    }
+    if (!CtrMenu_TakeTap(&x, &y))
+        return CTR_QUANTITY_NONE;
+    for (i = 0; i < ARRAY_COUNT(windows); i++)
+    {
+        // The window with its frame.
+        s16 left = GetWindowAttribute(windows[i], WINDOW_TILEMAP_LEFT) * 8 - 8;
+        s16 top = GetWindowAttribute(windows[i], WINDOW_TILEMAP_TOP) * 8 - 8;
+
+        if (x >= left && x < left + (s16)GetWindowAttribute(windows[i], WINDOW_WIDTH) * 8 + 16
+         && y >= top && y < top + (s16)GetWindowAttribute(windows[i], WINDOW_HEIGHT) * 8 + 16)
+            return CTR_QUANTITY_OK;
+    }
+    return CTR_QUANTITY_CANCEL;
+}
+#endif

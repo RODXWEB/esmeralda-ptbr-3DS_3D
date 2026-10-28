@@ -13,7 +13,7 @@
 	.global	se_m_mist
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_mist_1:
 	.byte	KEYSH , se_m_mist_key+0
@@ -78,17 +78,17 @@ se_m_mist_1:
 	.byte	W08
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_mist:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_mist_pri	@ Priority
-	.byte	se_m_mist_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_mist_pri	/* Priority*/
+	.byte	se_m_mist_rev	/* Reverb.*/
 
-	.word	se_m_mist_grp
+	.int	se_m_mist_grp
 
-	.word	se_m_mist_1
+	.int	se_m_mist_1
 
 	.end

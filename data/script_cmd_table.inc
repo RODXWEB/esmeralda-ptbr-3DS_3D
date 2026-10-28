@@ -245,5 +245,5 @@ gScriptCmdTable::
 
 	.if ALLOCATE_SCRIPT_CMD_TABLE
 gScriptCmdTableEnd::
-	.4byte ScrCmd_nop
+	.int ScrCmd_nop
 	.endif

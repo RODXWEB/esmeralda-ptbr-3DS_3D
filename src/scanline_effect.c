@@ -83,6 +83,10 @@ void ScanlineEffect_InitHBlankDmaTransfer(void)
     }
     else
     {
+#ifdef PORT_BRIDGE
+        gScanlineEffect.setFirstScanlineReg();
+        gScanlineEffect.srcBuffer ^= 1;
+#else
         DmaStop(0);
         // Set DMA to copy to dest register on each HBlank for the next frame.
         // The HBlank DMA transfers do not occurr during VBlank, so the transfer
@@ -92,6 +96,7 @@ void ScanlineEffect_InitHBlankDmaTransfer(void)
         gScanlineEffect.setFirstScanlineReg();
         // Swap current buffer
         gScanlineEffect.srcBuffer ^= 1;
+#endif
     }
 }
 

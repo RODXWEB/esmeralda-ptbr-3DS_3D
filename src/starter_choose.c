@@ -24,6 +24,10 @@
 #include "constants/songs.h"
 #include "constants/rgb.h"
 
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+
 #define STARTER_MON_COUNT   3
 
 // Position of the sprite of the selected starter Pokémon
@@ -539,12 +543,35 @@ static void Task_HandleConfirmStarterInput(u8 taskId)
 {
     u8 spriteId;
 
+#ifdef PORT_BRIDGE
+    // If we freeze during/after menu processing, this tells us how far we got.
+    Port_SetBirchDebugEx(0x7201,
+                        gTasks[taskId].tStarterSelection,
+                        gMain.newKeys,
+                        gMain.heldKeys,
+                        0);
+#endif
+
     switch (Menu_ProcessInputNoWrapClearOnChoose())
     {
     case 0:  // YES
         // Return the starter choice and exit.
         gSpecialVar_Result = gTasks[taskId].tStarterSelection;
+#ifdef PORT_BRIDGE
+        Port_SetBirchDebugEx(0x7202,
+                            gSpecialVar_Result,
+                            (u16)((uintptr_t)gMain.savedCallback >> 16),
+                            (u16)(uintptr_t)gMain.savedCallback,
+                            0);
+#endif
         ResetAllPicSprites();
+#ifdef PORT_BRIDGE
+        Port_SetBirchDebugEx(0x7203,
+                            gSpecialVar_Result,
+                            0,
+                            0,
+                            0);
+#endif
         SetMainCallback2(gMain.savedCallback);
         break;
     case 1:  // NO

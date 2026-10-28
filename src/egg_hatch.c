@@ -362,7 +362,7 @@ static void AddHatchedMonToParty(u8 id)
     u8 name[POKEMON_NAME_LENGTH + 1];
     u16 ball;
     u16 metLevel;
-    metloc_u8_t metLocation;
+    u8 metLocation;
     struct Pokemon *mon = &gPlayerParty[id];
 
     CreateHatchedMon(mon, &gEnemyParty[0]);
@@ -557,7 +557,14 @@ static void CB2_LoadEggHatch(void)
     case 7:
         SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_OBJ_ON | DISPCNT_OBJ_1D_MAP);
         LoadPalette(gTradeGba2_Pal, BG_PLTT_ID(1), 5 * PLTT_SIZE_4BPP);
+#ifdef PLATFORM_3DS
+        // The sheet is 0x1400 bytes and 0x1420 reads a tile past its end. A
+        // copy past an asset's end is not resolved to the asset, so the
+        // platform under the egg was drawn from the stub's own bytes: noise.
+        LoadBgTiles(1, gTradeGba_Gfx, 0x1400, 0);
+#else
         LoadBgTiles(1, gTradeGba_Gfx, 0x1420, 0);
+#endif
         CopyToBgTilemapBuffer(1, gTradePlatform_Tilemap, 0x1000, 0);
         CopyBgTilemapBufferToVram(1);
         gMain.state++;

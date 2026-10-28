@@ -45,6 +45,9 @@
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "contest.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 enum {
     SLIDING_TEXT_OFFSCREEN,
@@ -1098,6 +1101,10 @@ static void Task_FlashStarsAndHearts(u8 taskId)
         BlendPalette(BG_PLTT_ID(6) + 14, 1, gTasks[taskId].tCoeff, RGB(30, 29, 29));
     }
 
+#ifdef PORTABLE
+    if (!sContestResults)
+        return;
+#endif
     if (gTasks[taskId].tCoeff == 0)
         sContestResults->data->pointsFlashing = FALSE;
     else
@@ -1115,6 +1122,12 @@ static void LoadContestMonIcon(u16 species, u8 monIndex, u8 srcOffset, u8 useDma
         frameNum = 0;
 
     iconPtr = GetMonIconPtr(species, personality, frameNum);
+#ifdef PORT_BRIDGE
+    // The icon's data is found from where it starts, not from a point inside
+    // it: resolved first, the offset into it after. From inside, the copy was
+    // of other bytes (the results' icons were noise).
+    iconPtr = Port_ResolveAssetPointer(iconPtr);
+#endif
     iconPtr += srcOffset * 0x200 + 0x80;
     if (useDmaNow)
     {
@@ -1191,7 +1204,13 @@ static s32 DrawResultsTextWindow(const u8 *text, u8 spriteId)
         struct Sprite *sprite;
         const u8 *src, *windowTilesPtr;
         windowTilesPtr = (u8 *)GetWindowAttribute(windowId, WINDOW_TILE_DATA);
+#ifdef PORT_BRIDGE
+        // An INCBIN stub here: the tiles below are taken at offsets into the
+        // file (0x100 bytes), which the stub does not have.
+        src = Port_ResolveAssetPointerSized(sResultsTextWindow_Gfx, 0x100);
+#else
         src = (u8 *)sResultsTextWindow_Gfx;
+#endif
 
         sprite = &gSprites[spriteId];
         spriteTilePtrs[0] = (u8 *)(sprite->oam.tileNum * 32 + OBJ_VRAM0);
@@ -1402,6 +1421,12 @@ static void HideLinkResultsTextBox(void)
         | WININ_WIN1_BG_ALL | WININ_WIN1_OBJ | WININ_WIN1_CLR);
 }
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_SPANISH
+#define CONTEST_TITLE_SPANISH 1
+#else
+#define CONTEST_TITLE_SPANISH 0
+#endif
+
 static void LoadContestResultsTitleBarTilemaps(void)
 {
     u8 palette;
@@ -1411,58 +1436,58 @@ static void LoadContestResultsTitleBarTilemaps(void)
     y = 1;
     if (gLinkContestFlags & LINK_CONTEST_FLAG_IS_LINK)
     {
-        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Link_Tilemap, 5, 1, 5, 2);
-        x = 10;
+        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Link_Tilemap, 5, 1, CONTEST_TITLE_SPANISH ? 10 : 5, 2);
+        x = CONTEST_TITLE_SPANISH ? 20 : 10;
     }
     else if (gSpecialVar_ContestRank == CONTEST_RANK_NORMAL)
     {
         CopyToBgTilemapBufferRect(2, gContestResultsTitle_Normal_Tilemap, 5, 1, 10, 2);
-        x = 15;
+        x = CONTEST_TITLE_SPANISH ? 20 : 15;
     }
     else if (gSpecialVar_ContestRank == CONTEST_RANK_SUPER)
     {
         CopyToBgTilemapBufferRect(2, gContestResultsTitle_Super_Tilemap, 5, 1, 10, 2);
-        x = 15;
+        x = CONTEST_TITLE_SPANISH ? 20 : 15;
     }
     else if (gSpecialVar_ContestRank == CONTEST_RANK_HYPER)
     {
         CopyToBgTilemapBufferRect(2, gContestResultsTitle_Hyper_Tilemap, 5, 1, 10, 2);
-        x = 15;
+        x = CONTEST_TITLE_SPANISH ? 20 : 15;
     }
     else // CONTEST_RANK_MASTER
     {
         CopyToBgTilemapBufferRect(2, gContestResultsTitle_Master_Tilemap, 5, 1, 10, 2);
-        x = 15;
+        x = CONTEST_TITLE_SPANISH ? 20 : 15;
     }
 
     if (gSpecialVar_ContestCategory == CONTEST_CATEGORY_COOL)
     {
         palette = 0;
-        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Cool_Tilemap, x, y, 5, 2);
+        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Cool_Tilemap, x, y, CONTEST_TITLE_SPANISH ? 6 : 5, 2);
     }
     else if (gSpecialVar_ContestCategory == CONTEST_CATEGORY_BEAUTY)
     {
         palette = 1;
-        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Beauty_Tilemap, x, y, 5, 2);
+        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Beauty_Tilemap, x, y, CONTEST_TITLE_SPANISH ? 6 : 5, 2);
     }
     else if (gSpecialVar_ContestCategory == CONTEST_CATEGORY_CUTE)
     {
         palette = 2;
-        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Cute_Tilemap, x, y, 5, 2);
+        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Cute_Tilemap, x, y, CONTEST_TITLE_SPANISH ? 6 : 5, 2);
     }
     else if (gSpecialVar_ContestCategory == CONTEST_CATEGORY_SMART)
     {
         palette = 3;
-        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Smart_Tilemap, x, y, 5, 2);
+        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Smart_Tilemap, x, y, CONTEST_TITLE_SPANISH ? 6 : 5, 2);
     }
     else // CONTEST_CATEGORY_TOUGH
     {
         palette = 4;
-        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Tough_Tilemap, x, y, 5, 2);
+        CopyToBgTilemapBufferRect(2, gContestResultsTitle_Tough_Tilemap, x, y, CONTEST_TITLE_SPANISH ? 6 : 5, 2);
     }
 
     x += 5;
-    CopyToBgTilemapBufferRect(2, gContestResultsTitle_Tilemap, x, y, 6, 2);
+    CopyToBgTilemapBufferRect(2, gContestResultsTitle_Tilemap, CONTEST_TITLE_SPANISH ? 15 : x, y, CONTEST_TITLE_SPANISH ? 5 : 6, 2);
     CopyToBgTilemapBufferRect_ChangePalette(2, sContestResults->tilemapBuffers[2], 0, 0, 32, 4, palette);
 }
 

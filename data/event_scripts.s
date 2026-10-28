@@ -51,6 +51,7 @@
 #include "constants/trainer_hill.h"
 #include "constants/trainers.h"
 #include "constants/tv.h"
+#include "constants/local_link.h"
 #include "constants/union_room.h"
 #include "constants/vars.h"
 #include "constants/weather.h"
@@ -58,49 +59,49 @@
 	.include "asm/macros/event.inc"
 	.include "constants/constants.inc"
 
-	.section script_data, "aw", %progbits
+	.section script_data, "aw"
 
 	.set ALLOCATE_SCRIPT_CMD_TABLE, 1
 	.include "data/script_cmd_table.inc"
 
 gSpecialVars::
-	.4byte gSpecialVar_0x8000
-	.4byte gSpecialVar_0x8001
-	.4byte gSpecialVar_0x8002
-	.4byte gSpecialVar_0x8003
-	.4byte gSpecialVar_0x8004
-	.4byte gSpecialVar_0x8005
-	.4byte gSpecialVar_0x8006
-	.4byte gSpecialVar_0x8007
-	.4byte gSpecialVar_0x8008
-	.4byte gSpecialVar_0x8009
-	.4byte gSpecialVar_0x800A
-	.4byte gSpecialVar_0x800B
-	.4byte gSpecialVar_Facing
-	.4byte gSpecialVar_Result
-	.4byte gSpecialVar_ItemId
-	.4byte gSpecialVar_LastTalked
-	.4byte gSpecialVar_ContestRank
-	.4byte gSpecialVar_ContestCategory
-	.4byte gSpecialVar_MonBoxId
-	.4byte gSpecialVar_MonBoxPos
-	.4byte gSpecialVar_Unused_0x8014
-	.4byte gTrainerBattleOpponent_A
+	.int gSpecialVar_0x8000
+	.int gSpecialVar_0x8001
+	.int gSpecialVar_0x8002
+	.int gSpecialVar_0x8003
+	.int gSpecialVar_0x8004
+	.int gSpecialVar_0x8005
+	.int gSpecialVar_0x8006
+	.int gSpecialVar_0x8007
+	.int gSpecialVar_0x8008
+	.int gSpecialVar_0x8009
+	.int gSpecialVar_0x800A
+	.int gSpecialVar_0x800B
+	.int gSpecialVar_Facing
+	.int gSpecialVar_Result
+	.int gSpecialVar_ItemId
+	.int gSpecialVar_LastTalked
+	.int gSpecialVar_ContestRank
+	.int gSpecialVar_ContestCategory
+	.int gSpecialVar_MonBoxId
+	.int gSpecialVar_MonBoxPos
+	.int gSpecialVar_Unused_0x8014
+	.int gTrainerBattleOpponent_A
 
 	.include "data/specials.inc"
 
 gStdScripts::
-	.4byte Std_ObtainItem              @ STD_OBTAIN_ITEM
-	.4byte Std_FindItem                @ STD_FIND_ITEM
-	.4byte Std_MsgboxNPC               @ MSGBOX_NPC
-	.4byte Std_MsgboxSign              @ MSGBOX_SIGN
-	.4byte Std_MsgboxDefault           @ MSGBOX_DEFAULT
-	.4byte Std_MsgboxYesNo             @ MSGBOX_YESNO
-	.4byte Std_MsgboxAutoclose         @ MSGBOX_AUTOCLOSE
-	.4byte Std_ObtainDecoration        @ STD_OBTAIN_DECORATION
-	.4byte Std_RegisteredInMatchCall   @ STD_REGISTER_MATCH_CALL
-	.4byte Std_MsgboxGetPoints         @ MSGBOX_GETPOINTS
-	.4byte Std_MsgboxPokenav           @ MSGBOX_POKENAV
+	.int Std_ObtainItem              /* STD_OBTAIN_ITEM*/
+	.int Std_FindItem                /* STD_FIND_ITEM*/
+	.int Std_MsgboxNPC               /* MSGBOX_NPC*/
+	.int Std_MsgboxSign              /* MSGBOX_SIGN*/
+	.int Std_MsgboxDefault           /* MSGBOX_DEFAULT*/
+	.int Std_MsgboxYesNo             /* MSGBOX_YESNO*/
+	.int Std_MsgboxAutoclose         /* MSGBOX_AUTOCLOSE*/
+	.int Std_ObtainDecoration        /* STD_OBTAIN_DECORATION*/
+	.int Std_RegisteredInMatchCall   /* STD_REGISTER_MATCH_CALL*/
+	.int Std_MsgboxGetPoints         /* MSGBOX_GETPOINTS*/
+	.int Std_MsgboxPokenav           /* MSGBOX_POKENAV*/
 gStdScripts_End::
 
 	.include "data/maps/PetalburgCity/scripts.inc"
@@ -654,7 +655,7 @@ EventScript_SetBrineyLocation_Route109::
 	.include "data/scripts/record_mix.inc"
 	.include "data/scripts/pc.inc"
 
-@ scripts/notices.inc? signs.inc? See comment about text/notices.inc
+/* scripts/notices.inc? signs.inc? See comment about text/notices.inc*/
 Common_EventScript_ShowPokemartSign::
 	msgbox gText_PokemartSign, MSGBOX_SIGN
 	end
@@ -745,7 +746,7 @@ Common_EventScript_StopBrineysBoatMusic::
 
 	.include "data/scripts/prof_birch.inc"
 
-@ Below could be split as ferry.inc aside from the Rusturf tunnel script
+/* Below could be split as ferry.inc aside from the Rusturf tunnel script*/
 Common_EventScript_FerryDepart::
 	delay 60
 	applymovement VAR_0x8004, Movement_FerryDepart
@@ -787,7 +788,7 @@ EventScript_UnusedBoardFerry::
 	delay 30
 	applymovement LOCALID_PLAYER, Common_Movement_WalkInPlaceFasterUp
 	waitmovement 0
-	showplayer
+	showobjectat LOCALID_PLAYER, 0
 	delay 30
 	applymovement LOCALID_PLAYER, Movement_UnusedBoardFerry
 	waitmovement 0
@@ -802,7 +803,7 @@ Common_EventScript_FerryDepartIsland::
 	call_if_eq VAR_FACING, DIR_SOUTH, Ferry_EventScript_DepartIslandSouth
 	call_if_eq VAR_FACING, DIR_WEST, Ferry_EventScript_DepartIslandWest
 	delay 30
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	call Common_EventScript_FerryDepart
 	return
 
@@ -833,7 +834,7 @@ Common_EventScript_PlayerHandedOverTheItem::
 	.include "data/text/mart_clerk.inc"
 	.include "data/text/obtain_item.inc"
 
-@ The below and surf.inc could be split into some text/notices.inc
+/* The below and surf.inc could be split into some text/notices.inc*/
 gText_PokemartSign::
 	.string "“Selected items for your convenience!”\n"
 	.string "POKéMON MART$"
@@ -922,12 +923,12 @@ gText_UndergoingAdjustments::
 	.string "It appears to be undergoing\n"
 	.string "adjustments…$"
 
-@ Unused
+/* Unused*/
 gText_SorryTradeCenterInspections::
 	.string "I'm terribly sorry. The TRADE CENTER\n"
 	.string "is undergoing inspections.$"
 
-@ Unused
+/* Unused*/
 gText_SorryRecordCornerPreparation::
 	.string "I'm terribly sorry. The RECORD CORNER\n"
 	.string "is under preparation.$"
@@ -965,7 +966,7 @@ EventScript_SelectWithoutRegisteredItem::
 Common_EventScript_NopReturn::
 	return
 
-@ Unused
+/* Unused*/
 EventScript_CableClub_SetVarResult1::
 	setvar VAR_RESULT, 1
 	return

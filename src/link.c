@@ -27,6 +27,9 @@
 #include "link_rfu.h"
 #include "constants/rgb.h"
 #include "constants/trade.h"
+#ifdef PLATFORM_3DS
+#include "local_link.h"
+#endif
 
 // Window IDs for the link error screens
 enum {
@@ -236,6 +239,13 @@ static const u8 sUnusedData[] = {0x00, 0xFF, 0xFE, 0xFF, 0x00};
 
 bool8 IsWirelessAdapterConnected(void)
 {
+#ifdef PLATFORM_3DS
+    // The emulated adapter (3ds_rfu_adapter.c), its radio local wireless.
+    if (!PlatformLocalLinkEnabled())
+        return FALSE;
+#elif defined(PORTABLE)
+    return FALSE;
+#endif
     SetWirelessCommType1();
     InitRFUAPI();
     if (rfu_LMAN_REQBN_softReset_and_checkID() == RFU_ID)
@@ -1786,6 +1796,10 @@ bool8 HandleLinkConnection(void)
 {
     bool32 main1Failed, main2Failed;
 
+#ifdef PLATFORM_3DS
+    if (gWirelessCommType == 0)
+        return FALSE; // no link cable
+#endif
     if (gWirelessCommType == 0)
     {
         gLinkStatus = LinkMain1(&gShouldAdvanceLinkState, gSendCmd, gRecvCmds);

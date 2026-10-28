@@ -149,6 +149,8 @@ static void Cmd_is_of_type(void);
 static void Cmd_if_target_is_ally(void);
 static void Cmd_if_flash_fired(void);
 static void Cmd_if_holds_item(void);
+static void Cmd_get_move_category_from_result(void);
+static void Cmd_if_target_may_use_category(void);
 
 // ewram
 EWRAM_DATA const u8 *gAIScriptPtr = NULL;
@@ -258,6 +260,8 @@ static const BattleAICmdFunc sBattleAICmdTable[] =
     Cmd_check_ability,                              // 0x60
     Cmd_if_flash_fired,                             // 0x61
     Cmd_if_holds_item,                              // 0x62
+    Cmd_get_move_category_from_result,              // 0x63
+    Cmd_if_target_may_use_category,                 // 0x64
 };
 
 // For the purposes of determining the most powerful move in a moveset, these
@@ -1643,15 +1647,6 @@ static void Cmd_if_status_not_in_party(void)
 
 static void Cmd_get_weather(void)
 {
-    // BUG: due to the lack of an assignment in the case of there not being any
-    //      weather set any previously set value could possibly be interpreted
-    //      as a result of this function.
-    //      Assigning AI_WEATHER_NONE here matches the fix implemented in future
-    //      generations.
-    #ifdef BUGFIX
-        AI_THINKING_STRUCT->funcResult = AI_WEATHER_NONE;
-    #endif
-
     if (gBattleWeather & B_WEATHER_RAIN)
         AI_THINKING_STRUCT->funcResult = AI_WEATHER_RAIN;
     if (gBattleWeather & B_WEATHER_SANDSTORM)
@@ -2071,6 +2066,66 @@ static void Cmd_if_holds_item(void)
         gAIScriptPtr = T1_READ_PTR(gAIScriptPtr + 4);
     else
         gAIScriptPtr += 8;
+}
+
+// A move's category as the battle reckons it (IS_MOVE_PHYSICAL): its own with
+// ENHANCEMENTS' PHYS/SPEC SPLIT, its type's otherwise; status for a move with
+// no power. The scripts' guesses at physical and special (Counter, Mirror
+// Coat, Reflect, the stat moves) went by types alone.
+static u8 AI_GetMoveCategory(u16 move)
+{
+    if (gBattleMoves[move].power == 0)
+        return MOVE_CATEGORY_STATUS;
+    if (IS_MOVE_PHYSICAL(move, gBattleMoves[move].type))
+        return MOVE_CATEGORY_PHYSICAL;
+    return MOVE_CATEGORY_SPECIAL;
+}
+
+static void Cmd_get_move_category_from_result(void)
+{
+    AI_THINKING_STRUCT->funcResult = AI_GetMoveCategory(AI_THINKING_STRUCT->funcResult);
+    gAIScriptPtr += 1;
+}
+
+// Whether the target is likely to attack with a category. Without the split a
+// type decides it, so the target's types against the script's list, as the
+// scripts did with get_target_type1/2 and if_in_bytes (some lists leave types
+// out). With it a type tells little: the damaging moves the AI has seen the
+// target use (BATTLE_HISTORY), and its types only until it has used one.
+static void Cmd_if_target_may_use_category(void)
+{
+    u8 category = gAIScriptPtr[1];
+    const u8 *types = T1_READ_PTR(gAIScriptPtr + 2);
+    bool32 seen = FALSE, may = FALSE;
+    s32 i;
+
+#ifdef PLATFORM_3DS
+    if (MoveSplitEnabled())
+    {
+        for (i = 0; i < MAX_MON_MOVES; i++)
+        {
+            u16 move = BATTLE_HISTORY->usedMoves[gBattlerTarget].moves[i];
+
+            if (move == MOVE_NONE || gBattleMoves[move].power == 0)
+                continue;
+            seen = TRUE;
+            if (AI_GetMoveCategory(move) == category)
+                may = TRUE;
+        }
+    }
+#endif
+    if (!seen)
+    {
+        for (i = 0; types[i] != 0xFF; i++)
+        {
+            if (gBattleMons[gBattlerTarget].types[0] == types[i] || gBattleMons[gBattlerTarget].types[1] == types[i])
+                may = TRUE;
+        }
+    }
+    if (may)
+        gAIScriptPtr = T1_READ_PTR(gAIScriptPtr + 6);
+    else
+        gAIScriptPtr += 10;
 }
 
 static void Cmd_get_gender(void)

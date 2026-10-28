@@ -25,7 +25,7 @@ LilycoveCity_Harbor_EventScript_FerryAttendant::
 	goto LilycoveCity_Harbor_EventScript_NoFirstTimeEventTickets
 	end
 
-@ First goto_if_eq is unnecessary; identical scripts
+/* First goto_if_eq is unnecessary; identical scripts*/
 LilycoveCity_Harbor_EventScript_NoFirstTimeEventTickets::
 	goto_if_eq VAR_TEMP_A, 0, LilycoveCity_Harbor_EventScript_NoEventTickets
 	msgbox LilycoveCity_Harbor_Text_MayISeeYourTicket, MSGBOX_DEFAULT
@@ -333,7 +333,7 @@ LilycoveCity_Harbor_EventScript_BoardFerryWithSailor::
 	call_if_eq VAR_FACING, DIR_NORTH, LilycoveCity_Harbor_EventScript_PlayerBoardFerryNorth
 	call_if_eq VAR_FACING, DIR_EAST, LilycoveCity_Harbor_EventScript_PlayerBoardFerryEast
 	delay 30
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	setvar VAR_0x8004, LOCALID_LILYCOVE_HARBOR_SS_TIDAL
 	call Common_EventScript_FerryDepart
 	return
@@ -350,13 +350,13 @@ LilycoveCity_Harbor_EventScript_NoEventTickets::
 	goto LilycoveCity_Harbor_EventScript_FerryRegularLocationSelect
 	end
 
-@ Unused
+/* Unused*/
 LilycoveCity_Harbor_EventScript_NoTicket::
 	msgbox LilycoveCity_Harbor_Text_NoTicket, MSGBOX_DEFAULT
 	release
 	end
 
-@ Unused
+/* Unused*/
 LilycoveCity_Harbor_EventScript_GoToSlateportUnused::
 	msgbox LilycoveCity_Harbor_Text_SlateportItIs, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, LilycoveCity_Harbor_EventScript_FerryDestinationChangeMind
@@ -367,7 +367,7 @@ LilycoveCity_Harbor_EventScript_GoToSlateportUnused::
 	release
 	end
 
-@ Unused
+/* Unused*/
 LilycoveCity_Harbor_EventScript_GoToBattleFrontierUnused::
 	msgbox LilycoveCity_Harbor_Text_BattleFrontierItIs, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, LilycoveCity_Harbor_EventScript_FerryDestinationChangeMind
@@ -393,7 +393,7 @@ LilycoveCity_Harbor_EventScript_BoardFerry::
 	call_if_eq VAR_FACING, DIR_NORTH, LilycoveCity_Harbor_EventScript_PlayerBoardFerryNorth
 	call_if_eq VAR_FACING, DIR_EAST, LilycoveCity_Harbor_EventScript_PlayerBoardFerryEast
 	delay 30
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	setvar VAR_0x8004, LOCALID_LILYCOVE_HARBOR_SS_TIDAL
 	call Common_EventScript_FerryDepart
 	return

@@ -38,6 +38,12 @@
 #include "window.h"
 #include "constants/items.h"
 #include "constants/moves.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+#ifdef PLATFORM_3DS
+#include "3ds_assets.h"
+#endif
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "constants/pokemon_icon.h"
@@ -615,6 +621,27 @@ static u8 InBoxInput_Normal(void);
 static u8 InBoxInput_MovingMultiple(void);
 static u8 InBoxInput_SelectingMultiple(void);
 static u8 HandleInput(void);
+#ifdef PLATFORM_3DS
+// Touch on the 3DS bottom screen, where the PC is shown (3ds_bottom_ui.c).
+// A tap is taken by whatever waits for input next and acts there directly:
+// the cursor goes to the slot or button tapped and what A does there is
+// done, a menu entry is chosen, a message goes on. The buttons work as ever.
+static bool8 sCtrSelect; // HandleInput's handler takes A as pressed
+static bool8 CtrStorage_TakeTap(s16 *x, s16 *y);
+static bool8 CtrStorage_TakeAck(void);
+static u8 CtrStorage_TouchInput(void);
+static bool8 CtrStorage_MenuTap(s16 *input);
+static u8 CtrStorage_ChooseBoxTap(void);
+static bool8 CtrStorage_MarkingsTap(bool8 *open);
+static s8 StorageYesNoInput(void);
+static void CtrStorage_Prefetch(void);
+#define STORAGE_A_PRESSED() (JOY_NEW(A_BUTTON) || sCtrSelect)
+#define STORAGE_ACK(keys) (JOY_NEW(keys) || CtrStorage_TakeAck())
+#else
+#define STORAGE_A_PRESSED() JOY_NEW(A_BUTTON)
+#define STORAGE_ACK(keys) JOY_NEW(keys)
+#define StorageYesNoInput Menu_ProcessInputNoWrapClearOnChoose
+#endif
 static void AddBoxOptionsMenu(void);
 static u8 SetSelectionMenuTexts(void);
 static bool8 SetMenuTexts_Mon(void);
@@ -1527,7 +1554,16 @@ enum {
     STATE_HANDLE_INPUT,
     STATE_ERROR_MSG,
     STATE_ENTER_PC,
+#ifdef PLATFORM_3DS
+    STATE_CTR_FADE_OUT,
+#endif
 };
+
+#ifdef PLATFORM_3DS
+// 3ds_bottom_ui.c: the top screen keeps the world from now until the field
+// is back, while the boxes are on the bottom screen.
+void CtrBottom_KeepWorld(void);
+#endif
 
 #define tState          data[0]
 #define tSelectedOption data[1]
@@ -1599,12 +1635,27 @@ static void Task_PCMainMenu(u8 taskId)
             else
             {
                 // Enter PC
+#ifdef PLATFORM_3DS
+                // The top screen is to be left showing the world, so the
+                // menu goes first and the fade starts on the next frame.
+                ClearStdWindowAndFrame(task->tWindowId, TRUE);
+                ClearDialogWindowAndFrame(0, TRUE);
+                task->tState = STATE_CTR_FADE_OUT;
+#else
                 FadeScreen(FADE_TO_BLACK, 0);
                 task->tState = STATE_ENTER_PC;
+#endif
             }
             break;
         }
         break;
+#ifdef PLATFORM_3DS
+    case STATE_CTR_FADE_OUT:
+        CtrBottom_KeepWorld();
+        FadeScreen(FADE_TO_BLACK, 0);
+        task->tState = STATE_ENTER_PC;
+        break;
+#endif
     case STATE_ERROR_MSG:
         // Printed "can't do PC option message"
         // Wait for new input after message
@@ -1805,6 +1856,12 @@ static void DestroyChooseBoxMenuSprites(void)
 // For the popout window when choosing a box to deposit in or jump to
 static u8 HandleChooseBoxMenuInput(void)
 {
+#ifdef PLATFORM_3DS
+    u8 tapped = CtrStorage_ChooseBoxTap();
+
+    if (tapped != BOXID_NONE_CHOSEN)
+        return tapped;
+#endif
     if (JOY_NEW(B_BUTTON))
     {
         PlaySE(SE_SELECT);
@@ -1993,6 +2050,9 @@ static void CB2_PokeStorage(void)
     UpdateCloseBoxButtonFlash();
     AnimateSprites();
     BuildOamBuffer();
+#ifdef PLATFORM_3DS
+    CtrStorage_Prefetch();
+#endif
 }
 
 static void EnterPokeStorage(u8 boxOption)
@@ -2238,7 +2298,7 @@ static void Task_ReshowPokeStorage(u8 taskId)
         }
         break;
     case 2:
-        if (!IsDma3ManagerBusyWithBgCopy() && JOY_NEW(A_BUTTON | B_BUTTON))
+        if (!IsDma3ManagerBusyWithBgCopy() && STORAGE_ACK(A_BUTTON | B_BUTTON))
         {
             ClearBottomWindow();
             sStorage->state++;
@@ -2478,7 +2538,7 @@ static void Task_PokeStorageMain(u8 taskId)
         }
         break;
     case MSTATE_WAIT_MSG:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             sStorage->state = MSTATE_HANDLE_INPUT;
@@ -2495,7 +2555,7 @@ static void Task_PokeStorageMain(u8 taskId)
         sStorage->state = MSTATE_WAIT_ERROR_MSG;
         break;
     case MSTATE_WAIT_ERROR_MSG:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             SetPokeStorageTask(Task_PokeStorageMain);
@@ -2725,7 +2785,7 @@ static void Task_OnSelectedMon(u8 taskId)
         sStorage->state = 6;
         break;
     case 6:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             SetPokeStorageTask(Task_PokeStorageMain);
@@ -2810,7 +2870,7 @@ static void Task_WithdrawMon(u8 taskId)
         }
         break;
     case 1:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             SetPokeStorageTask(Task_PokeStorageMain);
@@ -2900,7 +2960,7 @@ static void Task_DepositMenu(u8 taskId)
         }
         break;
     case 4:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             PrintMessage(MSG_DEPOSIT_IN_WHICH_BOX);
             sStorage->state = 1;
@@ -2919,7 +2979,7 @@ static void Task_ReleaseMon(u8 taskId)
         sStorage->state++;
         // fallthrough
     case 1:
-        switch (Menu_ProcessInputNoWrapClearOnChoose())
+        switch (StorageYesNoInput())
         {
         case MENU_B_PRESSED:
         case  1: // No
@@ -2961,14 +3021,14 @@ static void Task_ReleaseMon(u8 taskId)
         sStorage->state++;
         break;
     case 4:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             PrintMessage(MSG_BYE_BYE);
             sStorage->state++;
         }
         break;
     case 5:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             if (sInPartyMenu)
@@ -3001,14 +3061,14 @@ static void Task_ReleaseMon(u8 taskId)
         sStorage->state++;
         break;
     case 9:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             PrintMessage(MSG_SURPRISE);
             sStorage->state++;
         }
         break;
     case 10:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             ReshowReleaseMon();
@@ -3024,14 +3084,14 @@ static void Task_ReleaseMon(u8 taskId)
         }
         break;
     case 12:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             PrintMessage(MSG_WORRIED);
             sStorage->state++;
         }
         break;
     case 13:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             SetPokeStorageTask(Task_PokeStorageMain);
@@ -3051,7 +3111,13 @@ static void Task_ShowMarkMenu(u8 taskId)
         sStorage->state++;
         break;
     case 1:
-        if (!HandleMonMarkingsMenuInput())
+    {
+        bool8 open;
+#ifdef PLATFORM_3DS
+        if (!CtrStorage_MarkingsTap(&open))
+#endif
+            open = HandleMonMarkingsMenuInput();
+        if (!open)
         {
             FreeMonMarkingsMenu();
             ClearBottomWindow();
@@ -3060,6 +3126,7 @@ static void Task_ShowMarkMenu(u8 taskId)
             SetPokeStorageTask(Task_PokeStorageMain);
         }
         break;
+    }
     }
 }
 
@@ -3124,7 +3191,7 @@ static void Task_GiveMovingItemToMon(u8 taskId)
         }
         break;
     case 3:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             sStorage->state++;
@@ -3163,7 +3230,7 @@ static void Task_ItemToBag(u8 taskId)
         }
         break;
     case 2:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             RefreshDisplayMon();
@@ -3176,7 +3243,7 @@ static void Task_ItemToBag(u8 taskId)
             SetPokeStorageTask(Task_PokeStorageMain);
         break;
     case 3:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             SetPokeStorageTask(Task_PokeStorageMain);
@@ -3216,7 +3283,7 @@ static void Task_SwitchSelectedItem(u8 taskId)
         }
         break;
     case 3:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             sStorage->state++;
@@ -3255,7 +3322,7 @@ static void Task_ShowItemInfo(u8 taskId)
             sStorage->state++;
         break;
     case 4:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             PlaySE(SE_WIN_OPEN);
             sStorage->state++;
@@ -3283,7 +3350,7 @@ static void Task_CloseBoxWhileHoldingItem(u8 taskId)
         sStorage->state = 1;
         break;
     case 1:
-        switch (Menu_ProcessInputNoWrapClearOnChoose())
+        switch (StorageYesNoInput())
         {
         case MENU_B_PRESSED:
         case 1: // No
@@ -3305,7 +3372,7 @@ static void Task_CloseBoxWhileHoldingItem(u8 taskId)
         }
         break;
     case 2:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             sStorage->state = 5;
@@ -3361,7 +3428,7 @@ static void Task_PrintCantStoreMail(u8 taskId)
             sStorage->state++;
         break;
     case 2:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             sStorage->state++;
@@ -3630,14 +3697,14 @@ static void Task_OnCloseBoxPressed(u8 taskId)
         }
         break;
     case 1:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             SetPokeStorageTask(Task_PokeStorageMain);
         }
         break;
     case 2:
-        switch (Menu_ProcessInputNoWrapClearOnChoose())
+        switch (StorageYesNoInput())
         {
         case MENU_B_PRESSED:
         case 1:
@@ -3691,14 +3758,14 @@ static void Task_OnBPressed(u8 taskId)
         }
         break;
     case 1:
-        if (JOY_NEW(A_BUTTON | B_BUTTON | DPAD_ANY))
+        if (STORAGE_ACK(A_BUTTON | B_BUTTON | DPAD_ANY))
         {
             ClearBottomWindow();
             SetPokeStorageTask(Task_PokeStorageMain);
         }
         break;
     case 2:
-        switch (Menu_ProcessInputNoWrapClearOnChoose())
+        switch (StorageYesNoInput())
         {
         case 0:
             ClearBottomWindow();
@@ -3792,6 +3859,10 @@ static void FreePokeStorageData(void)
     MultiMove_Free();
     FREE_AND_SET_NULL(sStorage);
     FreeAllWindowBuffers();
+#ifdef PORTABLE
+    ResetSpriteData(); // UB: sprites reference sStorage after free
+    SetVBlankHBlankCallbacksToNull(); // UB: VBlank also does
+#endif
 }
 
 
@@ -4169,6 +4240,10 @@ static void StopFlashingCloseBoxButton(void)
 
 static void UpdateCloseBoxButtonFlash(void)
 {
+#ifdef PORTABLE
+    if (sStorage == NULL) // UB: references sStorage after being freed
+        return;
+#endif
     if (sStorage->closeBoxFlashing && ++sStorage->closeBoxFlashTimer > 30)
     {
         sStorage->closeBoxFlashTimer = 0;
@@ -4199,6 +4274,12 @@ static void SetPartySlotTilemap(u8 partyId, bool8 hasMon)
         data = sPartySlotFilled_Tilemap;
     else
         data = sPartySlotEmpty_Tilemap;
+#ifdef PORT_BRIDGE
+    // Read from the loaded tilemap, not from the INCBIN's stub.
+    data = Port_ResolveAssetPointerSized(data, 3 * 4 * sizeof(*data));
+    if (data == NULL)
+        return;
+#endif
 
     index = 3 * (3 * (partyId - 1) + 1);
     index *= 4;
@@ -4470,7 +4551,14 @@ static void InitBoxMonSprites(u8 boxId)
         for (boxPosition = 0; boxPosition < IN_BOX_COUNT; boxPosition++)
         {
             if (GetBoxMonDataAt(boxId, boxPosition, MON_DATA_HELD_ITEM) == ITEM_NONE)
-                sStorage->boxMonsSprites[boxPosition]->oam.objMode = ST_OAM_OBJ_BLEND;
+            {
+#ifdef UBFIX
+                if (sStorage->boxMonsSprites[boxPosition] != NULL)
+#endif
+                {
+                    sStorage->boxMonsSprites[boxPosition]->oam.objMode = ST_OAM_OBJ_BLEND;
+                }
+            }
         }
     }
 }
@@ -5078,7 +5166,12 @@ static bool8 ResetReleaseMonSpritePtr(void)
 
 static void SetMovingMonPriority(u8 priority)
 {
+#ifdef PORTABLE
+    if (sStorage->movingMonSprite != NULL) // UB: Used before being created
+        sStorage->movingMonSprite->oam.priority = priority;
+#else
     sStorage->movingMonSprite->oam.priority = priority;
+#endif
 }
 
 static void SpriteCB_HeldMon(struct Sprite *sprite)
@@ -6990,6 +7083,358 @@ static void SetDisplayMonData(void *pokemon, u8 mode)
 }
 
 
+#ifdef PLATFORM_3DS
+//------------------------------------------------------------------------------
+//  SECTION: Touch (3DS bottom screen)
+//
+//  3ds_bottom_ui.c passes a tap in pixels of the GBA screen. It is kept until
+//  something that waits for input takes it, or for half a second at most, so
+//  a tap made while the PC is busy does not act much later.
+//------------------------------------------------------------------------------
+
+enum {
+    CTR_TOUCH_NONE,
+    CTR_TOUCH_SLOT,         // a cursor position, where A is then done
+    CTR_TOUCH_SCROLL_LEFT,  // the arrows beside the box title
+    CTR_TOUCH_SCROLL_RIGHT,
+};
+
+static struct {
+    bool8 pending;
+    s16 x, y;
+    u32 frame;
+} sCtrTap;
+
+// A slot tapped that the cursor is still on its way to.
+static struct {
+    bool8 active;
+    bool8 leftParty; // the party was asked to go away for it
+    s8 area, position;
+} sCtrTarget;
+
+// menu.c and mon_markings.c, for the taps on their menus.
+s8 CtrMenu_EntryAt(s16 x, s16 y);
+s8 CtrMenu_Choose(s8 entry, bool8 sound);
+bool8 CtrMonMarkings_Menu(s8 *cursor, s16 *x, s16 *y);
+bool8 CtrMonMarkings_Choose(s8 cursor);
+
+bool8 CtrStorage_IsOpen(void)
+{
+    return sStorage != NULL && gMain.callback2 == CB2_PokeStorage;
+}
+
+void CtrStorage_Tap(s16 x, s16 y)
+{
+    sCtrTap.pending = TRUE;
+    sCtrTap.x = x;
+    sCtrTap.y = y;
+    sCtrTap.frame = gMain.vblankCounter1;
+}
+
+static bool8 CtrStorage_TakeTap(s16 *x, s16 *y)
+{
+    if (!sCtrTap.pending)
+        return FALSE;
+    sCtrTap.pending = FALSE;
+    if (gMain.vblankCounter1 - sCtrTap.frame > 30)
+        return FALSE;
+    *x = sCtrTap.x;
+    *y = sCtrTap.y;
+    return TRUE;
+}
+
+// A message waiting for A or B: any tap goes on.
+static bool8 CtrStorage_TakeAck(void)
+{
+    s16 x, y;
+
+    return CtrStorage_TakeTap(&x, &y);
+}
+
+// What the tap at (x, y) is on, in the main view.
+static u8 CtrStorage_HitTest(s16 x, s16 y, s8 *area, s8 *position)
+{
+    if (x < 0 || x >= DISPLAY_WIDTH || y < 0 || y >= DISPLAY_HEIGHT)
+        return CTR_TOUCH_NONE;
+
+    if (sInPartyMenu)
+    {
+        *area = CURSOR_AREA_IN_PARTY;
+        if (x >= 88 && x < 128 && y >= 40 && y < 88)
+        {
+            *position = 0;
+            return CTR_TOUCH_SLOT;
+        }
+        if (x >= 128 && x < 176 && y >= 4 && y < 4 + 24 * (PARTY_SIZE - 1))
+        {
+            *position = 1 + (y - 4) / 24;
+            return CTR_TOUCH_SLOT;
+        }
+        if (x >= 128 && x < 176 && y >= 128 && y < 152)
+        {
+            *position = PARTY_SIZE; // CANCEL
+            return CTR_TOUCH_SLOT;
+        }
+        if (x < 176)
+            return CTR_TOUCH_NONE;
+        // Beside the party, in the box: the party goes away first.
+    }
+
+    if (y < 17)
+    {
+        *area = CURSOR_AREA_BUTTONS;
+        if (x >= 80 && x < 152)
+            *position = 0; // PARTY POKéMON
+        else if (x >= 166)
+            *position = 1; // CLOSE BOX
+        else
+            return CTR_TOUCH_NONE;
+        return CTR_TOUCH_SLOT;
+    }
+    if (y < 40)
+    {
+        if (x >= 80 && x < 100)
+            return CTR_TOUCH_SCROLL_LEFT;
+        if (x >= 220)
+            return CTR_TOUCH_SCROLL_RIGHT;
+        if (x < 100)
+            return CTR_TOUCH_NONE;
+        *area = CURSOR_AREA_BOX_TITLE;
+        *position = 0;
+        return CTR_TOUCH_SLOT;
+    }
+    // The icons' rows start 36 lines down, below the title.
+    if (x >= 88 && x < 88 + 24 * IN_BOX_COLUMNS && y < 36 + 24 * IN_BOX_ROWS)
+    {
+        *area = CURSOR_AREA_IN_BOX;
+        *position = ((y - 36) / 24) * IN_BOX_COLUMNS + (x - 88) / 24;
+        return CTR_TOUCH_SLOT;
+    }
+    return CTR_TOUCH_NONE;
+}
+
+// Called first by HandleInput. The cursor goes straight to a slot tapped, as
+// the D-pad would take it there one step at a time; once it is there, the
+// handler of that area does what A does (sCtrSelect).
+static u8 CtrStorage_TouchInput(void)
+{
+    s16 x, y;
+    s8 area, position;
+
+    sCtrSelect = FALSE;
+    if (CtrStorage_TakeTap(&x, &y))
+    {
+        sCtrTarget.active = FALSE;
+        // Selecting or moving several Pokémon needs A held: buttons only.
+        if (sStorage->inBoxMovingMode != MOVE_MODE_NORMAL)
+            return INPUT_NONE;
+        switch (CtrStorage_HitTest(x, y, &area, &position))
+        {
+        case CTR_TOUCH_SCROLL_LEFT:
+            if (sCursorArea == CURSOR_AREA_BOX_TITLE)
+                AnimateBoxScrollArrows(FALSE);
+            return INPUT_SCROLL_LEFT;
+        case CTR_TOUCH_SCROLL_RIGHT:
+            if (sCursorArea == CURSOR_AREA_BOX_TITLE)
+                AnimateBoxScrollArrows(FALSE);
+            return INPUT_SCROLL_RIGHT;
+        case CTR_TOUCH_SLOT:
+            sCtrTarget.active = TRUE;
+            sCtrTarget.leftParty = FALSE;
+            sCtrTarget.area = area;
+            sCtrTarget.position = position;
+            break;
+        default:
+            return INPUT_NONE;
+        }
+    }
+    if (!sCtrTarget.active)
+        return INPUT_NONE;
+
+    if (sCtrTarget.area != CURSOR_AREA_IN_PARTY && sCursorArea == CURSOR_AREA_IN_PARTY)
+    {
+        // Out of the party, as right or B takes the cursor to the box; once,
+        // for the game may refuse (a Pokémon holding mail).
+        if (!sCtrTarget.leftParty
+         && (sStorage->boxOption == OPTION_MOVE_MONS || sStorage->boxOption == OPTION_MOVE_ITEMS))
+        {
+            sCtrTarget.leftParty = TRUE;
+            return INPUT_HIDE_PARTY;
+        }
+        sCtrTarget.active = FALSE;
+        return INPUT_NONE;
+    }
+    if (sCtrTarget.area != sCursorArea || sCtrTarget.position != sCursorPosition)
+    {
+        sStorage->cursorHorizontalWrap = 0;
+        sStorage->cursorVerticalWrap = 0;
+        // The hand turns over going on or off the buttons.
+        sStorage->cursorFlipTimer = (sCtrTarget.area == CURSOR_AREA_BUTTONS) != sStorage->cursorSprite->vFlip;
+        if (sCursorArea == CURSOR_AREA_BOX_TITLE)
+            AnimateBoxScrollArrows(FALSE);
+        SetCursorPosition(sCtrTarget.area, sCtrTarget.position);
+        return INPUT_MOVE_CURSOR;
+    }
+    sCtrTarget.active = FALSE;
+    sCtrSelect = TRUE;
+    return INPUT_NONE;
+}
+
+// A tap on the PC's own menus: the entry tapped is chosen, anywhere else is B.
+static bool8 CtrStorage_MenuTap(s16 *input)
+{
+    s16 x, y;
+    s8 entry;
+
+    if (!CtrStorage_TakeTap(&x, &y))
+        return FALSE;
+    entry = CtrMenu_EntryAt(x, y);
+    if (entry >= 0)
+    {
+        *input = CtrMenu_Choose(entry, FALSE);
+    }
+    else
+    {
+        PlaySE(SE_SELECT);
+        *input = MENU_B_PRESSED;
+    }
+    return TRUE;
+}
+
+// The box chooser (Deposit, Jump): its arrows, its middle, or away from it.
+static u8 CtrStorage_ChooseBoxTap(void)
+{
+    s16 x, y;
+
+    if (!CtrStorage_TakeTap(&x, &y))
+        return BOXID_NONE_CHOSEN;
+    PlaySE(SE_SELECT);
+    if (y >= 64 && y < 128 && x >= 112 && x < 136)
+        ChooseBoxMenu_MoveLeft();
+    else if (y >= 64 && y < 128 && x >= 184 && x < 208)
+        ChooseBoxMenu_MoveRight();
+    else if (y >= 64 && y < 128 && x >= 136 && x < 184)
+        return sChooseBoxMenu->curBox;
+    else
+        return BOXID_CANCELED;
+    return BOXID_NONE_CHOSEN;
+}
+
+// The markings menu: a row is chosen as A chooses it, away from it is B.
+static bool8 CtrStorage_MarkingsTap(bool8 *open)
+{
+    s16 x, y, left, top;
+    s8 cursor;
+
+    if (!CtrStorage_TakeTap(&x, &y) || !CtrMonMarkings_Menu(&cursor, &left, &top))
+        return FALSE;
+    // The markings, then OK and CANCEL.
+    if (x >= left && x < left + 64 && y >= top + 8 && y < top + 8 + 16 * (NUM_MON_MARKINGS + 2))
+    {
+        *open = CtrMonMarkings_Choose((y - top - 8) / 16);
+    }
+    else
+    {
+        PlaySE(SE_SELECT);
+        *open = FALSE;
+    }
+    return TRUE;
+}
+
+//------------------------------------------------------------------------------
+//  Reading ahead. A file off the SD card costs milliseconds on a console, and
+//  a box scrolling in reads its wallpaper and up to thirty icons within a few
+//  frames. While the PC waits for input the other boxes' are read ahead into
+//  the asset cache, which keeps them: nearest boxes first, one read a frame.
+//------------------------------------------------------------------------------
+
+static struct {
+    u8 fromBox;
+    u16 next;
+} sCtrPrefetch = {0xFF, 0};
+
+// The asset at ptr, loaded if it is not yet. TRUE when that took a read.
+static bool8 CtrStorage_Touch(const void *ptr)
+{
+    u32 misses = CtrAssets_GetStats()->misses;
+
+    if (ptr != NULL)
+        Port_ResolveAssetPointer(ptr);
+    return CtrAssets_GetStats()->misses != misses;
+}
+
+static bool8 CtrStorage_TouchWallpaper(u8 boxId)
+{
+    u8 wallpaperId = GetBoxWallpaper(boxId);
+    const struct Wallpaper *wallpaper;
+    bool8 read;
+
+    if (wallpaperId != WALLPAPER_FRIENDS)
+        wallpaper = &sWallpapers[wallpaperId];
+    else
+        wallpaper = &sWaldaWallpapers[GetWaldaWallpaperPatternId()];
+    read = CtrStorage_Touch(wallpaper->tiles);
+    read |= CtrStorage_Touch(wallpaper->tilemap);
+    read |= CtrStorage_Touch(wallpaper->palettes);
+    if (wallpaperId == WALLPAPER_FRIENDS)
+        read |= CtrStorage_Touch(sWaldaWallpaperIcons[GetWaldaWallpaperIconId()]);
+    return read;
+}
+
+static void CtrStorage_Prefetch(void)
+{
+    u8 current = StorageGetCurrentBox();
+    u16 end = TOTAL_BOXES_COUNT * (IN_BOX_COUNT + 1);
+
+    if (sStorage == NULL || gTasks[sStorage->taskId].func != Task_PokeStorageMain
+     || sStorage->state != MSTATE_HANDLE_INPUT)
+        return;
+    // Around whatever box is on show now.
+    if (sCtrPrefetch.fromBox != current)
+    {
+        sCtrPrefetch.fromBox = current;
+        sCtrPrefetch.next = 0;
+    }
+    while (sCtrPrefetch.next < end)
+    {
+        u16 step = sCtrPrefetch.next / (IN_BOX_COUNT + 1), slot = sCtrPrefetch.next % (IN_BOX_COUNT + 1);
+        // 0, +1, -1, +2, -2...
+        s16 offset = (step & 1) ? (step + 1) / 2 : -(s16)(step / 2);
+        u8 boxId = (current + TOTAL_BOXES_COUNT + offset) % TOTAL_BOXES_COUNT;
+        bool8 read;
+
+        sCtrPrefetch.next++;
+        if (slot == IN_BOX_COUNT)
+        {
+            read = CtrStorage_TouchWallpaper(boxId);
+        }
+        else
+        {
+            u16 species = GetBoxMonDataAt(boxId, slot, MON_DATA_SPECIES_OR_EGG);
+
+            read = species != SPECIES_NONE && CtrStorage_Touch(GetMonIconTiles(species, TRUE));
+        }
+        if (read)
+            return;
+    }
+}
+
+static s8 StorageYesNoInput(void)
+{
+    s16 x, y;
+    s8 entry;
+
+    if (CtrStorage_TakeTap(&x, &y) && (entry = CtrMenu_EntryAt(x, y)) >= 0)
+    {
+        entry = CtrMenu_Choose(entry, TRUE);
+        EraseYesNoWindow();
+        return entry;
+    }
+    return Menu_ProcessInputNoWrapClearOnChoose();
+}
+#endif // PLATFORM_3DS
+
+
 //------------------------------------------------------------------------------
 //  SECTION: Input handlers
 //
@@ -7089,7 +7534,7 @@ static u8 InBoxInput_Normal(void)
             break;
         }
 
-        if ((JOY_NEW(A_BUTTON)) && SetSelectionMenuTexts())
+        if ((STORAGE_A_PRESSED()) && SetSelectionMenuTexts())
         {
             if (!sAutoActionOn)
                 return INPUT_IN_MENU;
@@ -7363,7 +7808,7 @@ static u8 HandleInput_InParty(void)
             break;
         }
 
-        if (JOY_NEW(A_BUTTON))
+        if (STORAGE_A_PRESSED())
         {
             if (sCursorPosition == PARTY_SIZE)
             {
@@ -7471,7 +7916,7 @@ static u8 HandleInput_OnBox(void)
                 return INPUT_SCROLL_RIGHT;
         }
 
-        if (JOY_NEW(A_BUTTON))
+        if (STORAGE_A_PRESSED())
         {
             AnimateBoxScrollArrows(FALSE);
             AddBoxOptionsMenu();
@@ -7553,7 +7998,7 @@ static u8 HandleInput_OnButtons(void)
         }
 
         // Button was pressed, determine which
-        if (JOY_NEW(A_BUTTON))
+        if (STORAGE_A_PRESSED())
             return (cursorPosition == 0) ? INPUT_SHOW_PARTY : INPUT_CLOSE_BOX;
 
         if (JOY_NEW(B_BUTTON))
@@ -7590,6 +8035,12 @@ static u8 HandleInput(void)
     };
 
     u16 i = 0;
+#ifdef PLATFORM_3DS
+    u8 touched = CtrStorage_TouchInput();
+
+    if (touched != INPUT_NONE)
+        return touched;
+#endif
     while (inputFuncs[i].func != NULL)
     {
         if (inputFuncs[i].area == sCursorArea)
@@ -8024,7 +8475,13 @@ static bool8 IsMenuLoading(void)
 static s16 HandleMenuInput(void)
 {
     s32 input = MENU_NOTHING_CHOSEN;
+#ifdef PLATFORM_3DS
+    s16 tapped;
 
+    if (CtrStorage_MenuTap(&tapped))
+        input = tapped;
+    else
+#endif
     do
     {
         if (JOY_NEW(A_BUTTON))
@@ -9951,8 +10408,16 @@ static void TilemapUtil_Draw(u8 id)
 {
     s32 i;
     u32 adder = sTilemapUtil[id].tileSize * sTilemapUtil[id].width;
-    const void *tiles = (sTilemapUtil[id].tilemap + (adder * sTilemapUtil[id].cur.y))
-                      + (sTilemapUtil[id].tileSize * sTilemapUtil[id].cur.x);
+    const void *tilemap = sTilemapUtil[id].tilemap;
+    const void *tiles;
+
+#ifdef PORT_BRIDGE
+    // An INCBIN is a stub, and its rows are read one by one past it: from
+    // the loaded data, looked up now, while it is used.
+    if (Port_IsAssetStub(tilemap))
+        tilemap = Port_ResolveAssetPointerSized(tilemap, adder * sTilemapUtil[id].height);
+#endif
+    tiles = (tilemap + (adder * sTilemapUtil[id].cur.y)) + (sTilemapUtil[id].tileSize * sTilemapUtil[id].cur.x);
 
     for (i = 0; i < sTilemapUtil[id].cur.height; i++)
     {

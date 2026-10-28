@@ -31,6 +31,9 @@
 #include "constants/battle_tent.h"
 #include "constants/songs.h"
 #include "constants/rgb.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 // Select_ refers to the first Pokémon selection screen where you choose your initial 3 rental Pokémon.
 // Swap_   refers to the subsequent selection screens where you can swap a Pokémon with one from the beaten trainer
@@ -125,7 +128,7 @@ struct FactorySelectScreen
 struct SwapScreenAction
 {
     u8 id;
-    TaskFunc func;
+    void (*func)(u8 taskId);
 };
 
 struct FactorySwapScreen
@@ -253,7 +256,7 @@ static EWRAM_DATA u8 *sSwapMenuTilemapBuffer = NULL;
 static EWRAM_DATA u8 *sSwapMonPicBgTilemapBuffer = NULL;
 
 static struct FactorySelectScreen *sFactorySelectScreen;
-static TaskFunc sSwap_CurrentOptionFunc;
+static void (*sSwap_CurrentOptionFunc)(u8 taskId);
 static struct FactorySwapScreen *sFactorySwapScreen;
 
 COMMON_DATA u8 (*gFactorySelect_CurrentOptionFunc)(void) = NULL;
@@ -274,6 +277,17 @@ static const u8 sMonPicBgAnim_Gfx[]          = INCBIN_U8( "graphics/battle_front
 static const u8 sMonPicBg_Tilemap[]          = INCBIN_U8( "graphics/battle_frontier/factory_screen/mon_pic_bg.bin");
 static const u16 sMonPicBg_Gfx[]             = INCBIN_U16("graphics/battle_frontier/factory_screen/mon_pic_bg.4bpp");
 static const u16 sMonPicBg_Pal[]             = INCBIN_U16("graphics/battle_frontier/factory_screen/mon_pic_bg.gbapal");
+
+#ifdef PORT_BRIDGE
+// The INCBINs are link stubs here, so sizeof gives the stub. sPokeballGray_Pal[37]
+// runs past the palette into sInterface_Pal's colour 5 only in the GBA's ROM
+// layout; here that colour is read from the resolved palette.
+#define MON_PIC_BG_GFX_SIZE 0x60 // graphics/battle_frontier/factory_screen/mon_pic_bg.4bpp
+#define FADE_TEXT_COLOR     (((const u16 *)Port_ResolveAssetPointerSized(sInterface_Pal, 0x40))[5])
+#else
+#define MON_PIC_BG_GFX_SIZE (sizeof(sMonPicBg_Gfx))
+#define FADE_TEXT_COLOR     (sPokeballGray_Pal[37])
+#endif
 
 static const struct SpriteSheet sSelect_SpriteSheets[] =
 {
@@ -886,7 +900,7 @@ static const struct SpriteTemplate sSpriteTemplate_Swap_MonPicBgAnim =
     .callback = SpriteCallbackDummy
 };
 
-static const TaskFunc sSwap_MenuOptionFuncs[] =
+void static (*const sSwap_MenuOptionFuncs[])(u8 taskId) =
 {
     Swap_OptionSummary,
     Swap_OptionSwap,
@@ -1152,7 +1166,7 @@ static void CB2_InitSelectScreen(void)
     case 1:
         sSelectMenuTilesetBuffer = Alloc(sizeof(gFrontierFactoryMenu_Gfx));
 #ifdef BUGFIX
-        sSelectMonPicBgTilesetBuffer = AllocZeroed(sizeof(sMonPicBg_Gfx));
+        sSelectMonPicBgTilesetBuffer = AllocZeroed(MON_PIC_BG_GFX_SIZE);
 #else
         sSelectMonPicBgTilesetBuffer = AllocZeroed(sizeof(gFrontierFactoryMenu_Gfx)); // Incorrect size
 #endif
@@ -1182,9 +1196,9 @@ static void CB2_InitSelectScreen(void)
         ResetTasks();
         FreeAllSpritePalettes();
         CpuCopy16(gFrontierFactoryMenu_Gfx, sSelectMenuTilesetBuffer, sizeof(gFrontierFactoryMenu_Gfx));
-        CpuCopy16(sMonPicBg_Gfx, sSelectMonPicBgTilesetBuffer, sizeof(sMonPicBg_Gfx));
+        CpuCopy16(sMonPicBg_Gfx, sSelectMonPicBgTilesetBuffer, MON_PIC_BG_GFX_SIZE);
         LoadBgTiles(1, sSelectMenuTilesetBuffer, sizeof(gFrontierFactoryMenu_Gfx), 0);
-        LoadBgTiles(3, sSelectMonPicBgTilesetBuffer, sizeof(sMonPicBg_Gfx), 0);
+        LoadBgTiles(3, sSelectMonPicBgTilesetBuffer, MON_PIC_BG_GFX_SIZE, 0);
         CpuCopy16(gFrontierFactoryMenu_Tilemap, sSelectMenuTilemapBuffer, BG_SCREEN_SIZE);
         LoadBgTilemap(1, sSelectMenuTilemapBuffer, BG_SCREEN_SIZE, 0);
         LoadPalette(gFrontierFactoryMenu_Pal, 0, 2 * PLTT_SIZE_4BPP);
@@ -2485,7 +2499,11 @@ static void Swap_Task_HandleYesNo(u8 taskId)
                 gTasks[taskId].tSaidYes = TRUE;
                 hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
                 loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
+#ifndef PORTABLE
                 gTasks[taskId].func = (void *)((hiPtr << 16) | loPtr);
+#else
+                gTasks[taskId].func = (void *)(((u16)hiPtr << 16 | (u16)loPtr));
+#endif
             }
             else
             {
@@ -2494,7 +2512,11 @@ static void Swap_Task_HandleYesNo(u8 taskId)
                 Swap_ErasePopupMenu(SWAP_WIN_YES_NO);
                 hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
                 loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
+#ifndef PORTABLE
                 gTasks[taskId].func = (void *)((hiPtr << 16) | loPtr);
+#else
+                gTasks[taskId].func = (void *)(((u16)hiPtr << 16 | (u16)loPtr));
+#endif
             }
         }
         else if (JOY_NEW(B_BUTTON))
@@ -2504,7 +2526,11 @@ static void Swap_Task_HandleYesNo(u8 taskId)
             Swap_ErasePopupMenu(SWAP_WIN_YES_NO);
             hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
             loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
+#ifndef PORTABLE
             gTasks[taskId].func = (void *)((hiPtr << 16) | loPtr);
+#else
+            gTasks[taskId].func = (void *)(((u16)hiPtr << 16 | (u16)loPtr));
+#endif
         }
         else if (JOY_REPEAT(DPAD_UP))
         {
@@ -3016,7 +3042,7 @@ static void Swap_Task_ScreenInfoTransitionOut(u8 taskId)
         gTasks[taskId].tState++;
         break;
     case 2:
-        BeginNormalPaletteFade(1 << PALNUM_FADE_TEXT, 0, 0, 16, sPokeballGray_Pal[37]);
+        BeginNormalPaletteFade(1 << PALNUM_FADE_TEXT, 0, 0, 16, FADE_TEXT_COLOR);
         gTasks[taskId].tState++;
         break;
     case 3:
@@ -3074,7 +3100,11 @@ static void Swap_Task_ScreenInfoTransitionOut(u8 taskId)
             gTasks[taskId].tState = gTasks[taskId].tFollowUpTaskState;
             hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
             loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
-            gTasks[taskId].func = (void *)((hiPtr << 16) | (loPtr));
+#ifndef PORTABLE
+            gTasks[taskId].func = (void*)((hiPtr << 16) | loPtr);
+#else
+            gTasks[taskId].func = (void*)(((u16)hiPtr << 16 | (u16)loPtr));
+#endif
         }
         break;
     }
@@ -3137,14 +3167,14 @@ static void Swap_Task_ScreenInfoTransitionIn(u8 taskId)
         if (gTasks[taskId].tSlideFinishedPkmn == TRUE
          && gTasks[taskId].tSlideFinishedCancel == TRUE)
         {
-            gPlttBufferFaded[BG_PLTT_ID(PALNUM_FADE_TEXT) + 2] = sPokeballGray_Pal[37];
+            gPlttBufferFaded[BG_PLTT_ID(PALNUM_FADE_TEXT) + 2] = FADE_TEXT_COLOR;
             Swap_PrintActionStrings();
             PutWindowTilemap(SWAP_WIN_ACTION_FADE);
             gTasks[taskId].tState++;
         }
         break;
     case 3:
-        BeginNormalPaletteFade(1 << PALNUM_FADE_TEXT, 0, 16, 0, sPokeballGray_Pal[37]);
+        BeginNormalPaletteFade(1 << PALNUM_FADE_TEXT, 0, 16, 0, FADE_TEXT_COLOR);
         gTasks[taskId].tState++;
         break;
     case 4:
@@ -3181,7 +3211,11 @@ static void Swap_Task_ScreenInfoTransitionIn(u8 taskId)
         gTasks[taskId].tState = gTasks[taskId].tFollowUpTaskState;
         hiPtr = gTasks[taskId].tFollowUpTaskPtrHi;
         loPtr = gTasks[taskId].tFollowUpTaskPtrLo;
-        gTasks[taskId].func = (void *)((hiPtr << 16) | (loPtr));
+#ifndef PORTABLE
+        gTasks[taskId].func = (void*)((hiPtr << 16) | loPtr);
+#else
+        gTasks[taskId].func = (void*)(((u16)hiPtr << 16 | (u16)loPtr));
+#endif
         break;
     }
 }
@@ -3289,7 +3323,7 @@ static void CB2_InitSwapScreen(void)
     case 1:
         sSwapMenuTilesetBuffer = Alloc(sizeof(gFrontierFactoryMenu_Gfx));
 #ifdef BUGFIX
-        sSwapMonPicBgTilesetBuffer = AllocZeroed(sizeof(sMonPicBg_Gfx));
+        sSwapMonPicBgTilesetBuffer = AllocZeroed(MON_PIC_BG_GFX_SIZE);
 #else
         sSwapMonPicBgTilesetBuffer = AllocZeroed(sizeof(gFrontierFactoryMenu_Gfx)); // Incorrect size
 #endif
@@ -3320,9 +3354,9 @@ static void CB2_InitSwapScreen(void)
         FreeAllSpritePalettes();
         ResetAllPicSprites();
         CpuCopy16(gFrontierFactoryMenu_Gfx, sSwapMenuTilesetBuffer, sizeof(gFrontierFactoryMenu_Gfx));
-        CpuCopy16(sMonPicBg_Gfx, sSwapMonPicBgTilesetBuffer, sizeof(sMonPicBg_Gfx));
+        CpuCopy16(sMonPicBg_Gfx, sSwapMonPicBgTilesetBuffer, MON_PIC_BG_GFX_SIZE);
         LoadBgTiles(1, sSwapMenuTilesetBuffer, sizeof(gFrontierFactoryMenu_Gfx), 0);
-        LoadBgTiles(3, sSwapMonPicBgTilesetBuffer, sizeof(sMonPicBg_Gfx), 0);
+        LoadBgTiles(3, sSwapMonPicBgTilesetBuffer, MON_PIC_BG_GFX_SIZE, 0);
         CpuCopy16(gFrontierFactoryMenu_Tilemap, sSwapMenuTilemapBuffer, BG_SCREEN_SIZE);
         LoadBgTilemap(1, sSwapMenuTilemapBuffer, BG_SCREEN_SIZE, 0);
         LoadPalette(gFrontierFactoryMenu_Pal, 0, 2 * PLTT_SIZE_4BPP);

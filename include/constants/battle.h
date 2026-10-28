@@ -188,7 +188,7 @@ enum BattlerId
 #define HITMARKER_NO_PPDEDUCT           (1 << 11)
 #define HITMARKER_SWAP_ATTACKER_TARGET  (1 << 12)
 #define HITMARKER_STATUS_ABILITY_EFFECT (1 << 13)
-#define HITMARKER_SYNCHRONIZE_EFFECT    (1 << 14)
+#define HITMARKER_SYNCHRONISE_EFFECT    (1 << 14)
 #define HITMARKER_RUN                   (1 << 15)
 #define HITMARKER_IGNORE_ON_AIR         (1 << 16)
 #define HITMARKER_IGNORE_UNDERGROUND    (1 << 17)
@@ -382,5 +382,12 @@ enum BattlerId
 
 // Indicator for the party summary bar to display an empty slot.
 #define HP_EMPTY_SLOT 0xFFFF
+
+// A move's category: physical, special or status. On the GBA it follows the
+// move's type; with ENHANCEMENTS' PHYS/SPEC SPLIT the 3DS port uses each
+// move's own (battle.h, IS_MOVE_PHYSICAL; the AI's get_move_category_from_result).
+#define MOVE_CATEGORY_PHYSICAL 0
+#define MOVE_CATEGORY_SPECIAL  1
+#define MOVE_CATEGORY_STATUS   2
 
 #endif // GUARD_CONSTANTS_BATTLE_H

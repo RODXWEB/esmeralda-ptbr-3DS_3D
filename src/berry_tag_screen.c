@@ -100,6 +100,12 @@ static const u8 sTextColors[2][3] =
     {15, 14, 13}
 };
 
+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH)
+#define BERRY_TAG_SPANISH 1
+#else
+#define BERRY_TAG_SPANISH 0
+#endif
+
 static const struct WindowTemplate sWindowTemplates[] =
 {
     [WIN_BERRY_NAME] = {
@@ -109,7 +115,7 @@ static const struct WindowTemplate sWindowTemplates[] =
         .width = 8,
         .height = 2,
         .paletteNum = 15,
-        .baseBlock = 69,
+        .baseBlock = BERRY_TAG_SPANISH ? 72 : 69,
     },
     [WIN_SIZE_FIRM] = {
         .bg = 1,
@@ -118,16 +124,16 @@ static const struct WindowTemplate sWindowTemplates[] =
         .width = 18,
         .height = 4,
         .paletteNum = 15,
-        .baseBlock = 85,
+        .baseBlock = BERRY_TAG_SPANISH ? 88 : 85,
     },
     [WIN_DESC] = {
         .bg = 1,
-        .tilemapLeft = 4,
+        .tilemapLeft = BERRY_TAG_SPANISH ? 3 : 4,
         .tilemapTop = 14,
-        .width = 25,
+        .width = BERRY_TAG_SPANISH ? 27 : 25,
         .height = 4,
         .paletteNum = 15,
-        .baseBlock = 157,
+        .baseBlock = BERRY_TAG_SPANISH ? 160 : 157,
     },
     [WIN_BERRY_TAG] = {
         .bg = 0,
@@ -136,7 +142,7 @@ static const struct WindowTemplate sWindowTemplates[] =
         .width = 8,
         .height = 2,
         .paletteNum = 15,
-        .baseBlock = 257,
+        .baseBlock = BERRY_TAG_SPANISH ? 268 : 257,
     },
     DUMMY_WIN_TEMPLATE
 };

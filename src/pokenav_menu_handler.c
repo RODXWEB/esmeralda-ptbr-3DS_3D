@@ -511,3 +511,27 @@ u16 GetHelpBarTextId(void)
     struct Pokenav_Menu *menu = GetSubstructPtr(POKENAV_SUBSTRUCT_MAIN_MENU_HANDLER);
     return menu->helpBarIndex;
 }
+
+#ifdef PLATFORM_3DS
+// The 3DS bottom screen turns a tap on an option into the presses that pick
+// it: how many options the menu on show has, and which the cursor is on.
+int CtrPokenavMenu_Options(int *cursor)
+{
+    struct Pokenav_Menu *menu = GetSubstructPtr(POKENAV_SUBSTRUCT_MAIN_MENU_HANDLER);
+
+    if (menu == NULL)
+        return 0;
+    *cursor = menu->cursorPos;
+    return sLastCursorPositions[menu->menuType] + 1;
+}
+
+// Puts the cursor on an option without moving the options: the D-pad press
+// that follows moves it on to the one tapped, as the game does, in one step.
+void CtrPokenavMenu_SetCursor(int cursor)
+{
+    struct Pokenav_Menu *menu = GetSubstructPtr(POKENAV_SUBSTRUCT_MAIN_MENU_HANDLER);
+
+    if (menu != NULL && cursor >= 0 && cursor <= sLastCursorPositions[menu->menuType])
+        menu->cursorPos = cursor;
+}
+#endif

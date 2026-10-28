@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "frontier_util.h"
 #include "battle_setup.h"
 #include "berry.h"
@@ -48,6 +51,9 @@
 #include "trainer_see.h"
 #include "tv.h"
 #include "window.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "constants/event_objects.h"
 
 typedef u16 (*SpecialFunc)(void);
@@ -111,6 +117,7 @@ bool8 ScrCmd_gotonative(struct ScriptContext *ctx)
 {
     bool8 (*addr)(void) = (bool8 (*)(void))ScriptReadWord(ctx);
 
+
     SetupNativeScript(ctx, addr);
     return TRUE;
 }
@@ -134,6 +141,7 @@ bool8 ScrCmd_specialvar(struct ScriptContext *ctx)
 bool8 ScrCmd_callnative(struct ScriptContext *ctx)
 {
     NativeFunc func = (NativeFunc)ScriptReadWord(ctx);
+
 
     func();
     return FALSE;
@@ -367,7 +375,11 @@ bool8 ScrCmd_setvar(struct ScriptContext *ctx)
 bool8 ScrCmd_copyvar(struct ScriptContext *ctx)
 {
     u16 *ptr = GetVarPointer(ScriptReadHalfword(ctx));
+#ifndef PORTABLE
     *ptr = *GetVarPointer(ScriptReadHalfword(ctx));
+#else // GF incorrectly uses this in a few places, leading to dereferincing NULL pointers
+    *ptr = VarGet(ScriptReadHalfword(ctx));
+#endif
     return FALSE;
 }
 
@@ -649,12 +661,12 @@ bool8 ScrCmd_fadescreenswapbuffers(struct ScriptContext *ctx)
     case FADE_TO_BLACK:
     case FADE_TO_WHITE:
     default:
-        CpuCopy32(gPlttBufferUnfaded, gPaletteDecompressionBuffer, PLTT_SIZE);
+        CpuCopy32(gPlttBufferUnfaded, gPaletteDecompressionBuffer, PLTT_BUFFER_ALLOC_BYTES);
         FadeScreen(mode, 0);
         break;
     case FADE_FROM_BLACK:
     case FADE_FROM_WHITE:
-        CpuCopy32(gPaletteDecompressionBuffer, gPlttBufferUnfaded, PLTT_SIZE);
+        CpuCopy32(gPaletteDecompressionBuffer, gPlttBufferUnfaded, PLTT_BUFFER_ALLOC_BYTES);
         FadeScreen(mode, 0);
         break;
     }
@@ -993,8 +1005,16 @@ bool8 ScrCmd_applymovement(struct ScriptContext *ctx)
 {
     u16 localId = VarGet(ScriptReadHalfword(ctx));
     const void *movementScript = (const void *)ScriptReadWord(ctx);
+    bool8 failed;
 
-    ScriptMovement_StartObjectMovementScript(localId, gSaveBlock1Ptr->location.mapNum, gSaveBlock1Ptr->location.mapGroup, movementScript);
+    failed = ScriptMovement_StartObjectMovementScript(localId, gSaveBlock1Ptr->location.mapNum, gSaveBlock1Ptr->location.mapGroup, movementScript);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0420,
+                        localId,
+                        failed,
+                        gSaveBlock1Ptr->location.mapGroup | (gSaveBlock1Ptr->location.mapNum << 8),
+                        (u16)((uintptr_t)movementScript & 0xFFFF));
+#endif
     sMovingNpcId = localId;
     return FALSE;
 }
@@ -1013,7 +1033,16 @@ bool8 ScrCmd_applymovementat(struct ScriptContext *ctx)
 
 static bool8 WaitForMovementFinish(void)
 {
-    return ScriptMovement_IsObjectMovementFinished(sMovingNpcId, sMovingNpcMapNum, sMovingNpcMapGroup);
+    bool8 finished = ScriptMovement_IsObjectMovementFinished(sMovingNpcId, sMovingNpcMapNum, sMovingNpcMapGroup);
+
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0421,
+                        sMovingNpcId,
+                        finished,
+                        sMovingNpcMapGroup | (sMovingNpcMapNum << 8),
+                        gPlayerAvatar.tileTransitionState | (gObjectEvents[gPlayerAvatar.objectEventId].heldMovementActive << 8) | (gObjectEvents[gPlayerAvatar.objectEventId].heldMovementFinished << 9));
+#endif
+    return finished;
 }
 
 bool8 ScrCmd_waitmovement(struct ScriptContext *ctx)
@@ -1065,8 +1094,15 @@ bool8 ScrCmd_removeobjectat(struct ScriptContext *ctx)
 bool8 ScrCmd_addobject(struct ScriptContext *ctx)
 {
     u16 objectId = VarGet(ScriptReadHalfword(ctx));
+    u8 objectEventId = TrySpawnObjectEvent(objectId, gSaveBlock1Ptr->location.mapNum, gSaveBlock1Ptr->location.mapGroup);
 
-    TrySpawnObjectEvent(objectId, gSaveBlock1Ptr->location.mapNum, gSaveBlock1Ptr->location.mapGroup);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0422,
+                        objectId,
+                        objectEventId,
+                        gSaveBlock1Ptr->location.mapGroup | (gSaveBlock1Ptr->location.mapNum << 8),
+                        CheckHeap());
+#endif
     return FALSE;
 }
 
@@ -1206,6 +1242,23 @@ bool8 ScrCmd_lockall(struct ScriptContext *ctx)
     }
     else
     {
+#ifdef PORT_BRIDGE
+        struct ObjectEvent *playerObj = &gObjectEvents[gPlayerAvatar.objectEventId];
+
+        Port_SetBirchDebugEx(0x0410,
+                            gPlayerAvatar.tileTransitionState | (gPlayerAvatar.runningState << 8),
+                            playerObj->movementActionId | (playerObj->heldMovementActive << 8) | (playerObj->heldMovementFinished << 9),
+                            gPlayerAvatar.objectEventId,
+                            playerObj->facingDirection | (playerObj->movementDirection << 8));
+
+        if (IsPlayerStandingStill())
+        {
+            FreezeObjectEvents();
+            ObjectEventClearHeldMovementIfFinished(playerObj);
+            StopPlayerAvatar();
+            return FALSE;
+        }
+#endif
         FreezeObjects_WaitForPlayer();
         SetupNativeScript(ctx, IsFreezePlayerFinished);
         return TRUE;
@@ -1222,6 +1275,30 @@ bool8 ScrCmd_lock(struct ScriptContext *ctx)
     }
     else
     {
+#ifdef PORT_BRIDGE
+        struct ObjectEvent *playerObj = &gObjectEvents[gPlayerAvatar.objectEventId];
+
+        // A selected object still in its step takes the wait below, which
+        // freezes it once the step ends; frozen mid-step it would stand
+        // between tiles, left unfrozen it walks on through the dialogue.
+        if (IsPlayerStandingStill()
+         && !(gObjectEvents[gSelectedObjectEvent].active && gObjectEvents[gSelectedObjectEvent].singleMovementActive))
+        {
+            if (gObjectEvents[gSelectedObjectEvent].active)
+            {
+                FreezeObjectEventsExceptOne(gSelectedObjectEvent);
+                FreezeObjectEvent(&gObjectEvents[gSelectedObjectEvent]);
+            }
+            else
+            {
+                FreezeObjectEvents();
+            }
+
+            ObjectEventClearHeldMovementIfFinished(playerObj);
+            StopPlayerAvatar();
+            return FALSE;
+        }
+#endif
         if (gObjectEvents[gSelectedObjectEvent].active)
         {
             FreezeObjects_WaitForPlayerAndSelected();
@@ -1242,6 +1319,13 @@ bool8 ScrCmd_releaseall(struct ScriptContext *ctx)
 
     HideFieldMessageBox();
     playerObjectId = GetObjectEventIdByLocalIdAndMap(LOCALID_PLAYER, 0, 0);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0415,
+                        playerObjectId,
+                        gObjectEvents[playerObjectId].movementActionId | (gObjectEvents[playerObjectId].heldMovementActive << 8) | (gObjectEvents[playerObjectId].heldMovementFinished << 9),
+                        gPlayerAvatar.tileTransitionState,
+                        VarGet(VAR_LITTLEROOT_INTRO_STATE));
+#endif
     ObjectEventClearHeldMovementIfFinished(&gObjectEvents[playerObjectId]);
     ScriptMovement_UnfreezeObjectEvents();
     UnfreezeObjectEvents();
@@ -1268,6 +1352,9 @@ bool8 ScrCmd_message(struct ScriptContext *ctx)
 
     if (msg == NULL)
         msg = (const u8 *)ctx->data[0];
+#ifdef PORT_BRIDGE
+    msg = Port_ResolveTextPointer(msg);
+#endif
     ShowFieldMessage(msg);
     return FALSE;
 }
@@ -1278,6 +1365,9 @@ bool8 ScrCmd_pokenavcall(struct ScriptContext *ctx)
 
     if (msg == NULL)
         msg = (const u8 *)ctx->data[0];
+#ifdef PORT_BRIDGE
+    msg = Port_ResolveTextPointer(msg);
+#endif
     ShowPokenavFieldMessage(msg);
     return FALSE;
 }
@@ -1288,6 +1378,9 @@ bool8 ScrCmd_messageautoscroll(struct ScriptContext *ctx)
 
     if (msg == NULL)
         msg = (const u8 *)ctx->data[0];
+#ifdef PORT_BRIDGE
+    msg = Port_ResolveTextPointer(msg);
+#endif
     gTextFlags.autoScroll = TRUE;
     gTextFlags.forceMidTextSpeed = TRUE;
     ShowFieldAutoScrollMessage(msg);
@@ -1301,6 +1394,9 @@ bool8 ScrCmd_messageinstant(struct ScriptContext *ctx)
 
     if (msg == NULL)
         msg = (const u8 *)ctx->data[0];
+#ifdef PORT_BRIDGE
+    msg = Port_ResolveTextPointer(msg);
+#endif
     LoadMessageBoxAndBorderGfx();
     DrawDialogueFrame(0, TRUE);
     AddTextPrinterParameterized(0, FONT_NORMAL, msg, 0, 1, 0, NULL);
@@ -1486,6 +1582,10 @@ bool8 ScrCmd_braillemessage(struct ScriptContext *ctx)
     u8 width, height;
     u8 xWindow, yWindow, xText, yText;
     u8 temp;
+
+#ifdef PORT_BRIDGE
+    ptr = (u8 *)Port_ResolveTextPointer(ptr);
+#endif
 
     // + 6 for the 6 bytes at the start of a braille message (brailleformat macro)
     // In RS these bytes are used to position the text and window, but
@@ -1709,6 +1809,42 @@ bool8 ScrCmd_setmonmove(struct ScriptContext *ctx)
     return FALSE;
 }
 
+#ifdef PLATFORM_3DS
+#include "constants/items.h"
+#include "constants/moves.h"
+// Field HMs without the move (OPTIONS, ENHANCEMENTS): Cut, Rock Smash,
+// Strength, Surf, Waterfall and Dive work with the badge alone (the scripts
+// still check it). The Pokemon shown using one is the first that could learn
+// it, or else the first in the party.
+static bool8 IsFieldHm(u16 move)
+{
+    return move == MOVE_CUT || move == MOVE_ROCK_SMASH || move == MOVE_STRENGTH
+        || move == MOVE_SURF || move == MOVE_WATERFALL || move == MOVE_DIVE;
+}
+
+u8 FieldHmUser(u16 move)
+{
+    u8 i, first = PARTY_SIZE, tm = 0xFF;
+    u16 item;
+
+    for (item = ITEM_HM01; item <= ITEM_HM08; item++)
+        if (ItemIdToBattleMoveId(item) == move)
+            tm = item - ITEM_TM01;
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        if (!GetMonData(&gPlayerParty[i], MON_DATA_SPECIES, NULL))
+            break;
+        if (GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG))
+            continue;
+        if (first == PARTY_SIZE)
+            first = i;
+        if (tm != 0xFF && CanMonLearnTMHM(&gPlayerParty[i], tm))
+            return i;
+    }
+    return first;
+}
+#endif
+
 bool8 ScrCmd_checkpartymove(struct ScriptContext *ctx)
 {
     u8 i;
@@ -1727,6 +1863,18 @@ bool8 ScrCmd_checkpartymove(struct ScriptContext *ctx)
             break;
         }
     }
+#ifdef PLATFORM_3DS
+    if (gSpecialVar_Result == PARTY_SIZE && CtrExtras_Get("field_hms") && IsFieldHm(move))
+    {
+        u8 user = FieldHmUser(move);
+
+        if (user != PARTY_SIZE)
+        {
+            gSpecialVar_Result = user;
+            gSpecialVar_0x8004 = GetMonData(&gPlayerParty[user], MON_DATA_SPECIES, NULL);
+        }
+    }
+#endif
     return FALSE;
 }
 
@@ -1820,7 +1968,7 @@ bool8 ScrCmd_updatecoinsbox(struct ScriptContext *ctx)
 
 bool8 ScrCmd_trainerbattle(struct ScriptContext *ctx)
 {
-    ctx->scriptPtr = BattleSetup_ConfigureTrainerBattle(ctx->scriptPtr);
+    ScriptJump(ctx, BattleSetup_ConfigureTrainerBattle(ctx->scriptPtr));
     return FALSE;
 }
 
@@ -1832,13 +1980,13 @@ bool8 ScrCmd_dotrainerbattle(struct ScriptContext *ctx)
 
 bool8 ScrCmd_gotopostbattlescript(struct ScriptContext *ctx)
 {
-    ctx->scriptPtr = BattleSetup_GetScriptAddrAfterBattle();
+    ScriptJump(ctx, BattleSetup_GetScriptAddrAfterBattle());
     return FALSE;
 }
 
 bool8 ScrCmd_gotobeatenscript(struct ScriptContext *ctx)
 {
-    ctx->scriptPtr = BattleSetup_GetTrainerPostBattleScript();
+    ScriptJump(ctx, BattleSetup_GetTrainerPostBattleScript());
     return FALSE;
 }
 
@@ -2012,7 +2160,30 @@ bool8 ScrCmd_setrespawn(struct ScriptContext *ctx)
 
 bool8 ScrCmd_checkplayergender(struct ScriptContext *ctx)
 {
-    gSpecialVar_Result = gSaveBlock2Ptr->playerGender;
+    u16 playerGender = gSaveBlock2Ptr->playerGender;
+
+#ifdef PORT_BRIDGE
+    if (playerGender > FEMALE)
+    {
+        Port_SetBirchDebugEx(0x0413,
+                            playerGender,
+                            0xFFFF,
+                            VarGet(VAR_LITTLEROOT_INTRO_STATE),
+                            gPlayerAvatar.objectEventId);
+        playerGender = MALE;
+        gSaveBlock2Ptr->playerGender = playerGender;
+    }
+    else
+    {
+        Port_SetBirchDebugEx(0x0413,
+                            playerGender,
+                            0,
+                            VarGet(VAR_LITTLEROOT_INTRO_STATE),
+                            gPlayerAvatar.objectEventId);
+    }
+#endif
+
+    gSpecialVar_Result = playerGender;
     return FALSE;
 }
 

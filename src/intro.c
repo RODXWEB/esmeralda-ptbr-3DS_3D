@@ -1099,7 +1099,7 @@ static u8 SetUpCopyrightScreen(void)
                                    | BGCNT_TXT256x256);
         EnableInterrupts(INTR_FLAG_VBLANK);
         SetVBlankCallback(VBlankCB_Intro);
-        REG_DISPCNT = DISPCNT_MODE_0 | DISPCNT_OBJ_1D_MAP | DISPCNT_BG0_ON;
+        SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_MODE_0 | DISPCNT_OBJ_1D_MAP | DISPCNT_BG0_ON);
         SetSerialCallback(SerialCB_CopyrightScreen);
         GameCubeMultiBoot_Init(&gMultibootProgramStruct);
     default:
@@ -1124,12 +1124,14 @@ static u8 SetUpCopyrightScreen(void)
         {
             if (gMultibootProgramStruct.gcmb_field_2 == 2)
             {
+#ifndef PORTABLE
                 // check the multiboot ROM header game code to see if we already did this
                 if (*(u32 *)(EWRAM_START + 0xAC) == COLOSSEUM_GAME_CODE)
                 {
                     CpuCopy16(&gMultiBootProgram_PokemonColosseum_Start, (void *)EWRAM_START, sizeof(gMultiBootProgram_PokemonColosseum_Start));
                     *(u32 *)(EWRAM_START + 0xAC) = COLOSSEUM_GAME_CODE;
                 }
+#endif
                 GameCubeMultiBoot_ExecuteProgram(&gMultibootProgramStruct);
             }
         }
@@ -1782,7 +1784,7 @@ static void Task_Scene3_LoadGroudon(u8 taskId)
         LZDecompressVram(gIntroGroudonBg_Tilemap, (void *)(BG_SCREEN_ADDR(28)));
         LoadCompressedSpriteSheetUsingHeap(&gBattleAnimPicTable[GET_TRUE_SPRITE_INDEX(ANIM_TAG_ROCKS)]);
         LoadCompressedSpritePaletteUsingHeap(&gBattleAnimPaletteTable[GET_TRUE_SPRITE_INDEX(ANIM_TAG_ROCKS)]);
-        CpuCopy16(gIntro3Bg_Pal, gPlttBufferUnfaded, sizeof(gIntro3Bg_Pal));
+        LoadPalette(gIntro3Bg_Pal, BG_PLTT_ID(0), sizeof(gIntro3Bg_Pal));
         gTasks[taskId].func = Task_Scene3_InitGroudonBg;
     }
 }
@@ -1867,8 +1869,6 @@ static void Task_Scene3_StartGroudon(u8 taskId)
 #define tPalIdx  data[7]
 
 // Treats gIntro3Bg_Pal as u8* and iterates by 1
-#define INTRO3_RAW_PTR(palId)(((void *) &gIntro3Bg_Pal) + palId)
-
 static void Task_Scene3_Groudon(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
@@ -1893,7 +1893,7 @@ static void Task_Scene3_Groudon(u8 taskId)
         if (--tDelay == 0)
         {
             tDelay = 2;
-            CpuCopy16(INTRO3_RAW_PTR(tPalIdx), &gPlttBufferFaded[BG_PLTT_ID(1) + 15], PLTT_SIZEOF(1));
+            LoadPaletteFadedWithOffset(gIntro3Bg_Pal, tPalIdx, BG_PLTT_ID(1) + 15, PLTT_SIZEOF(1));
             tPalIdx += 2;
             if (tPalIdx == 0x1EC)
                 tState++;
@@ -1910,7 +1910,7 @@ static void Task_Scene3_Groudon(u8 taskId)
         if (--tDelay == 0)
         {
             tDelay = 2;
-            CpuCopy16(INTRO3_RAW_PTR(tPalIdx), &gPlttBufferFaded[BG_PLTT_ID(1) + 15], PLTT_SIZEOF(1));
+            LoadPaletteFadedWithOffset(gIntro3Bg_Pal, tPalIdx, BG_PLTT_ID(1) + 15, PLTT_SIZEOF(1));
             tPalIdx -= 2;
             if (tPalIdx == 0x1E0)
             {
@@ -2152,7 +2152,7 @@ static void Task_Scene3_Kyogre(u8 taskId)
         if (--tDelay == 0)
         {
             tDelay = 4;
-            CpuCopy16(INTRO3_RAW_PTR(tPalIdx), &gPlttBufferFaded[BG_PLTT_ID(2) + 15], PLTT_SIZEOF(1));
+            LoadPaletteFadedWithOffset(gIntro3Bg_Pal, tPalIdx, BG_PLTT_ID(2) + 15, PLTT_SIZEOF(1));
             tPalIdx -= 2;
             if (tPalIdx == 0x1E0)
                 tState++;
@@ -2170,7 +2170,7 @@ static void Task_Scene3_Kyogre(u8 taskId)
         if (--tDelay == 0)
         {
             tDelay = 4;
-            CpuCopy16(INTRO3_RAW_PTR(tPalIdx), &gPlttBufferFaded[BG_PLTT_ID(2) + 15], PLTT_SIZEOF(1));
+            LoadPaletteFadedWithOffset(gIntro3Bg_Pal, tPalIdx, BG_PLTT_ID(2) + 15, PLTT_SIZEOF(1));
             tPalIdx += 2;
             if (tPalIdx == 0x1EE)
             {
@@ -2501,7 +2501,7 @@ static void SpriteCB_Lightning(struct Sprite *sprite)
         sprite->sPalIdx = 0x1C2;
         sprite->sState++;
     case 1:
-        CpuCopy16(INTRO3_RAW_PTR(sprite->sPalIdx), &gPlttBufferFaded[BG_PLTT_ID(5) + 13], PLTT_SIZEOF(1));
+        LoadPaletteFadedWithOffset(gIntro3Bg_Pal, sprite->sPalIdx, BG_PLTT_ID(5) + 13, PLTT_SIZEOF(1));
         sprite->sPalIdx += 2;
         if (sprite->sPalIdx != 0x1CE)
             break;
@@ -2512,7 +2512,7 @@ static void SpriteCB_Lightning(struct Sprite *sprite)
         if (--sprite->sDelay == 0)
         {
             sprite->sDelay = 4;
-            CpuCopy16(INTRO3_RAW_PTR(sprite->sPalIdx), &gPlttBufferFaded[BG_PLTT_ID(5) + 13], PLTT_SIZEOF(1));
+            LoadPaletteFadedWithOffset(gIntro3Bg_Pal, sprite->sPalIdx, BG_PLTT_ID(5) + 13, PLTT_SIZEOF(1));
             sprite->sPalIdx -= 2;
             if (sprite->sPalIdx == 0x1C0)
                 DestroySprite(sprite);
@@ -2615,7 +2615,7 @@ static void Task_RayquazaAttack(u8 taskId)
     case 0:
         if ((data[2] & 1) != 0)
         {
-            CpuCopy16(INTRO3_RAW_PTR(0x1A2 + data[1] * 2), &gPlttBufferFaded[BG_PLTT_ID(5) + 14], PLTT_SIZEOF(1));
+            LoadPaletteFadedWithOffset(gIntro3Bg_Pal, 0x1A2 + data[1] * 2, BG_PLTT_ID(5) + 14, PLTT_SIZEOF(1));
             data[1]++;
         }
         if (data[1] == 6)
@@ -2630,7 +2630,7 @@ static void Task_RayquazaAttack(u8 taskId)
         {
             if ((data[2] & 1) != 0)
             {
-                CpuCopy16(INTRO3_RAW_PTR(0x1A2 + data[1] * 2), &gPlttBufferFaded[BG_PLTT_ID(5) + 8], PLTT_SIZEOF(1));
+                LoadPaletteFadedWithOffset(gIntro3Bg_Pal, 0x1A2 + data[1] * 2, BG_PLTT_ID(5) + 8, PLTT_SIZEOF(1));
                 data[1]++;
             }
             if (data[1] == 6)
@@ -2649,7 +2649,7 @@ static void Task_RayquazaAttack(u8 taskId)
         {
             if ((data[2] & 1) != 0)
             {
-                CpuCopy16(INTRO3_RAW_PTR(0x182 + data[1] * 2), &gPlttBufferFaded[BG_PLTT_ID(5) + 12], PLTT_SIZEOF(1));
+                LoadPaletteFadedWithOffset(gIntro3Bg_Pal, 0x182 + data[1] * 2, BG_PLTT_ID(5) + 12, PLTT_SIZEOF(1));
                 data[1]++;
             }
             if (data[1] == 6)
@@ -2673,9 +2673,9 @@ static void Task_RayquazaAttack(u8 taskId)
             if (--data[3] != 0)
             {
                 BlendPalette(BG_PLTT_ID(5), 16, data[3], RGB(9, 10, 10));
-                CpuCopy16(INTRO3_RAW_PTR(428), &gPlttBufferFaded[BG_PLTT_ID(5) + 14], PLTT_SIZEOF(1));
-                CpuCopy16(INTRO3_RAW_PTR(428), &gPlttBufferFaded[BG_PLTT_ID(5) + 8], PLTT_SIZEOF(1));
-                CpuCopy16(INTRO3_RAW_PTR(396), &gPlttBufferFaded[BG_PLTT_ID(5) + 12], PLTT_SIZEOF(1));
+                LoadPaletteFadedWithOffset(gIntro3Bg_Pal, 428, BG_PLTT_ID(5) + 14, PLTT_SIZEOF(1));
+                LoadPaletteFadedWithOffset(gIntro3Bg_Pal, 428, BG_PLTT_ID(5) + 8, PLTT_SIZEOF(1));
+                LoadPaletteFadedWithOffset(gIntro3Bg_Pal, 396, BG_PLTT_ID(5) + 12, PLTT_SIZEOF(1));
             }
             else
             {
@@ -3171,6 +3171,13 @@ static void SpriteCB_Flygon(struct Sprite *sprite)
 
 #define COLOR_CHANGES 9 // Number of stages for changing the letter color
 
+static void UpdateGameFreakTextPalette(u16 colorIndex)
+{
+    LoadPaletteFadedWithOffset(gIntroGameFreakTextFade_Pal, PLTT_SIZEOF(colorIndex), OBJ_PLTT_ID(1) + 15, PLTT_SIZEOF(1));
+    LoadPaletteFadedWithOffset(gIntroGameFreakTextFade_Pal, PLTT_SIZEOF(colorIndex + 16), OBJ_PLTT_ID(1) + 4, PLTT_SIZEOF(1));
+    LoadPaletteFadedWithOffset(gIntroGameFreakTextFade_Pal, PLTT_SIZEOF(colorIndex + 32), OBJ_PLTT_ID(1) + 10, PLTT_SIZEOF(1));
+}
+
 // For the letters in "Game Freak"
 // Also intended for the letters in "Presents", which is never shown
 static void SpriteCB_LogoLetter(struct Sprite *sprite)
@@ -3206,16 +3213,12 @@ static void SpriteCB_LogoLetter(struct Sprite *sprite)
             sprite->sColorDelay = 2;
             if (sprite->sTimer != 0)
             {
-                CpuCopy16(&gIntroGameFreakTextFade_Pal[sprite->sTimer],      &gPlttBufferFaded[OBJ_PLTT_ID(1) + 15], PLTT_SIZEOF(1));
-                CpuCopy16(&gIntroGameFreakTextFade_Pal[sprite->sTimer + 16], &gPlttBufferFaded[OBJ_PLTT_ID(1) + 4], PLTT_SIZEOF(1));
-                CpuCopy16(&gIntroGameFreakTextFade_Pal[sprite->sTimer + 32], &gPlttBufferFaded[OBJ_PLTT_ID(1) + 10], PLTT_SIZEOF(1));
+                UpdateGameFreakTextPalette(sprite->sTimer);
                 sprite->sTimer--;
             }
             else
             {
-                CpuCopy16(&gIntroGameFreakTextFade_Pal[sprite->sTimer],      &gPlttBufferFaded[OBJ_PLTT_ID(1) + 15], PLTT_SIZEOF(1));
-                CpuCopy16(&gIntroGameFreakTextFade_Pal[sprite->sTimer + 16], &gPlttBufferFaded[OBJ_PLTT_ID(1) + 4], PLTT_SIZEOF(1));
-                CpuCopy16(&gIntroGameFreakTextFade_Pal[sprite->sTimer + 32], &gPlttBufferFaded[OBJ_PLTT_ID(1) + 10], PLTT_SIZEOF(1));
+                UpdateGameFreakTextPalette(sprite->sTimer);
                 sprite->sState++;
             }
         }
@@ -3235,9 +3238,7 @@ static void SpriteCB_LogoLetter(struct Sprite *sprite)
             sprite->sColorDelay = 2;
             if (sprite->sTimer <= COLOR_CHANGES)
             {
-                CpuCopy16(&gIntroGameFreakTextFade_Pal[sprite->sTimer],      &gPlttBufferFaded[OBJ_PLTT_ID(1) + 15], PLTT_SIZEOF(1));
-                CpuCopy16(&gIntroGameFreakTextFade_Pal[sprite->sTimer + 16], &gPlttBufferFaded[OBJ_PLTT_ID(1) + 4], PLTT_SIZEOF(1));
-                CpuCopy16(&gIntroGameFreakTextFade_Pal[sprite->sTimer + 32], &gPlttBufferFaded[OBJ_PLTT_ID(1) + 10], PLTT_SIZEOF(1));
+                UpdateGameFreakTextPalette(sprite->sTimer);
                 sprite->sTimer++;
             }
             else

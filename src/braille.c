@@ -4,6 +4,10 @@
 #include "text.h"
 #include "sound.h"
 
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+
 // This file handles the braille font.
 // For printing braille messages, see ScrCmd_braillemessage
 
@@ -197,7 +201,13 @@ u16 FontFunc_Braille(struct TextPrinter *textPrinter)
 
 static void DecompressGlyph_Braille(u16 glyph)
 {
-    const u16 *glyphs = sFont_Braille + 0x100 * (glyph / 8) + 0x10 * (glyph % 8);
+#ifdef PORT_BRIDGE
+    const u16 *glyphs = Port_ResolveAssetPointer(sFont_Braille);
+#else
+    const u16 *glyphs = sFont_Braille;
+#endif
+
+    glyphs += 0x100 * (glyph / 8) + 0x10 * (glyph % 8);
     DecompressGlyphTile(glyphs, gCurGlyph.gfxBufferTop);
     DecompressGlyphTile(glyphs + 0x8, gCurGlyph.gfxBufferTop + 8);
     DecompressGlyphTile(glyphs + 0x80, gCurGlyph.gfxBufferBottom);

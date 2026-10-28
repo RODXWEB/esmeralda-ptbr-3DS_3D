@@ -57,11 +57,10 @@ bool16 ResetAllPicSprites(void)
     return FALSE;
 }
 
-static bool16 DecompressPic(u16 picId, u32 personality, bool8 isFrontPic, u8 *dest, bool8 isTrainer, bool8 ignoreDeoxys)
+static bool16 DecompressPic(u16 species, u32 personality, bool8 isFrontPic, u8 *dest, bool8 isTrainer, bool8 ignoreDeoxys)
 {
     if (!isTrainer)
     {
-        u16 species = picId;
         if (isFrontPic)
         {
             if (!ignoreDeoxys)
@@ -79,23 +78,10 @@ static bool16 DecompressPic(u16 picId, u32 personality, bool8 isFrontPic, u8 *de
     }
     else
     {
-        u16 trainerPicId = picId;
         if (isFrontPic)
-        {
-            DecompressPicFromTable(&gTrainerFrontPicTable[trainerPicId], dest, trainerPicId);
-        }
+            DecompressPicFromTable(&gTrainerFrontPicTable[species], dest, species);
         else
-        {
-#ifdef BUGFIX
-            CpuCopy32(gTrainerBackPicTable[trainerPicId].data, dest, gTrainerBackPicTable[trainerPicId].size);
-#else
-            // Trainer back pics aren't compressed!
-            // Attempting to decompress the uncompressed data can softlock or crash the game.
-            // This is ok in vanilla by chance, because the pixels in the trainer back sprites that correspond
-            // to the compressed data's header are all 0, so the decompression does nothing.
-            DecompressPicFromTable(&gTrainerBackPicTable[trainerPicId], dest, trainerPicId);
-#endif
-        }
+            DecompressPicFromTable(&gTrainerBackPicTable[species], dest, species);
     }
     return FALSE;
 }
@@ -171,7 +157,7 @@ static u16 CreatePicSprite(u16 species, u32 otId, u32 personality, bool8 isFront
     if (!framePics)
         return 0xFFFF;
 
-    images = Alloc(sizeof(struct SpriteFrameImage) * MAX_PIC_FRAMES);
+    images = AllocZeroed(sizeof(struct SpriteFrameImage) * MAX_PIC_FRAMES);
     if (!images)
     {
         Free(framePics);
@@ -240,7 +226,7 @@ u16 CreateMonPicSprite_Affine(u16 species, u32 otId, u32 personality, u8 flags, 
     {
         type = flags;
     }
-    images = Alloc(sizeof(struct SpriteFrameImage) * MAX_MON_PIC_FRAMES);
+    images = AllocZeroed(sizeof(struct SpriteFrameImage) * MAX_MON_PIC_FRAMES);
     if (!images)
     {
         Free(framePics);
@@ -279,6 +265,9 @@ u16 CreateMonPicSprite_Affine(u16 species, u32 otId, u32 personality, u8 flags, 
     spriteId = CreateSprite(&sCreatingSpriteTemplate, x, y, 0);
     if (paletteTag == TAG_NONE)
         gSprites[spriteId].oam.paletteNum = paletteSlot;
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x000D, spriteId, species, gSprites[spriteId].oam.tileNum | (gSprites[spriteId].oam.paletteNum << 8), gSprites[spriteId].invisible | (gSprites[spriteId].oam.priority << 8));
+#endif
     sSpritePics[i].frames = framePics;
     sSpritePics[i].images = images;
     sSpritePics[i].paletteTag = paletteTag;

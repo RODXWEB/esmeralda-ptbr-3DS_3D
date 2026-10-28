@@ -28,6 +28,9 @@
 #include "constants/trainers.h"
 #include "constants/trainer_hill.h"
 #include "constants/weather.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 struct BattleWindowText
 {
@@ -54,6 +57,15 @@ EWRAM_DATA struct BattleMsgData *gBattleMsgDataPtr = NULL;
 
 static const u8 sText_Trainer1LoseText[] = _("{B_TRAINER1_LOSE_TEXT}");
 static const u8 sText_PkmnGainedEXP[] = _("{B_BUFF1} gained{B_BUFF2}\n{B_BUFF3} EXP. Points!\p");
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_FRENCH
+static const u8 sText_PkmnTeamGainedEXP[] = _("Le reste de votre équipe\ngagne des Points EXP.!\p");
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
+// Italian wording of the port's own message: the retail Italian ROM has no
+// equivalent line (the French one is authored the same way).
+static const u8 sText_PkmnTeamGainedEXP[] = _("Il resto della squadra\nriceve punti ESP.!\p");
+#else
+static const u8 sText_PkmnTeamGainedEXP[] = _("The rest of your team gained\nEXP. Points!\p");
+#endif
 static const u8 sText_EmptyString4[] = _("");
 static const u8 sText_ABoosted[] = _(" a boosted");
 static const u8 sText_PkmnGrewToLv[] = _("{B_BUFF1} grew to\nLV. {B_BUFF2}!{WAIT_SE}\p");
@@ -885,6 +897,7 @@ const u8 *const gBattleStringsTable[BATTLESTRINGS_COUNT - BATTLESTRINGS_TABLE_ST
     [STRINGID_PKMNBOXLANETTESPCFULL - BATTLESTRINGS_TABLE_START] = gText_PkmnTransferredLanettesPCBoxFull,
     [STRINGID_TRAINER1WINTEXT - BATTLESTRINGS_TABLE_START] = sText_Trainer1WinText,
     [STRINGID_TRAINER2WINTEXT - BATTLESTRINGS_TABLE_START] = sText_Trainer2WinText,
+    [STRINGID_PKMNTEAMGAINEDEXP - BATTLESTRINGS_TABLE_START] = sText_PkmnTeamGainedEXP,
 };
 
 const u16 gMissStringIds[] =
@@ -1325,7 +1338,11 @@ static const u8 sText_ApostropheS[] = _("'s");
 
 // For displaying names of invalid moves.
 // This is large enough that the text for TYPE_ELECTRIC will exceed TEXT_BUFF_ARRAY_COUNT.
+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN)
+static const u8 sATypeMove_Table[NUMBER_OF_MON_TYPES][22] =
+#else
 static const u8 sATypeMove_Table[NUMBER_OF_MON_TYPES][17] =
+#endif
 {
     [TYPE_NORMAL]   = _("a NORMAL move"),
     [TYPE_FIGHTING] = _("a FIGHTING move"),
@@ -2283,6 +2300,7 @@ static const u8 *TryGetStatusString(u8 *src)
     return NULL;
 }
 
+#if GAME_LANGUAGE == LANGUAGE_ENGLISH
 #define HANDLE_NICKNAME_STRING_CASE(battler, monIndex)                \
     if (GetBattlerSide(battler) != B_SIDE_PLAYER)                     \
     {                                                                   \
@@ -2304,6 +2322,47 @@ static const u8 *TryGetStatusString(u8 *src)
     }                                                                   \
     StringGet_Nickname(text);                                           \
     toCpy = text;
+#else
+#define HANDLE_NICKNAME_STRING_CASE(battler, monIndex)                   \
+    if (GetBattlerSide(battler) != B_SIDE_PLAYER)                        \
+    {                                                                    \
+        GetMonData(&gEnemyParty[monIndex], MON_DATA_NICKNAME, text);     \
+    }                                                                    \
+    else                                                                 \
+    {                                                                    \
+        GetMonData(&gPlayerParty[monIndex], MON_DATA_NICKNAME, text);    \
+    }                                                                    \
+    /* The translated ROMs write the prefix with a leading space and their own engine\
+     * places it after the name ("CHENIPOTTE selvatico attacca"); the decomp copies it\
+     * in front. Fill the buffer here - the name, then the prefix - and leave toCpy on\
+     * the terminator, so the copy the switch makes afterwards adds nothing. */\
+    StringGet_Nickname(text);                                            \
+    {                                                                    \
+        const u8 *end;                                                   \
+        toCpy = text;                                                    \
+        while (*toCpy != EOS)                                            \
+        {                                                                \
+            dst[dstID] = *toCpy;                                         \
+            dstID++;                                                     \
+            toCpy++;                                                     \
+        }                                                                \
+        end = toCpy;                                                     \
+        if (GetBattlerSide(battler) != B_SIDE_PLAYER)                    \
+        {                                                                \
+            if (gBattleTypeFlags & BATTLE_TYPE_TRAINER)                  \
+                toCpy = sText_FoePkmnPrefix;                             \
+            else                                                         \
+                toCpy = sText_WildPkmnPrefix;                            \
+            while (*toCpy != EOS)                                        \
+            {                                                            \
+                dst[dstID] = *toCpy;                                     \
+                dstID++;                                                 \
+                toCpy++;                                                 \
+            }                                                            \
+        }                                                                \
+        toCpy = end;                                                     \
+    }
+#endif
 
 // Ensure the defined length for an item name can contain the full defined length of a berry name.
 // This ensures that custom Enigma Berry names will fit in the text buffer at the top of BattleStringExpandPlaceholders.
@@ -3033,7 +3092,12 @@ void BattlePutTextOnWindow(const u8 *text, u8 windowId)
 void SetPpNumbersPaletteInMoveSelection(void)
 {
     struct ChooseMoveStruct *chooseMoveStruct = (struct ChooseMoveStruct *)(&gBattleBufferA[gActiveBattler][4]);
+#ifdef PORT_BRIDGE
+    // gPPTextPalette is an INCBIN stub here; indexed directly it read past the stub.
+    const u16 *palPtr = Port_ResolveAssetPointerSized(gPPTextPalette, PLTT_SIZE_4BPP);
+#else
     const u16 *palPtr = gPPTextPalette;
+#endif
     u8 var = GetCurrentPpToMaxPpState(chooseMoveStruct->currentPp[gMoveSelectionCursor[gActiveBattler]],
                          chooseMoveStruct->maxPp[gMoveSelectionCursor[gActiveBattler]]);
 

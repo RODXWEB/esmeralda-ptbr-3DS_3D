@@ -552,10 +552,33 @@ static void ItemStorageMenuProcessInput(u8 taskId)
     }
 }
 
-static void ItemStorage_Deposit(u8 taskId)
+#ifdef PLATFORM_3DS
+// 3ds_bottom_ui.c: the top screen keeps the world from now until the field
+// is back, while the bag is on the bottom screen.
+void CtrBottom_KeepWorld(void);
+
+static void Task_ItemStorage_CtrFadeOut(u8 taskId)
 {
+    CtrBottom_KeepWorld();
     gTasks[taskId].func = Task_ItemStorage_Deposit;
     FadeScreen(FADE_TO_BLACK, 0);
+}
+#endif
+
+static void ItemStorage_Deposit(u8 taskId)
+{
+#ifdef PLATFORM_3DS
+    // The top screen is to be left showing the world, so the menu goes
+    // first and the fade starts on the next frame.
+    s16 *data = gTasks[taskId].data;
+
+    ClearStdWindowAndFrame(tWindowId, TRUE);
+    ClearDialogWindowAndFrame(0, TRUE);
+    gTasks[taskId].func = Task_ItemStorage_CtrFadeOut;
+#else
+    gTasks[taskId].func = Task_ItemStorage_Deposit;
+    FadeScreen(FADE_TO_BLACK, 0);
+#endif
 }
 
 static void Task_ItemStorage_Deposit(u8 taskId)

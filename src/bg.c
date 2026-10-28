@@ -2,6 +2,11 @@
 #include "global.h"
 #include "bg.h"
 #include "dma3.h"
+
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+
 #include "gpu_regs.h"
 
 #define DISPCNT_ALL_BG_AND_MODE_BITS    (DISPCNT_BG_ALL_ON | 0x7)
@@ -441,6 +446,19 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
 {
     int i;
 
+#ifdef PORT_BRIDGE
+    static u16 sDbgWaitCalls;
+    static u16 sDbgBusyCalls;
+#endif
+
+#ifdef PORTABLE
+    if ((sDbgWaitCalls++ & 0x1F) == 0)
+        Port_SetDmaDebug(0x0010, sDbgWaitCalls, 0, 0);
+    /* This is a DMA completion poll, not the authoritative frame pacer.
+     * Waiting here consumed the one-shot VBlank token and let the main loop
+     * execute twice on the following display frame. */
+    ProcessDma3Requests();
+#endif
     for (i = 0; i < 0x80; i++)
     {
         u8 div = i / 0x20;
@@ -451,6 +469,10 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
             s8 reqSpace = CheckForSpaceForDma3Request(i);
             if (reqSpace == -1)
             {
+#ifdef PORT_BRIDGE
+                if ((sDbgBusyCalls++ & 0x1F) == 0)
+                    Port_SetDmaDebug(0x0011, i, div, mod);
+#endif
                 return TRUE;
             }
 
@@ -875,6 +897,10 @@ void CopyToBgTilemapBuffer(u8 bg, const void *src, u16 mode, u16 destOffset)
 {
     if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
     {
+#ifdef PORT_BRIDGE
+        if (mode != 0)
+            src = Port_ResolveAssetPointerSized(src, mode);
+#endif
         if (mode != 0)
             CpuCopy16(src, (void *)(sGpuBgConfigs2[bg].tilemap + (destOffset * 2)), mode);
         else
@@ -912,6 +938,9 @@ void CopyToBgTilemapBufferRect(u8 bg, const void *src, u8 destX, u8 destY, u8 wi
 
     if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
     {
+#ifdef PORT_BRIDGE
+        src = Port_ResolveAssetPointerSized(src, width * height * (GetBgType(bg) == BG_TYPE_AFFINE ? 1 : 2));
+#endif
         switch (GetBgType(bg))
         {
         case BG_TYPE_NORMAL:
@@ -957,6 +986,9 @@ void CopyRectToBgTilemapBufferRect(u8 bg, const void *src, u8 srcX, u8 srcY, u8 
 
     if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
     {
+#ifdef PORT_BRIDGE
+        src = Port_ResolveAssetPointerSized(src, srcWidth * srcHeight * (GetBgType(bg) == BG_TYPE_AFFINE ? 1 : 2));
+#endif
         screenSize = GetBgControlAttribute(bg, BG_CTRL_ATTR_SCREENSIZE);
         screenWidth = GetBgMetricTextMode(bg, 0x1) * 0x20;
         screenHeight = GetBgMetricTextMode(bg, 0x2) * 0x20;
@@ -1238,10 +1270,9 @@ bool32 IsInvalidBg32(u8 bg)
 
 bool32 IsTileMapOutsideWram(u8 bg)
 {
+#ifndef PORTABLE
     if (sGpuBgConfigs2[bg].tilemap > (void *)IWRAM_END)
         return TRUE;
-    else if (sGpuBgConfigs2[bg].tilemap == NULL)
-        return TRUE;
-    else
-        return FALSE;
+#endif
+    return sGpuBgConfigs2[bg].tilemap == NULL;
 }

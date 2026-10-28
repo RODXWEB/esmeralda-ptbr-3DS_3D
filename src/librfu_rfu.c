@@ -138,9 +138,11 @@ u16 rfu_initializeAPI(u32 *APIBuffer, u16 buffByteSize, IntrFunc *sioIntrTable_p
     const u16 *src;
     u16 buffByteSizeMax;
 
+#ifndef PLATFORM_3DS // no EWRAM, and no code copied to run from RAM
     // is in EWRAM?
     if (((uintptr_t)APIBuffer & 0xF000000) == EWRAM_START && copyInterruptToRam)
         return ERR_RFU_API_BUFF_ADR;
+#endif
     // is not 4-byte aligned?
     if ((u32)APIBuffer & 3)
         return ERR_RFU_API_BUFF_ADR;
@@ -195,7 +197,11 @@ u16 rfu_initializeAPI(u32 *APIBuffer, u16 buffByteSize, IntrFunc *sioIntrTable_p
         0x60 / sizeof(u16)
         );
 #endif
+#ifdef PLATFORM_3DS
+    gRfuFixed->fastCopyPtr = rfu_STC_fastCopy; // no running a copy of the code
+#else
     gRfuFixed->fastCopyPtr = (void *)gRfuFixed->fastCopyBuffer + 1;
+#endif
     return 0;
 }
 
@@ -335,6 +341,7 @@ u16 rfu_getRFUStatus(u8 *rfuState)
  * }
  * Returns 1 if the packet to inherit is malformed.
  */
+#ifndef PORTABLE
 u16 rfu_MBOOT_CHILD_inheritanceLinkStatus(void)
 {
     const char *s1 = str_checkMbootLL;
@@ -359,6 +366,7 @@ u16 rfu_MBOOT_CHILD_inheritanceLinkStatus(void)
     gRfuStatic->flags |= 0x80; // mboot
     return 0;
 }
+#endif
 
 void rfu_REQ_stopMode(void)
 {
@@ -378,8 +386,10 @@ void rfu_REQ_stopMode(void)
             timerReg = &REG_TMCNT(gSTWIStatus->timerSelect);
             *timerReg = 0;
             *timerReg = (TIMER_ENABLE | TIMER_1024CLK) << 16;
+#ifndef PLATFORM_3DS // the emulated adapter needs no wait (and timers don't run here)
             while (*timerReg << 16 < 262 << 16)
                 ;
+#endif
             *timerReg = 0;
             STWI_set_Callback_M(rfu_CB_stopMode);
             STWI_send_StopModeREQ();
@@ -438,7 +448,11 @@ void rfu_REQ_configSystem(u16 availSlotFlag, u8 maxMFrame, u8 mcTimer)
         u16 IMEBackup = REG_IME;
 
         REG_IME = 0;
+#ifndef PORTABLE
         gRfuStatic->linkEmergencyLimit = Div(600, mcTimer);
+#else
+        gRfuStatic->linkEmergencyLimit = 600 / mcTimer;
+#endif
         REG_IME = IMEBackup;
     }
 }

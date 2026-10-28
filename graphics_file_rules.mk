@@ -431,7 +431,7 @@ $(RAYQUAZAGFXDIR)/scene_3/rayquaza.4bpp: %.4bpp: %.png
 
 $(RAYQUAZAGFXDIR)/scene_3/rayquaza_tail_fix.4bpp: $(RAYQUAZAGFXDIR)/scene_3/rayquaza_tail.4bpp
 	cp $< $@
-	dd if=/dev/zero bs=1 count=12 >> $@
+	head -c 12 /dev/zero >> $@
 
 $(RAYQUAZAGFXDIR)/scene_4/streaks.4bpp: %.4bpp: %.png
 	$(GFX) $< $@ -num_tiles 19 -Wnum_tiles

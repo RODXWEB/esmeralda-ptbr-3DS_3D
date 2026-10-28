@@ -479,6 +479,14 @@ extern struct RfuSlotStatusUNI *gRfuSlotStatusUNI[RFU_CHILD_MAX];
 // librfu_sio32id
 s32 AgbRFU_checkID(u8 maxTries);
 
+#ifdef PLATFORM_3DS
+// The emulated Wireless Adapter (3ds_port/src/3ds_rfu_adapter.c): answers the
+// command in gSTWIStatus at once; its radio is local wireless.
+void PortRfu_Command(void);
+s32 PortRfu_CheckID(void);
+void PortRfu_Frame(void);
+#endif
+
 // Arguments with "bm..." specify slots of the form (0x01 << slot number) that are the object of a function operation.
 
 // librfu_rfu

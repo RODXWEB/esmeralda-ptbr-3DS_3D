@@ -1,6 +1,10 @@
 #include "global.h"
 #include "dma3.h"
 
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+
 #define MAX_DMA_REQUESTS 128
 
 #define DMA_REQUEST_COPY32 1
@@ -41,7 +45,7 @@ void ClearDma3Requests(void)
 
 void ProcessDma3Requests(void)
 {
-    u16 bytesTransferred;
+    u32 bytesTransferred;
 
     if (sDma3ManagerLocked)
         return;
@@ -53,10 +57,13 @@ void ProcessDma3Requests(void)
     {
         bytesTransferred += sDma3Requests[sDma3RequestCursor].size;
 
+#ifndef PORT_BRIDGE
         if (bytesTransferred > 40 * 1024)
             return; // don't transfer more than 40 KiB
         if (*(u8 *)REG_ADDR_VCOUNT > 224)
             return; // we're about to leave vblank, stop
+#endif
+        // Port requests write the RAM shadow; hardware publication is separate.
 
         switch (sDma3Requests[sDma3RequestCursor].mode)
         {
@@ -99,6 +106,10 @@ s16 RequestDma3Copy(const void *src, void *dest, u16 size, u8 mode)
 {
     int cursor;
     int i = 0;
+
+#ifdef PORT_BRIDGE
+    src = Port_ResolveAssetPointerSized(src, size);
+#endif
 
     sDma3ManagerLocked = TRUE;
     cursor = sDma3RequestCursor;

@@ -306,7 +306,7 @@ struct PokenavMatchCallEntry *GetMatchCallList(void)
     return state->matchCallEntries;
 }
 
-mapsec_u16_t GetMatchCallMapSec(int index)
+u16 GetMatchCallMapSec(int index)
 {
     struct Pokenav_MatchCallMenu *state = GetSubstructPtr(POKENAV_SUBSTRUCT_MATCH_CALL_MAIN);
     return state->matchCallEntries[index].mapSec;
@@ -424,7 +424,7 @@ void BufferMatchCallNameAndDesc(struct PokenavMatchCallEntry *matchCallEntry, u8
     }
 }
 
-mapsec_u8_t GetMatchTableMapSectionId(int rematchIndex)
+u8 GetMatchTableMapSectionId(int rematchIndex)
 {
     int mapGroup = gRematchTable[rematchIndex].mapGroup;
     int mapNum = gRematchTable[rematchIndex].mapNum;
@@ -515,3 +515,35 @@ static bool32 ShouldDoNearbyMessage(void)
 
     return FALSE;
 }
+
+#ifdef PLATFORM_3DS
+// What Match Call waits for, for the 3DS bottom screen: 0 the trainer list,
+// 1 its options (cursor and count), 2 a check page, 3 the end of a call.
+u8 CtrPokenavMatchCall_Input(u16 *cursor, u16 *count)
+{
+    struct Pokenav_MatchCallMenu *state = GetSubstructPtr(POKENAV_SUBSTRUCT_MATCH_CALL_MAIN);
+
+    if (state == NULL)
+        return 0xFF;
+    *cursor = state->optionCursorPos;
+    *count = state->maxOptionId + 1;
+    if (state->callback == CB2_HandleMatchCallInput)
+        return 0;
+    if (state->callback == CB2_HandleMatchCallOptionsInput)
+        return 1;
+    if (state->callback == CB2_HandleCheckPageInput)
+        return 2;
+    if (state->callback == CB2_HandleCallExitInput)
+        return 3;
+    return 0xFF;
+}
+
+// Puts the options' cursor on an option (CtrPokenavMenu_SetCursor).
+void CtrPokenavMatchCall_SetOption(u16 cursor)
+{
+    struct Pokenav_MatchCallMenu *state = GetSubstructPtr(POKENAV_SUBSTRUCT_MATCH_CALL_MAIN);
+
+    if (state != NULL && cursor <= state->maxOptionId)
+        state->optionCursorPos = cursor;
+}
+#endif

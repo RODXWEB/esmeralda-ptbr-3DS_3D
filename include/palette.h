@@ -24,6 +24,39 @@
 #define OBJ_PLTT_ID(n) (OBJ_PLTT_OFFSET + PLTT_ID(n))
 #define OBJ_PLTT_ID2(n) (PLTT_ID((n) + 16))
 
+#ifdef PLATFORM_3DS
+/*
+ * Port: OBJ palettes past the GBA's sixteen, for the field's sprites that
+ * need one of their own (a follower, the visible wild mons), where object
+ * events hold OBJ palettes 0-11. They sit after the GBA's 512 colours in both
+ * buffers, so PLTT_EXT_ID(n) is an ordinary palette buffer offset; only the
+ * 3DS renderers show them (TransferPlttBuffer hands them over with PLTT).
+ *
+ * They take every fade, blend and weather colour map an NPC's palette takes:
+ * a selection mask selects them all when it selects OBJ palette
+ * PLTT_EXT_MODEL (PALSLOT_NPC_1), and the weather treats them as that
+ * palette. One is in use while its bit of gPlttExtInUse is set (sprite.c,
+ * LoadSpritePaletteExt); with none in use nothing here costs a thing.
+ */
+#define PLTT_EXT_COUNT 16
+#define PLTT_EXT_OFFSET PLTT_BUFFER_SIZE
+#define PLTT_EXT_ID(n) (PLTT_EXT_OFFSET + PLTT_ID(n))
+#define PLTT_EXT_SIZE PLTT_SIZEOF(PLTT_ID(PLTT_EXT_COUNT))
+#define PLTT_EXT_MODEL 2
+#define PLTT_EXT_SELECTED(selectedPalettes) ((((selectedPalettes) >> (16 + PLTT_EXT_MODEL)) & 1) ? gPlttExtInUse : 0)
+#define PLTT_BUFFER_ALLOC (PLTT_BUFFER_SIZE + PLTT_ID(PLTT_EXT_COUNT))
+// The bytes of the buffers that a copy or fill of all palettes covers.
+#define PLTT_BUFFER_BYTES (PLTT_SIZE + (gPlttExtInUse ? PLTT_EXT_SIZE : 0))
+extern u16 gPlttExtInUse;
+#else
+#define PLTT_BUFFER_ALLOC PLTT_BUFFER_SIZE
+#define PLTT_BUFFER_BYTES PLTT_SIZE
+#endif
+// The bytes of a copy of the buffers kept to be put back later (in
+// gPaletteDecompressionBuffer, which holds them): every ext palette, in use or
+// not, so that one loaded or freed meanwhile does not change what goes back.
+#define PLTT_BUFFER_ALLOC_BYTES PLTT_SIZEOF(PLTT_BUFFER_ALLOC)
+
 enum
 {
     FAST_FADE_IN_FROM_WHITE,
@@ -55,11 +88,18 @@ struct PaletteFadeControl
 extern struct PaletteFadeControl gPaletteFade;
 extern u32 gPlttBufferTransferPending;
 extern u8 ALIGNED(4) gPaletteDecompressionBuffer[];
-extern u16 ALIGNED(4) gPlttBufferUnfaded[PLTT_BUFFER_SIZE];
-extern u16 ALIGNED(4) gPlttBufferFaded[PLTT_BUFFER_SIZE];
+extern u16 ALIGNED(4) gPlttBufferUnfaded[PLTT_BUFFER_ALLOC];
+extern u16 ALIGNED(4) gPlttBufferFaded[PLTT_BUFFER_ALLOC];
 
 void LoadCompressedPalette(const u32 *src, u16 offset, u16 size);
+// Port: a 2-byte load from an exact asset base means sizeof an INCBIN_U16 stub.
+// Use LoadPaletteWithOffset for explicit one-color reads from asset bases.
 void LoadPalette(const void *src, u16 offset, u16 size);
+// byteOffset and size are in bytes; dest is an index into the palette buffers.
+// size is always an explicit copy length, including when byteOffset is zero.
+void LoadPaletteWithOffset(const void *base, u32 byteOffset, u16 dest, u16 size);
+// For palette animations that must leave the unfaded reference unchanged.
+void LoadPaletteFadedWithOffset(const void *base, u32 byteOffset, u16 dest, u16 size);
 void FillPalette(u16 value, u16 offset, u16 size);
 void TransferPlttBuffer(void);
 u8 UpdatePaletteFade(void);
@@ -87,7 +127,7 @@ static inline void SetBackdropFromColor(u16 color)
 
 static inline void SetBackdropFromPalette(const u16 *palette)
 {
-  LoadPalette(palette, 0, PLTT_SIZEOF(1));
+  LoadPaletteWithOffset(palette, 0, 0, PLTT_SIZEOF(1));
 }
 
 #endif // GUARD_PALETTE_H

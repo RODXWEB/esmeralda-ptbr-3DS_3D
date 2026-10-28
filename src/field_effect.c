@@ -31,6 +31,12 @@
 #include "constants/metatile_behaviors.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+#if defined(PLATFORM_3DS)
+#include "3ds_video.h"
+#endif
 
 #define subsprite_table(ptr) {.subsprites = ptr, .subspriteCount = (sizeof ptr) / (sizeof(struct Subsprite))}
 
@@ -327,7 +333,7 @@ static const struct OamData sOam_16x16 =
 
 static const struct SpriteFrameImage sPicTable_NewGameBirch[] =
 {
-    obj_frame_tiles(sNewGameBirch_Gfx)
+    {.data = sNewGameBirch_Gfx, .size = 0x800}
 };
 
 static const struct SpritePalette sSpritePalette_NewGameBirch =
@@ -696,7 +702,14 @@ u32 FieldEffectStart(u8 id)
 
     FieldEffectActiveListAdd(id);
 
+#ifdef PORT_BRIDGE
+    {
+        u8 *const *scriptTable = (u8 *const *)Port_ResolveEventPointer(gFieldEffectScriptPointers);
+        script = (u8 *)Port_ResolveScriptPointer(scriptTable[id]);
+    }
+#else
     script = gFieldEffectScriptPointers[id];
+#endif
 
     while (gFieldEffectScriptFuncs[*script](&script, &val))
         ;
@@ -773,6 +786,9 @@ u32 FieldEffectScript_ReadWord(u8 **script)
 void FieldEffectScript_LoadTiles(u8 **script)
 {
     struct SpriteSheet *sheet = (struct SpriteSheet *)FieldEffectScript_ReadWord(script);
+#ifdef PORT_BRIDGE
+    sheet = (struct SpriteSheet *)Port_ResolveAssetPointer(sheet);
+#endif
     if (GetSpriteTileStartByTag(sheet->tag) == 0xFFFF)
         LoadSpriteSheet(sheet);
     (*script) += 4;
@@ -781,6 +797,9 @@ void FieldEffectScript_LoadTiles(u8 **script)
 void FieldEffectScript_LoadFadedPalette(u8 **script)
 {
     struct SpritePalette *palette = (struct SpritePalette *)FieldEffectScript_ReadWord(script);
+#ifdef PORT_BRIDGE
+    palette = (struct SpritePalette *)Port_ResolveAssetPointer(palette);
+#endif
     LoadSpritePalette(palette);
     UpdateSpritePaletteWithWeather(IndexOfSpritePaletteTag(palette->tag));
     (*script) += 4;
@@ -789,6 +808,9 @@ void FieldEffectScript_LoadFadedPalette(u8 **script)
 void FieldEffectScript_LoadPalette(u8 **script)
 {
     struct SpritePalette *palette = (struct SpritePalette *)FieldEffectScript_ReadWord(script);
+#ifdef PORT_BRIDGE
+    palette = (struct SpritePalette *)Port_ResolveAssetPointer(palette);
+#endif
     LoadSpritePalette(palette);
     (*script) += 4;
 }
@@ -796,6 +818,7 @@ void FieldEffectScript_LoadPalette(u8 **script)
 void FieldEffectScript_CallNative(u8 **script, u32 *val)
 {
     u32 (*func)(void) = (u32 (*)(void))FieldEffectScript_ReadWord(script);
+
     *val = func();
     (*script) += 4;
 }
@@ -897,7 +920,13 @@ u8 CreateTrainerSprite(u8 trainerSpriteID, s16 x, s16 y, u8 subpriority, u8 *buf
     spriteTemplate.images = NULL;
     spriteTemplate.affineAnims = gDummySpriteAffineAnimTable;
     spriteTemplate.callback = SpriteCallbackDummy;
-    return CreateSprite(&spriteTemplate, x, y, subpriority);
+    {
+        u8 spriteId = CreateSprite(&spriteTemplate, x, y, subpriority);
+#ifdef PORT_BRIDGE
+        Port_SetBirchDebugEx(0x000B, spriteId, trainerSpriteID, gSprites[spriteId].oam.tileNum | (gSprites[spriteId].oam.paletteNum << 8), gSprites[spriteId].invisible | (gSprites[spriteId].oam.priority << 8));
+#endif
+        return spriteId;
+    }
 }
 
 static void UNUSED LoadTrainerGfx_TrainerCard(u8 gender, u16 palOffset, u8 *dest)
@@ -909,7 +938,16 @@ static void UNUSED LoadTrainerGfx_TrainerCard(u8 gender, u16 palOffset, u8 *dest
 u8 AddNewGameBirchObject(s16 x, s16 y, u8 subpriority)
 {
     LoadSpritePalette(&sSpritePalette_NewGameBirch);
-    return CreateSprite(&sSpriteTemplate_NewGameBirch, x, y, subpriority);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebug(0x0008, x, y, subpriority);
+#endif
+    {
+        u8 spriteId = CreateSprite(&sSpriteTemplate_NewGameBirch, x, y, subpriority);
+#ifdef PORT_BRIDGE
+        Port_SetBirchDebugEx(0x000C, spriteId, gSprites[spriteId].oam.tileNum | (gSprites[spriteId].oam.paletteNum << 8), gSprites[spriteId].invisible | (gSprites[spriteId].oam.priority << 8), gSprites[spriteId].x | (gSprites[spriteId].y << 8));
+#endif
+        return spriteId;
+    }
 }
 
 u8 CreateMonSprite_PicBox(u16 species, s16 x, s16 y, u8 subpriority)
@@ -1259,6 +1297,19 @@ static void SpriteCB_PokeballGlow(struct Sprite *sprite)
         FieldEffectFreeGraphicsResources(sprite);
     }
 }
+
+#if defined(PLATFORM_3DS)
+// The healing machine's balls and monitors, and the Hall of Fame's, are placed
+// by hand on the 240x160 picture around the player rather than on the map: the
+// port moves them to where the machine is (3ds_video.c, DrawObjects).
+bool8 FieldEffect_IsMachineSprite(const struct Sprite *sprite)
+{
+    return sprite->template == &sSpriteTemplate_PokeballGlow
+        || sprite->template == &sSpriteTemplate_PokecenterMonitor
+        || sprite->template == &sSpriteTemplate_HofMonitorBig
+        || sprite->template == &sSpriteTemplate_HofMonitorSmall;
+}
+#endif
 
 static u8 CreatePokecenterMonitorSprite(s16 x, s16 y)
 {
@@ -2548,6 +2599,30 @@ static void TeleportWarpInFieldEffect_SpinGround(struct Task *task)
     }
 }
 
+#if defined(PLATFORM_3DS)
+// A window edge is 8 bits, so the 400px screen cannot be spanned with the
+// GBA's DISPLAY_WIDTH + 1: 401 wraps to a window over x=1..145 that outlived
+// the effect and left the rest of the field black. 255 is what the compositor
+// reads as the edge of the screen (WindowEdge in 3ds_video.c). The streaks are
+// the GBA's 10 tile rows at y=40..120, so the band keeps the GBA's height and
+// the background and the mon move down to the middle of the taller screen.
+#define SHOW_MON_WIN_RIGHT   255
+#define SHOW_MON_WIN_CLOSED  WIN_RANGE(255, 255)
+#define SHOW_MON_WIN_FULL    WIN_RANGE(0, 255)
+#define SHOW_MON_BANNER_DROP ((DISPLAY_HEIGHT - 160) / 2)
+#define SHOW_MON_BANNER_TOP  (160 / 4 + SHOW_MON_BANNER_DROP)
+#define SHOW_MON_BANNER_END  (160 * 3 / 4 + SHOW_MON_BANNER_DROP)
+#define SHOW_MON_START_X     (DISPLAY_WIDTH + 80)
+#else
+#define SHOW_MON_WIN_RIGHT   DISPLAY_WIDTH
+#define SHOW_MON_WIN_CLOSED  WIN_RANGE(DISPLAY_WIDTH, DISPLAY_WIDTH + 1)
+#define SHOW_MON_WIN_FULL    (DISPLAY_WIDTH + 1)
+#define SHOW_MON_BANNER_DROP 0
+#define SHOW_MON_BANNER_TOP  (DISPLAY_HEIGHT / 4)
+#define SHOW_MON_BANNER_END  (DISPLAY_WIDTH / 2)
+#define SHOW_MON_START_X     320
+#endif
+
 // Task data for Task_FieldMoveShowMonOutDoors
 #define tState       data[0]
 #define tWinHoriz    data[1]
@@ -2615,8 +2690,9 @@ static void FieldMoveShowMonOutdoorsEffect_Init(struct Task *task)
     task->data[11] = REG_WININ;
     task->data[12] = REG_WINOUT;
     StoreWordInTwoHalfwords((u16*) &task->data[13], (u32)gMain.vblankCallback);
-    task->tWinHoriz = WIN_RANGE(DISPLAY_WIDTH, DISPLAY_WIDTH + 1);
+    task->tWinHoriz = SHOW_MON_WIN_CLOSED;
     task->tWinVert = WIN_RANGE(DISPLAY_HEIGHT / 2, DISPLAY_HEIGHT / 2 + 1);
+    task->tBgVert = -SHOW_MON_BANNER_DROP;
     task->tWinIn = WININ_WIN0_BG_ALL | WININ_WIN0_OBJ | WININ_WIN0_CLR;
     task->tWinOut = WINOUT_WIN01_BG1 | WINOUT_WIN01_BG2 | WINOUT_WIN01_BG3 | WINOUT_WIN01_OBJ | WINOUT_WIN01_CLR;
     SetGpuReg(REG_OFFSET_WIN0H, task->tWinHoriz);
@@ -2624,6 +2700,9 @@ static void FieldMoveShowMonOutdoorsEffect_Init(struct Task *task)
     SetGpuReg(REG_OFFSET_WININ, task->tWinIn);
     SetGpuReg(REG_OFFSET_WINOUT, task->tWinOut);
     SetVBlankCallback(VBlankCB_FieldMoveShowMonOutdoors);
+#if defined(PLATFORM_3DS)
+    CtrVideo_SetFieldBanner(TRUE);
+#endif
     task->tState++;
 }
 
@@ -2654,15 +2733,15 @@ static void FieldMoveShowMonOutdoorsEffect_CreateBanner(struct Task *task)
     if (horiz < 0)
         horiz = 0;
 
-    if (vertHi < DISPLAY_HEIGHT / 4)
-        vertHi = DISPLAY_HEIGHT / 4;
+    if (vertHi < SHOW_MON_BANNER_TOP)
+        vertHi = SHOW_MON_BANNER_TOP;
 
-    if (vertLo > DISPLAY_WIDTH / 2)
-        vertLo = DISPLAY_WIDTH / 2;
+    if (vertLo > SHOW_MON_BANNER_END)
+        vertLo = SHOW_MON_BANNER_END;
 
     task->tWinHoriz = (horiz << 8) | (task->tWinHoriz & 0xff);
     task->tWinVert = (vertHi << 8) | vertLo;
-    if (horiz == 0 && vertHi == DISPLAY_HEIGHT / 4 && vertLo == DISPLAY_WIDTH / 2)
+    if (horiz == 0 && vertHi == SHOW_MON_BANNER_TOP && vertLo == SHOW_MON_BANNER_END)
     {
         gSprites[task->tMonSpriteId].callback = SpriteCB_FieldMoveMonSlideOnscreen;
         task->tState++;
@@ -2703,7 +2782,7 @@ static void FieldMoveShowMonOutdoorsEffect_RestoreBg(struct Task *task)
 {
     u16 bg0cnt = (REG_BG0CNT >> 8) << 11;
     CpuFill32(0, (void *)VRAM + bg0cnt, 0x800);
-    task->tWinHoriz = DISPLAY_WIDTH + 1;
+    task->tWinHoriz = SHOW_MON_WIN_FULL;
     task->tWinVert = DISPLAY_HEIGHT + 1;
     task->tWinIn = task->data[11];
     task->tWinOut = task->data[12];
@@ -2716,6 +2795,9 @@ static void FieldMoveShowMonOutdoorsEffect_End(struct Task *task)
     LoadWordFromTwoHalfwords((u16 *)&task->data[13], (u32 *)&callback);
     SetVBlankCallback(callback);
     InitTextBoxGfxAndPrinters();
+#if defined(PLATFORM_3DS)
+    CtrVideo_SetFieldBanner(FALSE);
+#endif
     FreeResourcesAndDestroySprite(&gSprites[task->tMonSpriteId], task->tMonSpriteId);
     FieldEffectActiveListRemove(FLDEFF_FIELD_MOVE_SHOW_MON);
     DestroyTask(FindTaskIdByFunc(Task_FieldMoveShowMonOutdoors));
@@ -2739,10 +2821,16 @@ static void LoadFieldMoveOutdoorStreaksTilemap(u16 offs)
 {
     u16 i;
     u16 *dest;
+    const u16 *tilemap = sFieldMoveStreaksOutdoors_Tilemap;
+#ifdef PORT_BRIDGE
+    // An INCBIN is a stub resolved by address: read element by element it is
+    // the neighbouring stubs, and the banner came out empty.
+    tilemap = Port_ResolveAssetPointerSized(tilemap, sizeof(sFieldMoveStreaksOutdoors_Tilemap));
+#endif
     dest = (u16 *)(VRAM + ARRAY_COUNT(sFieldMoveStreaksOutdoors_Tilemap) + offs);
     for (i = 0; i < ARRAY_COUNT(sFieldMoveStreaksOutdoors_Tilemap); i++, dest++)
     {
-        *dest = sFieldMoveStreaksOutdoors_Tilemap[i] | 0xF000;
+        *dest = tilemap[i] | 0xF000;
     }
 }
 
@@ -2780,10 +2868,16 @@ static void Task_FieldMoveShowMonIndoors(u8 taskId)
 
 static void FieldMoveShowMonIndoorsEffect_Init(struct Task *task)
 {
+#if defined(PLATFORM_3DS)
+    task->tBgVert = -SHOW_MON_BANNER_DROP;
+#endif
     SetGpuReg(REG_OFFSET_BG0HOFS, task->tBgHoriz);
     SetGpuReg(REG_OFFSET_BG0VOFS, task->tBgVert);
     StoreWordInTwoHalfwords((u16 *)&task->data[13], (u32)gMain.vblankCallback);
     SetVBlankCallback(VBlankCB_FieldMoveShowMonIndoors);
+#if defined(PLATFORM_3DS)
+    CtrVideo_SetFieldBanner(TRUE);
+#endif
     task->tState++;
 }
 
@@ -2804,8 +2898,8 @@ static void FieldMoveShowMonIndoorsEffect_SlideBannerOn(struct Task *task)
 {
     if (SlideIndoorBannerOnscreen(task))
     {
-        SetGpuReg(REG_OFFSET_WIN1H, WIN_RANGE(0, DISPLAY_WIDTH));
-        SetGpuReg(REG_OFFSET_WIN1V, WIN_RANGE(DISPLAY_HEIGHT / 4, DISPLAY_HEIGHT - DISPLAY_HEIGHT / 4));
+        SetGpuReg(REG_OFFSET_WIN1H, WIN_RANGE(0, SHOW_MON_WIN_RIGHT));
+        SetGpuReg(REG_OFFSET_WIN1V, WIN_RANGE(SHOW_MON_BANNER_TOP, SHOW_MON_BANNER_END));
         gSprites[task->tMonSpriteId].callback = SpriteCB_FieldMoveMonSlideOnscreen;
         task->tState++;
     }
@@ -2845,6 +2939,9 @@ static void FieldMoveShowMonIndoorsEffect_End(struct Task *task)
     LoadWordFromTwoHalfwords((u16 *)&task->data[13], (u32 *)&intrCallback);
     SetVBlankCallback(intrCallback);
     InitTextBoxGfxAndPrinters();
+#if defined(PLATFORM_3DS)
+    CtrVideo_SetFieldBanner(FALSE);
+#endif
     FreeResourcesAndDestroySprite(&gSprites[task->tMonSpriteId], task->tMonSpriteId);
     FieldEffectActiveListRemove(FLDEFF_FIELD_MOVE_SHOW_MON);
     DestroyTask(FindTaskIdByFunc(Task_FieldMoveShowMonIndoors));
@@ -2873,6 +2970,11 @@ static bool8 SlideIndoorBannerOnscreen(struct Task *task)
     u16 srcOffs;
     u16 dstOffs;
     u16 *dest;
+    const u16 *tilemap = sFieldMoveStreaksIndoors_Tilemap;
+#ifdef PORT_BRIDGE
+    // The INCBIN stub, resolved (see LoadFieldMoveOutdoorStreaksTilemap).
+    tilemap = Port_ResolveAssetPointerSized(tilemap, sizeof(sFieldMoveStreaksIndoors_Tilemap));
+#endif
 
     if (task->tBgOffset >= 32)
         return TRUE;
@@ -2885,10 +2987,10 @@ static bool8 SlideIndoorBannerOnscreen(struct Task *task)
         dest = (u16 *)(VRAM + 0x140 + (u16)task->data[12]);
         for (i = 0; i < 10; i++)
         {
-            dest[dstOffs + i * 32] = sFieldMoveStreaksIndoors_Tilemap[srcOffs + i * 32];
+            dest[dstOffs + i * 32] = tilemap[srcOffs + i * 32];
             dest[dstOffs + i * 32] |= 0xf000;
 
-            dest[((dstOffs + 1) & 0x1f) + i * 32] = sFieldMoveStreaksIndoors_Tilemap[((srcOffs + 1) & 0x1f) + i * 32] | 0xf000;
+            dest[((dstOffs + 1) & 0x1f) + i * 32] = tilemap[((srcOffs + 1) & 0x1f) + i * 32] | 0xf000;
             dest[((dstOffs + 1) & 0x1f) + i * 32] |= 0xf000;
         }
         task->tBgOffset += 2;
@@ -2934,7 +3036,7 @@ static u8 InitFieldMoveMonSprite(u32 species, u32 otId, u32 personality)
     struct Sprite *sprite;
     noDucking = (species & SHOW_MON_CRY_NO_DUCKING) >> 16;
     species &= ~SHOW_MON_CRY_NO_DUCKING;
-    monSprite = CreateMonSprite_FieldMove(species, otId, personality, 320, 80, 0);
+    monSprite = CreateMonSprite_FieldMove(species, otId, personality, SHOW_MON_START_X, DISPLAY_HEIGHT / 2, 0);
     sprite = &gSprites[monSprite];
     sprite->callback = SpriteCallbackDummy;
     sprite->oam.priority = 0;

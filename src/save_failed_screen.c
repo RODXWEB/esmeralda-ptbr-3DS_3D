@@ -12,6 +12,9 @@
 #include "save.h"
 #include "starter_choose.h"
 #include "gba/flash_internal.h"
+#ifdef PORT_BRIDGE
+#include "agb_flash.h"
+#endif
 #include "text_window.h"
 #include "constants/rgb.h"
 
@@ -326,7 +329,7 @@ static void CB2_ReturnToTitleScreen(void)
         }
         else
         {
-            SetMainCallback2(gGameContinueCallback);
+            SetMainCallback2((MainCallback)gGameContinueCallback);
             gGameContinueCallback = NULL;
         }
     }
@@ -373,6 +376,11 @@ static bool8 VerifySectorWipe(u16 sector)
 
 static bool8 WipeSector(u16 sector)
 {
+#ifdef PORT_BRIDGE
+    // The file-backed flash can write a sector directly and reports I/O errors.
+    memset(&gSaveDataBuffer, 0, SECTOR_SIZE);
+    return ProgramFlashSectorAndVerify(sector, (u8 *)&gSaveDataBuffer) != 0;
+#else
     u16 i, j;
     bool8 failed = TRUE;
 
@@ -386,6 +394,7 @@ static bool8 WipeSector(u16 sector)
     }
 
     return failed;
+#endif
 }
 
 static bool8 WipeSectors(u32 sectorBits)

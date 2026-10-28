@@ -51,6 +51,16 @@
 #include "constants/songs.h"
 #include "constants/union_room.h"
 
+// The GBA sheet of the trade scene is 0x1400 bytes; the GBA copies 0x1420,
+// a tile past its end. On the 3DS a copy past an asset's end is not
+// resolved to the asset, so its last 32 tiles were drawn from the stub's
+// own bytes.
+#ifdef PLATFORM_3DS
+#define TRADE_GBA_GFX_SIZE 0x1400
+#else
+#define TRADE_GBA_GFX_SIZE 0x1420
+#endif
+
 // IDs for RunTradeMenuCallback
 enum {
     CB_MAIN_MENU,
@@ -1448,6 +1458,93 @@ static void SetReadyToTrade(void)
     }
 }
 
+#ifdef PLATFORM_3DS
+// The trade menu on the 3DS bottom screen (3ds_bottom_ui.c): a tap, in pixels
+// of the GBA screen, goes to whatever waits for input in it (menu.c).
+bool8 CtrMenu_TakeTap(s16 *x, s16 *y);
+bool8 CtrMenu_TakeAck(void);
+s8 CtrMenu_EntryAt(s16 x, s16 y);
+s8 CtrMenu_Choose(s8 entry, bool8 sound);
+
+bool8 CtrTrade_IsOpen(void)
+{
+    return gMain.callback2 == CB2_TradeMenu;
+}
+
+// 3ds_game_full.c: the menu's VBlank callback, to tell it from the trade's.
+IntrCallback CtrTrade_MenuVBlankCallback(void)
+{
+    return VBlankCB_TradeMenu;
+}
+
+// A Pokémon tapped takes the cursor and is chosen, as A chooses it: the
+// player's opens its menu, the partner's its summary. CANCEL too.
+static bool8 CtrTrade_TapOption(void)
+{
+    s16 x, y, left, top;
+    u8 i;
+
+    if (!CtrMenu_TakeTap(&x, &y))
+        return FALSE;
+    for (i = 0; i <= PARTY_SIZE * 2; i++)
+    {
+        if (!sTradeMenu->optionsActive[i])
+            continue;
+        if (i == PARTY_SIZE * 2)
+        {
+            if (x < DISPLAY_WIDTH - 56 || y < DISPLAY_HEIGHT - 24 || y >= DISPLAY_HEIGHT)
+                continue;
+            StartSpriteAnim(&gSprites[sTradeMenu->cursorSpriteId], CURSOR_ANIM_ON_CANCEL);
+            gSprites[sTradeMenu->cursorSpriteId].x = DISPLAY_WIDTH - 16;
+            gSprites[sTradeMenu->cursorSpriteId].y = DISPLAY_HEIGHT;
+        }
+        else
+        {
+            // The cursor's frame: the icon above the name, the name.
+            left = sTradeMonSpriteCoords[i][0] * 8;
+            top = sTradeMonSpriteCoords[i][1] * 8 - 24;
+            if (x < left || x >= left + 56 || y < top || y >= top + 40)
+                continue;
+            StartSpriteAnim(&gSprites[sTradeMenu->cursorSpriteId], CURSOR_ANIM_NORMAL);
+            gSprites[sTradeMenu->cursorSpriteId].x = left + 32;
+            gSprites[sTradeMenu->cursorSpriteId].y = top + 24;
+        }
+        sTradeMenu->cursorPosition = i;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// A menu or yes/no box of the trade menu: an entry tapped is chosen, a tap
+// away from it is B.
+static s8 CtrTrade_MenuInput(bool8 clearOnChoose)
+{
+    s16 x, y;
+    s8 entry;
+
+    if (!CtrMenu_TakeTap(&x, &y))
+        return clearOnChoose ? Menu_ProcessInputNoWrapClearOnChoose() : Menu_ProcessInputNoWrap();
+    entry = CtrMenu_EntryAt(x, y);
+    if (entry >= 0)
+        CtrMenu_Choose(entry, TRUE);
+    else
+        entry = MENU_B_PRESSED;
+    if (clearOnChoose)
+        EraseYesNoWindow();
+    return entry;
+}
+
+#define CTR_TRADE_A_PRESSED (JOY_NEW(A_BUTTON) || CtrTrade_TapOption())
+#define CTR_TRADE_ACK(keys) (JOY_NEW(keys) || CtrMenu_TakeAck())
+#define CTR_TRADE_MENU_INPUT() CtrTrade_MenuInput(FALSE)
+#define CTR_TRADE_YES_NO_INPUT() CtrTrade_MenuInput(TRUE)
+#else
+#define CTR_TRADE_A_PRESSED JOY_NEW(A_BUTTON)
+#define CTR_TRADE_ACK(keys) JOY_NEW(keys)
+#define CTR_TRADE_MENU_INPUT() Menu_ProcessInputNoWrap()
+#define CTR_TRADE_YES_NO_INPUT() Menu_ProcessInputNoWrapClearOnChoose()
+#endif
+
 static void CB_ProcessMenuInput(void)
 {
     if (JOY_REPEAT(DPAD_UP))
@@ -1459,7 +1556,7 @@ static void CB_ProcessMenuInput(void)
     else if (JOY_REPEAT(DPAD_RIGHT))
         TradeMenuMoveCursor(&sTradeMenu->cursorPosition, 3);
 
-    if (JOY_NEW(A_BUTTON))
+    if (CTR_TRADE_A_PRESSED)
     {
         PlaySE(SE_SELECT);
 
@@ -1500,7 +1597,7 @@ static void RedrawChooseAPokemonWindow(void)
 
 static void CB_ProcessSelectedMonInput(void)
 {
-    switch (Menu_ProcessInputNoWrap())
+    switch (CTR_TRADE_MENU_INPUT())
     {
     case MENU_B_PRESSED:
         PlaySE(SE_SELECT);
@@ -1540,7 +1637,7 @@ static void CB_ProcessSelectedMonInput(void)
 
 static void CB_ChooseMonAfterButtonPress(void)
 {
-    if (JOY_NEW(A_BUTTON) || JOY_NEW(B_BUTTON))
+    if (CTR_TRADE_ACK(A_BUTTON) || JOY_NEW(B_BUTTON))
     {
         PlaySE(SE_SELECT);
         RedrawChooseAPokemonWindow();
@@ -1625,7 +1722,7 @@ static bool32 CheckMonsBeforeTrade(void)
 
 static void CB_ProcessConfirmTradeInput(void)
 {
-    switch (Menu_ProcessInputNoWrapClearOnChoose())
+    switch (CTR_TRADE_YES_NO_INPUT())
     {
     case 0: // YES, Confirm selection
         if (!CheckMonsBeforeTrade())
@@ -1660,7 +1757,7 @@ static void RestoreNicknamesCoveredByYesNo(void)
 
 static void CB_ProcessCancelTradeInput(void)
 {
-    switch (Menu_ProcessInputNoWrapClearOnChoose())
+    switch (CTR_TRADE_YES_NO_INPUT())
     {
     case 0: // YES, Cancel
         PrintTradeMessage(MSG_WAITING_FOR_FRIEND);
@@ -1713,7 +1810,7 @@ static void CB_HandleTradeCanceled(void)
 {
     int i;
 
-    if (JOY_NEW(A_BUTTON))
+    if (CTR_TRADE_ACK(A_BUTTON))
     {
         PlaySE(SE_SELECT);
         rbox_fill_rectangle(0);
@@ -1781,7 +1878,7 @@ static void CB_WaitToStartRfuTrade(void)
 
 static void CB_PartnersMonWasInvalid(void)
 {
-    if (JOY_NEW(A_BUTTON))
+    if (CTR_TRADE_ACK(A_BUTTON))
     {
         SetLinkData(LINKCMD_READY_CANCEL_TRADE, 0);
         sTradeMenu->callbackId = CB_IDLE;
@@ -2673,7 +2770,7 @@ static void SpriteCB_LinkMonShadow(struct Sprite *sprite)
         if (++sprite->data[0] == 12)
             sprite->data[0] = 0;
 
-        LoadPalette(&sLinkMonShadow_Pal[sprite->data[0]], OBJ_PLTT_ID2(sprite->oam.paletteNum) + 4, PLTT_SIZEOF(1));
+        LoadPaletteWithOffset(sLinkMonShadow_Pal, PLTT_SIZEOF(sprite->data[0]), OBJ_PLTT_ID2(sprite->oam.paletteNum) + 4, PLTT_SIZEOF(1));
     }
 }
 
@@ -3174,7 +3271,7 @@ static void SetTradeSequenceBgGpuRegs(u8 state)
                                      BGCNT_SCREENBASE(18) |
                                      BGCNT_TXT512x256);
         LoadPalette(gTradeGba2_Pal, BG_PLTT_ID(1), 3 * PLTT_SIZE_4BPP);
-        DmaCopyLarge16(3, gTradeGba_Gfx, (void *) BG_CHAR_ADDR(1), 0x1420, 0x1000);
+        DmaCopyLarge16(3, gTradeGba_Gfx, (void *) BG_CHAR_ADDR(1), TRADE_GBA_GFX_SIZE, 0x1000);
         DmaCopy16Defvars(3, gTradePlatform_Tilemap, (void *) BG_SCREEN_ADDR(18), 0x1000);
         break;
     case 1:
@@ -3201,7 +3298,7 @@ static void SetTradeSequenceBgGpuRegs(u8 state)
             DmaCopy16Defvars(3, sGbaMapWireless, (void *) BG_SCREEN_ADDR(5), 0x1000);
         }
 
-        DmaCopyLarge16(3, gTradeGba_Gfx, (void *) BG_CHAR_ADDR(0), 0x1420, 0x1000);
+        DmaCopyLarge16(3, gTradeGba_Gfx, (void *) BG_CHAR_ADDR(0), TRADE_GBA_GFX_SIZE, 0x1000);
         SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_MODE_0 |
                                       DISPCNT_OBJ_1D_MAP |
                                       DISPCNT_BG1_ON |
@@ -3310,7 +3407,7 @@ static void SetTradeSequenceBgGpuRegs(u8 state)
                                      BGCNT_SCREENBASE(18) |
                                      BGCNT_TXT512x256);
         LoadPalette(gTradeGba2_Pal, BG_PLTT_ID(1), 3 * PLTT_SIZE_4BPP);
-        DmaCopyLarge16(3, gTradeGba_Gfx, (void *) BG_CHAR_ADDR(1), 0x1420, 0x1000);
+        DmaCopyLarge16(3, gTradeGba_Gfx, (void *) BG_CHAR_ADDR(1), TRADE_GBA_GFX_SIZE, 0x1000);
         DmaCopy16Defvars(3, gTradePlatform_Tilemap, (void *) BG_SCREEN_ADDR(18), 0x1000);
         break;
     }
@@ -4552,7 +4649,7 @@ static void CreateInGameTradePokemonInternal(u8 whichPlayerMon, u8 whichInGameTr
     u8 level = GetMonData(&gPlayerParty[whichPlayerMon], MON_DATA_LEVEL);
 
     struct Mail mail;
-    metloc_u8_t metLocation = METLOC_IN_GAME_TRADE;
+    u8 metLocation = METLOC_IN_GAME_TRADE;
     u8 mailNum;
     struct Pokemon *pokemon = &gEnemyParty[0];
 
@@ -4842,9 +4939,18 @@ static void CB2_FreeTradeAnim(void)
     UpdatePaletteFade();
 }
 
+#ifdef PLATFORM_3DS
+// 3ds_bottom_ui.c: the top screen keeps the world from now until the field
+// is back, while the trade is on the bottom screen.
+void CtrBottom_KeepWorld(void);
+#endif
+
 void DoInGameTradeScene(void)
 {
     LockPlayerFieldControls();
+#ifdef PLATFORM_3DS
+    CtrBottom_KeepWorld();
+#endif
     CreateTask(Task_InGameTrade, 10);
     BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_BLACK);
 }
@@ -4896,14 +5002,14 @@ static void Task_AnimateWirelessSignal(u8 taskId)
         if (paletteIdx == 256)
             LoadPalette(sWirelessSignalNone_Pal, BG_PLTT_ID(3), PLTT_SIZE_4BPP);
         else
-            LoadPalette(&sWirelessSignalSend_Pal[paletteIdx], BG_PLTT_ID(3), PLTT_SIZE_4BPP);
+            LoadPaletteWithOffset(sWirelessSignalSend_Pal, PLTT_SIZEOF(paletteIdx), BG_PLTT_ID(3), PLTT_SIZE_4BPP);
     }
     else
     {
         if (paletteIdx == 256)
             LoadPalette(sWirelessSignalNone_Pal, BG_PLTT_ID(3), PLTT_SIZE_4BPP);
         else
-            LoadPalette(&sWirelessSignalRecv_Pal[paletteIdx], BG_PLTT_ID(3), PLTT_SIZE_4BPP);
+            LoadPaletteWithOffset(sWirelessSignalRecv_Pal, PLTT_SIZEOF(paletteIdx), BG_PLTT_ID(3), PLTT_SIZE_4BPP);
     }
 
     if (sWirelessSignalAnimParams[tIdx][0] == 0 && tCounter == 0)

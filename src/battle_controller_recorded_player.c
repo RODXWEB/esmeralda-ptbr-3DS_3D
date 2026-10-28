@@ -1208,18 +1208,18 @@ static void RecordedPlayerHandleDrawTrainerPic(void)
         if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)
         {
             xPos = 90;
-            yPos = (8 - gTrainerFrontPicCoords[trainerPicId].size) * 4 + 80;
+            yPos = (8 - gTrainerFrontPicCoords[trainerPicId].size) * 4 + 80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER);
         }
         else
         {
-            yPos = (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80;
+            yPos = (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER);
         }
 
     }
     else
     {
         xPos = 80;
-        yPos = (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80;
+        yPos = (8 - gTrainerBackPicCoords[trainerPicId].size) * 4 + 80 + BATTLE_SIDE_SHIFT(B_SIDE_PLAYER);
     }
 
     if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)

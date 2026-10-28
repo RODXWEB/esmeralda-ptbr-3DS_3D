@@ -41,7 +41,13 @@ void LoadPokedexAreaMapGfx(const struct PokedexAreaMapTemplate *template)
     ChangeBgX(template->bg, 0, BG_COORD_SET);
     ChangeBgY(template->bg, 0, BG_COORD_SET);
     SetBgAttribute(template->bg, BG_ATTR_PALETTEMODE, 1);
+#ifdef PORT_BRIDGE
+    // sizeof gives the INCBIN stub here (a zero count, so an unbounded load);
+    // 0x60 is region_map.gbapal.
+    CpuCopy32(sPokedexAreaMap_Pal, &gPlttBufferUnfaded[BG_PLTT_ID(7)], 0x60);
+#else
     CpuCopy32(sPokedexAreaMap_Pal, &gPlttBufferUnfaded[BG_PLTT_ID(7)], sizeof(sPokedexAreaMap_Pal));
+#endif
     *sPokedexAreaMapBgNum = template->bg;
 }
 

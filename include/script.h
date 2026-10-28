@@ -61,5 +61,8 @@ void InitRamScript_NoObjectEvent(u8 *script, u16 scriptSize);
 
 // srccmd.h
 void SetMovingNpcId(u16 npcId);
+#ifdef PLATFORM_3DS
+u8 FieldHmUser(u16 move);
+#endif
 
 #endif // GUARD_SCRIPT_H

@@ -13,7 +13,7 @@
 	.global	se_m_absorb
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_absorb_1:
 	.byte	KEYSH , se_m_absorb_key+0
@@ -57,17 +57,17 @@ se_m_absorb_1:
 	.byte	W03
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_absorb:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_absorb_pri	@ Priority
-	.byte	se_m_absorb_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_absorb_pri	/* Priority*/
+	.byte	se_m_absorb_rev	/* Reverb.*/
 
-	.word	se_m_absorb_grp
+	.int	se_m_absorb_grp
 
-	.word	se_m_absorb_1
+	.int	se_m_absorb_1
 
 	.end

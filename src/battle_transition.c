@@ -24,6 +24,9 @@
 #include "constants/songs.h"
 #include "constants/trainers.h"
 #include "constants/rgb.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 #define PALTAG_UNUSED_MUGSHOT 0x100A
 
@@ -287,6 +290,16 @@ static bool8 MugshotTrainerPic_Init(struct Sprite *);
 static bool8 MugshotTrainerPic_Slide(struct Sprite *);
 static bool8 MugshotTrainerPic_SlideSlow(struct Sprite *);
 static bool8 MugshotTrainerPic_SlideOffscreen(struct Sprite *);
+
+#ifdef PORT_BRIDGE
+// The INCBINs below are link stubs here: sizeof gives the stub, and reading or
+// offsetting them directly reads the stub, not the file. Real sizes:
+#define BIG_POKEBALL_TILESET_SIZE  0x580  // big_pokeball.4bpp
+#define BIG_POKEBALL_TILEMAP_SIZE  0x4B0  // big_pokeball_map.bin
+#define MUGSHOTS_TILEMAP_SIZE      0x500  // elite_four_bg_map.bin
+#define SHRINKING_BOX_TILESET_SIZE 0x1E0  // shrinking_box.4bpp
+#define RAYQUAZA_TILEMAP_SIZE      0x1000 // rayquaza.bin
+#endif
 
 static s16 sDebug_RectangularSpiralData;
 static u8 sTestingTransitionId;
@@ -1044,6 +1057,9 @@ bool8 IsBattleTransitionDone(void)
     if (gTasks[taskId].tTransitionDone)
     {
         DestroyTask(taskId);
+        #ifdef PORTABLE
+        SetHBlankCallback(NULL); //prevents use after free crash in HBlankCB_Phase2_Mugshots
+        #endif
         FREE_AND_SET_NULL(sTransitionData);
         return TRUE;
     }
@@ -1068,7 +1084,7 @@ static void Task_BattleTransition(u8 taskId)
 static bool8 Transition_StartIntro(struct Task *task)
 {
     SetWeatherScreenFadeOut();
-    CpuCopy32(gPlttBufferFaded, gPlttBufferUnfaded, PLTT_SIZE);
+    CpuCopy32(gPlttBufferFaded, gPlttBufferUnfaded, PLTT_BUFFER_BYTES);
     if (sTasks_Intro[task->tTransitionId] != NULL)
     {
         CreateTask(sTasks_Intro[task->tTransitionId], 4);
@@ -1106,7 +1122,12 @@ static bool8 Transition_WaitForMain(struct Task *task)
 {
     task->tTransitionDone = FALSE;
     if (FindTaskIdByFunc(sTasks_Main[task->tTransitionId]) == TASK_NONE)
+    {
         task->tTransitionDone = TRUE;
+#ifdef PORTABLE
+        SetVBlankCallback(NULL); // Fixes use-after-free of sTransitionData in callbacks
+#endif
+    }
     return FALSE;
 }
 
@@ -1447,7 +1468,11 @@ static bool8 BigPokeball_Init(struct Task *task)
     InitPatternWeaveTransition(task);
     GetBg0TilesDst(&tilemap, &tileset);
     CpuFill16(0, tilemap, BG_SCREEN_SIZE);
+#ifdef PORT_BRIDGE
+    CpuCopy16(sBigPokeball_Tileset, tileset, BIG_POKEBALL_TILESET_SIZE);
+#else
     CpuCopy16(sBigPokeball_Tileset, tileset, sizeof(sBigPokeball_Tileset));
+#endif
     LoadPalette(sFieldEffectPal_Pokeball, BG_PLTT_ID(15), sizeof(sFieldEffectPal_Pokeball));
 
     task->tState++;
@@ -1461,7 +1486,11 @@ static bool8 BigPokeball_SetGfx(struct Task *task)
     const u16 *bigPokeballMap;
 
     GetBg0TilesDst(&tilemap, &tileset);
+#ifdef PORT_BRIDGE
+    bigPokeballMap = Port_ResolveAssetPointerSized(sBigPokeball_Tilemap, BIG_POKEBALL_TILEMAP_SIZE);
+#else
     bigPokeballMap = sBigPokeball_Tilemap;
+#endif
     for (i = 0; i < 20; i++)
     {
         for (j = 0; j < 30; j++, bigPokeballMap++)
@@ -1558,7 +1587,7 @@ static bool8 Kyogre_PaletteFlash(struct Task *task)
     {
         u16 offset = task->tTimer % 30;
         offset /= 3;
-        LoadPalette(&sKyogre1_Palette[offset * 16], BG_PLTT_ID(15), PLTT_SIZE_4BPP);
+        LoadPaletteWithOffset(sKyogre1_Palette, PLTT_SIZEOF(offset * 16), BG_PLTT_ID(15), PLTT_SIZE_4BPP);
     }
     if (++task->tTimer > 58)
     {
@@ -1574,7 +1603,7 @@ static bool8 Kyogre_PaletteBrighten(struct Task *task)
     if (task->tTimer % 5 == 0)
     {
         s16 offset = task->tTimer / 5;
-        LoadPalette(&sKyogre2_Palette[offset * 16], BG_PLTT_ID(15), PLTT_SIZE_4BPP);
+        LoadPaletteWithOffset(sKyogre2_Palette, PLTT_SIZEOF(offset * 16), BG_PLTT_ID(15), PLTT_SIZE_4BPP);
     }
     if (++task->tTimer > 68)
     {
@@ -2328,7 +2357,11 @@ static bool8 Mugshot_SetGfx(struct Task *task)
     u16 *tilemap, *tileset;
     const u16 *mugshotsMap;
 
+#ifdef PORT_BRIDGE
+    mugshotsMap = Port_ResolveAssetPointerSized(sMugshotsTilemap, MUGSHOTS_TILEMAP_SIZE);
+#else
     mugshotsMap = sMugshotsTilemap;
+#endif
     GetBg0TilesDst(&tilemap, &tileset);
     CpuSet(sEliteFour_Tileset, tileset, 0xF0);
     LoadPalette(sOpponentMugshotsPals[task->tMugshotId], BG_PLTT_ID(15), PLTT_SIZE_4BPP);
@@ -3194,7 +3227,11 @@ static bool8 RectangularSpiral_Init(struct Task *task)
 
     GetBg0TilesDst(&tilemap, &tileset);
     CpuCopy16(sShrinkingBoxTileset, tileset, 0x20);
+#ifdef PORT_BRIDGE
+    CpuCopy16((const u32 *)Port_ResolveAssetPointerSized(sShrinkingBoxTileset, SHRINKING_BOX_TILESET_SIZE) + 0x70, &tileset[0x20], 0x20);
+#else
     CpuCopy16(&sShrinkingBoxTileset[0x70], &tileset[0x20], 0x20);
+#endif
     CpuFill16(0xF0 << 8, tilemap, BG_SCREEN_SIZE);
     LoadPalette(sFieldEffectPal_Pokeball, BG_PLTT_ID(15), sizeof(sFieldEffectPal_Pokeball));
 
@@ -3392,7 +3429,7 @@ static bool8 Groudon_PaletteFlash(struct Task *task)
     if (task->tTimer % 3 == 0)
     {
         u16 offset = (task->tTimer % 30) / 3;
-        LoadPalette(&sGroudon1_Palette[offset * 16], BG_PLTT_ID(15), PLTT_SIZE_4BPP);
+        LoadPaletteWithOffset(sGroudon1_Palette, PLTT_SIZEOF(offset * 16), BG_PLTT_ID(15), PLTT_SIZE_4BPP);
     }
     if (++task->tTimer > 58)
     {
@@ -3408,7 +3445,7 @@ static bool8 Groudon_PaletteBrighten(struct Task *task)
     if (task->tTimer % 5 == 0)
     {
         s16 offset = task->tTimer / 5;
-        LoadPalette(&sGroudon2_Palette[offset * 16], BG_PLTT_ID(15), PLTT_SIZE_4BPP);
+        LoadPaletteWithOffset(sGroudon2_Palette, PLTT_SIZEOF(offset * 16), BG_PLTT_ID(15), PLTT_SIZE_4BPP);
     }
     if (++task->tTimer > 68)
     {
@@ -3451,7 +3488,7 @@ static bool8 Rayquaza_Init(struct Task *task)
 
     sTransitionData->counter = 0;
     task->tState++;
-    LoadPalette(&sRayquaza_Palette[80], BG_PLTT_ID(15), PLTT_SIZE_4BPP);
+    LoadPaletteWithOffset(sRayquaza_Palette, PLTT_SIZEOF(80), BG_PLTT_ID(15), PLTT_SIZE_4BPP);
 
     for (i = 0; i < DISPLAY_HEIGHT; i++)
     {
@@ -3468,7 +3505,11 @@ static bool8 Rayquaza_SetGfx(struct Task *task)
     u16 *tilemap, *tileset;
 
     GetBg0TilesDst(&tilemap, &tileset);
+#ifdef PORT_BRIDGE
+    CpuCopy16(sRayquaza_Tilemap, tilemap, RAYQUAZA_TILEMAP_SIZE);
+#else
     CpuCopy16(sRayquaza_Tilemap, tilemap, sizeof(sRayquaza_Tilemap));
+#endif
     task->tState++;
     return FALSE;
 }
@@ -3478,8 +3519,7 @@ static bool8 Rayquaza_PaletteFlash(struct Task *task)
     if ((task->tTimer % 4) == 0)
     {
         u16 value = task->tTimer / 4;
-        const u16 *palPtr = &sRayquaza_Palette[(value + 5) * 16];
-        LoadPalette(palPtr, BG_PLTT_ID(15), PLTT_SIZE_4BPP);
+        LoadPaletteWithOffset(sRayquaza_Palette, PLTT_SIZEOF((value + 5) * 16), BG_PLTT_ID(15), PLTT_SIZE_4BPP);
     }
     if (++task->tTimer > 40)
     {
@@ -3526,8 +3566,7 @@ static bool8 Rayquaza_TriRing(struct Task *task)
     if ((task->tTimer % 3) == 0)
     {
         u16 value = task->tTimer / 3;
-        const u16 *palPtr = &sRayquaza_Palette[(value + 0) * 16];
-        LoadPalette(palPtr, BG_PLTT_ID(15), PLTT_SIZE_4BPP);
+        LoadPaletteWithOffset(sRayquaza_Palette, PLTT_SIZEOF(value * 16), BG_PLTT_ID(15), PLTT_SIZE_4BPP);
     }
     if (++task->tTimer >= 40)
     {
@@ -3793,7 +3832,11 @@ static bool8 GridSquares_Main(struct Task *task)
         GetBg0TilemapDst(&tileset);
         task->tDelay = 3;
         task->tShrinkStage++;
+#ifdef PORT_BRIDGE
+        CpuSet((const u32 *)Port_ResolveAssetPointerSized(sShrinkingBoxTileset, SHRINKING_BOX_TILESET_SIZE) + task->tShrinkStage * 8, tileset, 16);
+#else
         CpuSet(&sShrinkingBoxTileset[task->tShrinkStage * 8], tileset, 16);
+#endif
         if (task->tShrinkStage > 13)
         {
             task->tState++;

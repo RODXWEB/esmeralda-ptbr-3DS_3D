@@ -13,7 +13,7 @@
 	.global	se_m_snore
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_snore_1:
 	.byte	KEYSH , se_m_snore_key+0
@@ -55,7 +55,7 @@ se_m_snore_1:
 	.byte	W05
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_snore_2:
 	.byte		VOL   , 120*se_m_snore_mvl/mxv
@@ -88,18 +88,18 @@ se_m_snore_2:
 	.byte	W05
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_snore:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_snore_pri	@ Priority
-	.byte	se_m_snore_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_snore_pri	/* Priority*/
+	.byte	se_m_snore_rev	/* Reverb.*/
 
-	.word	se_m_snore_grp
+	.int	se_m_snore_grp
 
-	.word	se_m_snore_1
-	.word	se_m_snore_2
+	.int	se_m_snore_1
+	.int	se_m_snore_2
 
 	.end

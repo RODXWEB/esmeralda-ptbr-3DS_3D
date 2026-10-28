@@ -1269,3 +1269,22 @@ static void SpriteCB_WaitForRibbonAnimation(struct Sprite *sprite)
         sprite->callback = SpriteCallbackDummy;
     }
 }
+
+#ifdef PLATFORM_3DS
+// The ribbon summary, for the 3DS bottom screen: the chosen ribbon position
+// (RIBBONS_PER_ROW to a row, 16 pixels each from (88, 32), gift ribbons from
+// GIFT_RIBBON_START_POS), how many of each kind, and whether one is picked.
+bool8 CtrPokenavRibbons_Summary(u16 *selected, u16 *normal, u16 *gift, u16 *giftStart, bool8 *expanded)
+{
+    struct Pokenav_RibbonsSummaryList *list = GetSubstructPtr(POKENAV_SUBSTRUCT_RIBBONS_SUMMARY_LIST);
+
+    if (list == NULL)
+        return FALSE;
+    *selected = list->selectedPos;
+    *normal = list->numNormalRibbons;
+    *gift = list->numGiftRibbons;
+    *giftStart = GIFT_RIBBON_START_POS;
+    *expanded = list->callback == HandleExpandedRibbonInput;
+    return TRUE;
+}
+#endif

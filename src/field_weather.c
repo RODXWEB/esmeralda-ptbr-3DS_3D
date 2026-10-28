@@ -16,8 +16,26 @@
 #include "task.h"
 #include "trig.h"
 #include "gpu_regs.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 #define DROUGHT_COLOR_INDEX(color) ((((color) >> 1) & 0xF) | (((color) >> 2) & 0xF0) | (((color) >> 3) & 0xF00))
+
+#ifdef PLATFORM_3DS
+/*
+ * The ext palettes (include/palette.h) are palettes 32 and up here, where they
+ * sit in the buffers, and take the colour map of an NPC's palette, their
+ * model: WEATHER_PAL is the palette whose treatment palette curPalIndex gets.
+ * A pass over every palette goes on to the last one in use.
+ */
+#define WEATHER_PAL(curPalIndex) ((curPalIndex) < 32 ? (curPalIndex) : 16 + PLTT_EXT_MODEL)
+#define WEATHER_PAL_COUNT (32 + (gPlttExtInUse ? 32 - __builtin_clz(gPlttExtInUse) : 0))
+STATIC_ASSERT(PLTT_EXT_MODEL == PALSLOT_NPC_1, ExtPalettesModelIsAnNpc);
+#else
+#define WEATHER_PAL(curPalIndex) (curPalIndex)
+#define WEATHER_PAL_COUNT 32
+#endif
 
 enum
 {
@@ -75,6 +93,16 @@ static const u16 sDroughtWeatherColors[][0x1000] = {
     INCBIN_U16("graphics/weather/drought/colors_4.bin"),
     INCBIN_U16("graphics/weather/drought/colors_5.bin"),
 };
+
+#ifdef PORT_BRIDGE
+// The table is an INCBIN stub here: read directly, every drought colour was black.
+static const u16 *GetDroughtWeatherColors(s8 colorMapIndex)
+{
+    const u16 (*colors)[0x1000] = Port_ResolveAssetPointerSized(sDroughtWeatherColors, sizeof(sDroughtWeatherColors));
+
+    return colors[colorMapIndex];
+}
+#endif
 
 // This is a pointer to gWeather. All code in this file accesses gWeather directly,
 // while code in other field weather files accesses gWeather through this pointer.
@@ -456,7 +484,11 @@ static bool8 FadeInScreen_FogHorizontal(void)
 static void DoNothing(void)
 { }
 
+#ifdef PLATFORM_3DS
+static void ApplyColorMapToRange(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex)
+#else
 static void ApplyColorMap(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex)
+#endif
 {
     u16 curPalIndex;
     u16 palOffset;
@@ -473,7 +505,7 @@ static void ApplyColorMap(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex)
         // Loop through the specified palette range and apply necessary color maps.
         while (curPalIndex < numPalettes)
         {
-            if (sPaletteColorMapTypes[curPalIndex] == COLOR_MAP_NONE)
+            if (sPaletteColorMapTypes[WEATHER_PAL(curPalIndex)] == COLOR_MAP_NONE)
             {
                 // No palette change.
                 CpuFastCopy(&gPlttBufferUnfaded[palOffset], &gPlttBufferFaded[palOffset], PLTT_SIZE_4BPP);
@@ -483,7 +515,7 @@ static void ApplyColorMap(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex)
             {
                 u8 r, g, b;
 
-                if (sPaletteColorMapTypes[curPalIndex] == COLOR_MAP_CONTRAST || curPalIndex - 16 == gWeatherPtr->contrastColorMapSpritePalIndex)
+                if (sPaletteColorMapTypes[WEATHER_PAL(curPalIndex)] == COLOR_MAP_CONTRAST || WEATHER_PAL(curPalIndex) - 16 == gWeatherPtr->contrastColorMapSpritePalIndex)
                     colorMap = gWeatherPtr->contrastColorMaps[colorMapIndex];
                 else
                     colorMap = gWeatherPtr->darkenedContrastColorMaps[colorMapIndex];
@@ -506,13 +538,16 @@ static void ApplyColorMap(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex)
     {
         // A negative gammIndex value means that the blending will come from the special Drought weather's palette tables.
         colorMapIndex = -colorMapIndex - 1;
+#ifdef PORT_BRIDGE
+        const u16 *droughtColors = GetDroughtWeatherColors(colorMapIndex);
+#endif
         palOffset = PLTT_ID(startPalIndex);
         numPalettes += startPalIndex;
         curPalIndex = startPalIndex;
 
         while (curPalIndex < numPalettes)
         {
-            if (sPaletteColorMapTypes[curPalIndex] == COLOR_MAP_NONE)
+            if (sPaletteColorMapTypes[WEATHER_PAL(curPalIndex)] == COLOR_MAP_NONE)
             {
                 // No palette change.
                 CpuFastCopy(&gPlttBufferUnfaded[palOffset], &gPlttBufferFaded[palOffset], PLTT_SIZE_4BPP);
@@ -522,7 +557,11 @@ static void ApplyColorMap(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex)
             {
                 for (i = 0; i < 16; i++)
                 {
+#ifdef PORT_BRIDGE
+                    gPlttBufferFaded[palOffset] = droughtColors[DROUGHT_COLOR_INDEX(gPlttBufferUnfaded[palOffset])];
+#else
                     gPlttBufferFaded[palOffset] = sDroughtWeatherColors[colorMapIndex][DROUGHT_COLOR_INDEX(gPlttBufferUnfaded[palOffset])];
+#endif
                     palOffset++;
                 }
             }
@@ -537,7 +576,11 @@ static void ApplyColorMap(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex)
     }
 }
 
+#ifdef PLATFORM_3DS
+static void ApplyColorMapWithBlendToRange(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex, u8 blendCoeff, u16 blendColor)
+#else
 static void ApplyColorMapWithBlend(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex, u8 blendCoeff, u16 blendColor)
+#endif
 {
     u16 palOffset;
     u16 curPalIndex;
@@ -554,7 +597,7 @@ static void ApplyColorMapWithBlend(u8 startPalIndex, u8 numPalettes, s8 colorMap
 
     while (curPalIndex < numPalettes)
     {
-        if (sPaletteColorMapTypes[curPalIndex] == COLOR_MAP_NONE)
+        if (sPaletteColorMapTypes[WEATHER_PAL(curPalIndex)] == COLOR_MAP_NONE)
         {
             // No color map. Simply blend the colors.
             BlendPalette(palOffset, 16, blendCoeff, blendColor);
@@ -564,7 +607,7 @@ static void ApplyColorMapWithBlend(u8 startPalIndex, u8 numPalettes, s8 colorMap
         {
             u8 *colorMap;
 
-            if (sPaletteColorMapTypes[curPalIndex] == COLOR_MAP_DARK_CONTRAST)
+            if (sPaletteColorMapTypes[WEATHER_PAL(curPalIndex)] == COLOR_MAP_DARK_CONTRAST)
                 colorMap = gWeatherPtr->darkenedContrastColorMaps[colorMapIndex];
             else
                 colorMap = gWeatherPtr->contrastColorMaps[colorMapIndex];
@@ -588,6 +631,38 @@ static void ApplyColorMapWithBlend(u8 startPalIndex, u8 numPalettes, s8 colorMap
     }
 }
 
+#ifdef PLATFORM_3DS
+// The ext palettes in use when [startPalIndex, +numPalettes) holds their model.
+static u32 WeatherExtPalettes(u8 startPalIndex, u8 numPalettes)
+{
+    u8 model = 16 + PLTT_EXT_MODEL;
+
+    return startPalIndex <= model && model < startPalIndex + numPalettes ? gPlttExtInUse : 0;
+}
+
+static void ApplyColorMap(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex)
+{
+    u32 ext = WeatherExtPalettes(startPalIndex, numPalettes);
+    u8 i;
+
+    ApplyColorMapToRange(startPalIndex, numPalettes, colorMapIndex);
+    for (i = 32; ext; i++, ext >>= 1)
+        if (ext & 1)
+            ApplyColorMapToRange(i, 1, colorMapIndex);
+}
+
+static void ApplyColorMapWithBlend(u8 startPalIndex, u8 numPalettes, s8 colorMapIndex, u8 blendCoeff, u16 blendColor)
+{
+    u32 ext = WeatherExtPalettes(startPalIndex, numPalettes);
+    u8 i;
+
+    ApplyColorMapWithBlendToRange(startPalIndex, numPalettes, colorMapIndex, blendCoeff, blendColor);
+    for (i = 32; ext; i++, ext >>= 1)
+        if (ext & 1)
+            ApplyColorMapWithBlendToRange(i, 1, colorMapIndex, blendCoeff, blendColor);
+}
+#endif
+
 static void ApplyDroughtColorMapWithBlend(s8 colorMapIndex, u8 blendCoeff, u16 blendColor)
 {
     struct RGBColor color;
@@ -599,14 +674,17 @@ static void ApplyDroughtColorMapWithBlend(s8 colorMapIndex, u8 blendCoeff, u16 b
     u16 i;
 
     colorMapIndex = -colorMapIndex - 1;
+#ifdef PORT_BRIDGE
+    const u16 *droughtColors = GetDroughtWeatherColors(colorMapIndex);
+#endif
     color = *(struct RGBColor *)&blendColor;
     rBlend = color.r;
     gBlend = color.g;
     bBlend = color.b;
     palOffset = 0;
-    for (curPalIndex = 0; curPalIndex < 32; curPalIndex++)
+    for (curPalIndex = 0; curPalIndex < WEATHER_PAL_COUNT; curPalIndex++)
     {
-        if (sPaletteColorMapTypes[curPalIndex] == COLOR_MAP_NONE)
+        if (sPaletteColorMapTypes[WEATHER_PAL(curPalIndex)] == COLOR_MAP_NONE)
         {
             // No color map. Simply blend the colors.
             BlendPalette(palOffset, 16, blendCoeff, blendColor);
@@ -628,7 +706,11 @@ static void ApplyDroughtColorMapWithBlend(s8 colorMapIndex, u8 blendCoeff, u16 b
                 b1 = color1.b;
 
                 offset = ((b1 & 0x1E) << 7) | ((g1 & 0x1E) << 3) | ((r1 & 0x1E) >> 1);
+#ifdef PORT_BRIDGE
+                color2 = *(struct RGBColor *)&droughtColors[offset];
+#else
                 color2 = *(struct RGBColor *)&sDroughtWeatherColors[colorMapIndex][offset];
+#endif
                 r2 = color2.r;
                 g2 = color2.g;
                 b2 = color2.b;
@@ -657,9 +739,9 @@ static void ApplyFogBlend(u8 blendCoeff, u16 blendColor)
     gBlend = color.g;
     bBlend = color.b;
 
-    for (curPalIndex = 16; curPalIndex < 32; curPalIndex++)
+    for (curPalIndex = 16; curPalIndex < WEATHER_PAL_COUNT; curPalIndex++)
     {
-        if (LightenSpritePaletteInFog(curPalIndex))
+        if (LightenSpritePaletteInFog(WEATHER_PAL(curPalIndex)))
         {
             u16 palEnd = PLTT_ID(curPalIndex + 1);
             u16 palOffset = PLTT_ID(curPalIndex);
@@ -781,7 +863,7 @@ void FadeScreen(u8 mode, s8 delay)
     if (fadeOut)
     {
         if (useWeatherPal)
-            CpuFastCopy(gPlttBufferFaded, gPlttBufferUnfaded, PLTT_SIZE);
+            CpuFastCopy(gPlttBufferFaded, gPlttBufferUnfaded, PLTT_BUFFER_BYTES);
 
         BeginNormalPaletteFade(PALETTES_ALL, delay, 0, 16, fadeColor);
         gWeatherPtr->palProcessingState = WEATHER_PAL_STATE_SCREEN_FADING_OUT;
@@ -844,6 +926,43 @@ void UpdateSpritePaletteWithWeather(u8 spritePaletteIndex)
         break;
     }
 }
+
+#ifdef PLATFORM_3DS
+/*
+ * An ext palette just loaded on the field (sprite.c, LoadSpritePaletteExt)
+ * brought to what its model, an NPC's palette, shows now: as
+ * UpdateSpritePaletteWithWeather does for a sprite palette, except that fog
+ * never lightens it, as it never lightens the NPCs'.
+ */
+void UpdateSpritePaletteExtWithWeather(u8 extPalette)
+{
+    u16 paletteIndex = 32 + extPalette;
+    u16 i;
+
+    if (extPalette >= PLTT_EXT_COUNT)
+        return;
+    switch (gWeatherPtr->palProcessingState)
+    {
+    case WEATHER_PAL_STATE_SCREEN_FADING_IN:
+        if (gWeatherPtr->fadeInFirstFrame)
+        {
+            paletteIndex = PLTT_ID(paletteIndex);
+            for (i = 0; i < 16; i++)
+                gPlttBufferFaded[paletteIndex + i] = gWeatherPtr->fadeDestColor;
+        }
+        break;
+    case WEATHER_PAL_STATE_SCREEN_FADING_OUT:
+        paletteIndex = PLTT_ID(paletteIndex);
+        CpuFastCopy(&gPlttBufferFaded[paletteIndex], &gPlttBufferUnfaded[paletteIndex], PLTT_SIZE_4BPP);
+        BlendPalette(paletteIndex, 16, gPaletteFade.y, gPaletteFade.blendColor);
+        break;
+    default:
+        // Fog's colour map is 0: the NPCs keep their own colours in it.
+        ApplyColorMapToRange(paletteIndex, 1, gWeatherPtr->colorMapIndex);
+        break;
+    }
+}
+#endif
 
 void ApplyWeatherColorMapToPal(u8 paletteIndex)
 {

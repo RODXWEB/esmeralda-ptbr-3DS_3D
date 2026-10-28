@@ -5,6 +5,13 @@
 #include "gpu_regs.h"
 #include "task.h"
 #include "constants/rgb.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#include <string.h>
+#endif
+#ifdef PLATFORM_3DS
+#include "3ds_video.h"
+#endif
 
 enum
 {
@@ -58,13 +65,17 @@ static void Task_BlendPalettesGradually(u8 taskId);
 
 // palette buffers require alignment with agbcc because
 // unaligned word reads are issued in BlendPalette otherwise
-ALIGNED(4) EWRAM_DATA u16 gPlttBufferUnfaded[PLTT_BUFFER_SIZE] = {0};
-ALIGNED(4) EWRAM_DATA u16 gPlttBufferFaded[PLTT_BUFFER_SIZE] = {0};
+ALIGNED(4) EWRAM_DATA u16 gPlttBufferUnfaded[PLTT_BUFFER_ALLOC] = {0};
+ALIGNED(4) EWRAM_DATA u16 gPlttBufferFaded[PLTT_BUFFER_ALLOC] = {0};
+#ifdef PLATFORM_3DS
+EWRAM_DATA u16 gPlttExtInUse = 0;
+STATIC_ASSERT(CTR_EXT_PALETTES == PLTT_EXT_COUNT, ExtPalettesMatchRenderer);
+#endif
 static EWRAM_DATA struct PaletteStruct sPaletteStructs[NUM_PALETTE_STRUCTS] = {0};
 EWRAM_DATA struct PaletteFadeControl gPaletteFade = {0};
 static EWRAM_DATA u32 sFiller = 0;
 static EWRAM_DATA u32 sPlttBufferTransferPending = 0;
-EWRAM_DATA u8 ALIGNED(2) gPaletteDecompressionBuffer[PLTT_SIZE] = {0};
+EWRAM_DATA u8 ALIGNED(2) gPaletteDecompressionBuffer[PLTT_BUFFER_ALLOC_BYTES] = {0};
 
 static const struct PaletteStructTemplate sDummyPaletteStructTemplate = {
     .id = 0xFFFF,
@@ -90,8 +101,86 @@ void LoadCompressedPalette(const u32 *src, u16 offset, u16 size)
 
 void LoadPalette(const void *src, u16 offset, u16 size)
 {
-    CpuCopy16(src, &gPlttBufferUnfaded[offset], size);
-    CpuCopy16(src, &gPlttBufferFaded[offset], size);
+#ifdef PORT_BRIDGE
+    // Unsized INCBIN_U16 arrays contain one placeholder, not the palette.
+    // Explicit one-color asset reads must use LoadPaletteWithOffset instead.
+    if (size == sizeof(u16))
+    {
+        u32 assetSize = Port_GetAssetSizeExact(src);
+
+        if (assetSize > size && assetSize <= PLTT_SIZE && assetSize % sizeof(u16) == 0)
+            size = assetSize;
+    }
+#endif
+    LoadPaletteWithOffset(src, 0, offset, size);
+}
+
+void LoadPaletteWithOffset(const void *base, u32 byteOffset, u16 dest, u16 size)
+{
+    const void *src;
+
+#ifdef PORT_BRIDGE
+    u16 assetColors[PLTT_BUFFER_SIZE];
+    u32 assetSize = Port_GetAssetSizeExact(base);
+    u16 end = PLTT_BUFFER_SIZE;
+
+#ifdef PLATFORM_3DS
+    // The ext palettes take loads of their own, never one spilling over.
+    if (dest >= PLTT_EXT_OFFSET)
+        end = PLTT_BUFFER_ALLOC;
+#endif
+    // Asset size is not the size of this palette update (it may be a subrange).
+    if (dest >= end)
+        return;
+    if (size > (end - dest) * sizeof(u16))
+        size = (end - dest) * sizeof(u16);
+    if (assetSize != 0)
+    {
+        // A copy longer than the asset read past it into the next INCBIN on
+        // the GBA (the region map loads 3 banks from a 2-bank palette). Only
+        // the asset's own colors are meaningful; the rest stays untouched.
+        if (byteOffset >= assetSize)
+            return;
+        if (size > assetSize - byteOffset)
+            size = assetSize - byteOffset;
+        // Palettes are copied, not retained. Do not consume the persistent
+        // asset cache or fall back to reading a stub when allocation/I/O fails.
+        if (!Port_LoadAssetRangeToBuffer(base, byteOffset, assetColors, size))
+            return;
+        base = assetColors;
+        byteOffset = 0;
+    }
+    else
+    {
+        base = Port_ResolveAssetPointerSized(base, byteOffset + size);
+    }
+#endif
+    src = (const u8 *)base + byteOffset;
+    CpuCopy16(src, &gPlttBufferUnfaded[dest], size);
+    CpuCopy16(src, &gPlttBufferFaded[dest], size);
+}
+
+void LoadPaletteFadedWithOffset(const void *base, u32 byteOffset, u16 dest, u16 size)
+{
+#ifdef PORT_BRIDGE
+    u32 assetSize = Port_GetAssetSizeExact(base);
+
+    if (base == NULL || dest >= PLTT_BUFFER_SIZE)
+        return;
+    if (size > (PLTT_BUFFER_SIZE - dest) * sizeof(u16))
+        size = (PLTT_BUFFER_SIZE - dest) * sizeof(u16);
+    if (assetSize != 0)
+    {
+        if (byteOffset > assetSize || size > assetSize - byteOffset)
+            return;
+        // Color ramps are reused every frame. Resolve their base once into
+        // the asset cache, never the address of an indexed placeholder.
+        base = Port_ResolveAssetPointerSized(base, byteOffset + size);
+        if (Port_IsAssetStub(base))
+            return;
+    }
+#endif
+    CpuCopy16((const u8 *)base + byteOffset, &gPlttBufferFaded[dest], size);
 }
 
 void FillPalette(u16 value, u16 offset, u16 size)
@@ -100,6 +189,35 @@ void FillPalette(u16 value, u16 offset, u16 size)
     CpuFill16(value, &gPlttBufferFaded[offset], size);
 }
 
+#ifdef PLATFORM_3DS
+/*
+ * The ext palettes (include/palette.h) reach the renderers whenever the
+ * buffer reaches PLTT, so a frame never shows them a step out of a fade: while
+ * any is in use, and once more as the last one is freed, which tells the
+ * renderers to stop looking at them.
+ */
+static void TransferPlttBufferExt(void)
+{
+    static u16 sLatched;
+
+    if (gPlttExtInUse | sLatched)
+    {
+        CtrVideo_LatchExtPalettes(&gPlttBufferFaded[PLTT_EXT_OFFSET], gPlttExtInUse);
+        sLatched = gPlttExtInUse;
+    }
+}
+
+// The ext palettes in `palettes` blended as BlendPalette blends a palette.
+static void BlendExtPalettes(u32 palettes, u8 coeff, u16 color)
+{
+    u16 paletteOffset;
+
+    for (paletteOffset = PLTT_EXT_OFFSET; palettes; paletteOffset += 16, palettes >>= 1)
+        if (palettes & 1)
+            BlendPalette(paletteOffset, 16, coeff, color);
+}
+#endif
+
 void TransferPlttBuffer(void)
 {
     if (!gPaletteFade.bufferTransferDisabled)
@@ -107,6 +225,9 @@ void TransferPlttBuffer(void)
         void *src = gPlttBufferFaded;
         void *dest = (void *)PLTT;
         DmaCopy16(3, src, dest, PLTT_SIZE);
+#ifdef PLATFORM_3DS
+        TransferPlttBufferExt();
+#endif
         sPlttBufferTransferPending = FALSE;
         if (gPaletteFade.mode == HARDWARE_FADE && gPaletteFade.active)
             UpdateBlendRegisters();
@@ -119,7 +240,14 @@ u8 UpdatePaletteFade(void)
     u8 dummy = 0;
 
     if (sPlttBufferTransferPending)
+    {
+#ifdef PORT_BRIDGE
+        TransferPlttBuffer();
+        sPlttBufferTransferPending = FALSE;
+#else
         return PALETTE_FADE_STATUS_LOADING;
+#endif
+    }
 
     if (gPaletteFade.mode == NORMAL_FADE)
         result = UpdateNormalPaletteFade();
@@ -129,6 +257,11 @@ u8 UpdatePaletteFade(void)
         result = UpdateHardwarePaletteFade();
 
     sPlttBufferTransferPending = gPaletteFade.multipurpose1 | dummy;
+
+#ifdef PORT_BRIDGE
+    if (sPlttBufferTransferPending && !gPaletteFade.bufferTransferDisabled)
+        TransferPlttBuffer();
+#endif
 
     return result;
 }
@@ -193,6 +326,9 @@ bool8 BeginNormalPaletteFade(u32 selectedPalettes, s8 delay, u8 startY, u8 targe
         temp = gPaletteFade.bufferTransferDisabled;
         gPaletteFade.bufferTransferDisabled = FALSE;
         CpuCopy32(gPlttBufferFaded, (void *)PLTT, PLTT_SIZE);
+#ifdef PLATFORM_3DS
+        TransferPlttBufferExt();
+#endif
         sPlttBufferTransferPending = FALSE;
         if (gPaletteFade.mode == HARDWARE_FADE && gPaletteFade.active)
             UpdateBlendRegisters();
@@ -439,6 +575,10 @@ static u8 UpdateNormalPaletteFade(void)
         {
             selectedPalettes = gPaletteFade_selectedPalettes >> 16;
             paletteOffset = OBJ_PLTT_OFFSET;
+#ifdef PLATFORM_3DS
+            BlendExtPalettes(PLTT_EXT_SELECTED(gPaletteFade_selectedPalettes),
+                             gPaletteFade.y, gPaletteFade.blendColor);
+#endif
         }
 
         while (selectedPalettes)
@@ -494,6 +634,9 @@ static u8 UpdateNormalPaletteFade(void)
 void InvertPlttBuffer(u32 selectedPalettes)
 {
     u16 paletteOffset = 0;
+#ifdef PLATFORM_3DS
+    u32 ext = PLTT_EXT_SELECTED(selectedPalettes);
+#endif
 
     while (selectedPalettes)
     {
@@ -506,11 +649,24 @@ void InvertPlttBuffer(u32 selectedPalettes)
         selectedPalettes >>= 1;
         paletteOffset += 16;
     }
+#ifdef PLATFORM_3DS
+    for (paletteOffset = PLTT_EXT_OFFSET; ext; paletteOffset += 16, ext >>= 1)
+    {
+        u8 i;
+
+        if (ext & 1)
+            for (i = 0; i < 16; i++)
+                gPlttBufferFaded[paletteOffset + i] = ~gPlttBufferFaded[paletteOffset + i];
+    }
+#endif
 }
 
 void TintPlttBuffer(u32 selectedPalettes, s8 r, s8 g, s8 b)
 {
     u16 paletteOffset = 0;
+#ifdef PLATFORM_3DS
+    u32 ext = PLTT_EXT_SELECTED(selectedPalettes);
+#endif
 
     while (selectedPalettes)
     {
@@ -528,11 +684,29 @@ void TintPlttBuffer(u32 selectedPalettes, s8 r, s8 g, s8 b)
         selectedPalettes >>= 1;
         paletteOffset += 16;
     }
+#ifdef PLATFORM_3DS
+    for (paletteOffset = PLTT_EXT_OFFSET; ext; paletteOffset += 16, ext >>= 1)
+    {
+        u8 i;
+
+        if (ext & 1)
+            for (i = 0; i < 16; i++)
+            {
+                struct PlttData *data = (struct PlttData *)&gPlttBufferFaded[paletteOffset + i];
+                data->r += r;
+                data->g += g;
+                data->b += b;
+            }
+    }
+#endif
 }
 
 void UnfadePlttBuffer(u32 selectedPalettes)
 {
     u16 paletteOffset = 0;
+#ifdef PLATFORM_3DS
+    u32 ext = PLTT_EXT_SELECTED(selectedPalettes);
+#endif
 
     while (selectedPalettes)
     {
@@ -545,6 +719,11 @@ void UnfadePlttBuffer(u32 selectedPalettes)
         selectedPalettes >>= 1;
         paletteOffset += 16;
     }
+#ifdef PLATFORM_3DS
+    for (paletteOffset = PLTT_EXT_OFFSET; ext; paletteOffset += 16, ext >>= 1)
+        if (ext & 1)
+            CpuCopy16(&gPlttBufferUnfaded[paletteOffset], &gPlttBufferFaded[paletteOffset], PLTT_SIZE_4BPP);
+#endif
 }
 
 void BeginFastPaletteFade(u8 submode)
@@ -561,10 +740,10 @@ static void BeginFastPaletteFadeInternal(u8 submode)
     gPaletteFade.mode = FAST_FADE;
 
     if (submode == FAST_FADE_IN_FROM_BLACK)
-        CpuFill16(RGB_BLACK, gPlttBufferFaded, PLTT_SIZE);
+        CpuFill16(RGB_BLACK, gPlttBufferFaded, PLTT_BUFFER_BYTES);
 
     if (submode == FAST_FADE_IN_FROM_WHITE)
-        CpuFill16(RGB_WHITE, gPlttBufferFaded, PLTT_SIZE);
+        CpuFill16(RGB_WHITE, gPlttBufferFaded, PLTT_BUFFER_BYTES);
 
     UpdatePaletteFade();
 }
@@ -591,7 +770,8 @@ static u8 UpdateFastPaletteFade(void)
     if (gPaletteFade.objPaletteToggle)
     {
         paletteOffsetStart = OBJ_PLTT_OFFSET;
-        paletteOffsetEnd = PLTT_BUFFER_SIZE;
+        // With the ext palettes, which follow the OBJ palettes.
+        paletteOffsetEnd = PLTT_BUFFER_BYTES / sizeof(u16);
     }
     else
     {
@@ -708,13 +888,13 @@ static u8 UpdateFastPaletteFade(void)
         {
         case FAST_FADE_IN_FROM_WHITE:
         case FAST_FADE_IN_FROM_BLACK:
-            CpuCopy32(gPlttBufferUnfaded, gPlttBufferFaded, PLTT_SIZE);
+            CpuCopy32(gPlttBufferUnfaded, gPlttBufferFaded, PLTT_BUFFER_BYTES);
             break;
         case FAST_FADE_OUT_TO_WHITE:
-            CpuFill32(0xFFFFFFFF, gPlttBufferFaded, PLTT_SIZE);
+            CpuFill32(0xFFFFFFFF, gPlttBufferFaded, PLTT_BUFFER_BYTES);
             break;
         case FAST_FADE_OUT_TO_BLACK:
-            CpuFill32(0x00000000, gPlttBufferFaded, PLTT_SIZE);
+            CpuFill32(0x00000000, gPlttBufferFaded, PLTT_BUFFER_BYTES);
             break;
         }
 
@@ -833,6 +1013,9 @@ void BlendPalettes(u32 selectedPalettes, u8 coeff, u16 color)
 {
     u16 paletteOffset;
 
+#ifdef PLATFORM_3DS
+    BlendExtPalettes(PLTT_EXT_SELECTED(selectedPalettes), coeff, color);
+#endif
     for (paletteOffset = 0; selectedPalettes; paletteOffset += 16)
     {
         if (selectedPalettes & 1)
@@ -845,7 +1028,7 @@ void BlendPalettesUnfaded(u32 selectedPalettes, u8 coeff, u16 color)
 {
     void *src = gPlttBufferUnfaded;
     void *dest = gPlttBufferFaded;
-    DmaCopy32(3, src, dest, PLTT_SIZE);
+    DmaCopy32(3, src, dest, PLTT_BUFFER_BYTES);
     BlendPalettes(selectedPalettes, coeff, color);
 }
 
@@ -956,7 +1139,7 @@ void BlendPalettesGradually(u32 selectedPalettes, s8 delay, u8 coeff, u8 coeffTa
 {
     u8 taskId;
 
-    taskId = CreateTask(Task_BlendPalettesGradually, priority);
+    taskId = CreateTask((void *)Task_BlendPalettesGradually, priority);
     gTasks[taskId].tCoeff = coeff;
     gTasks[taskId].tCoeffTarget = coeffTarget;
 

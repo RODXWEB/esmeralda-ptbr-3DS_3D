@@ -442,7 +442,12 @@ static void SetDispcntReg(void)
 
 static void LoadTrainerHillRecordsWindowGfx(u8 bgId)
 {
+#ifdef PORT_BRIDGE
+    // sizeof gives the INCBIN stub here; 0xC0 is records_window.4bpp.
+    LoadBgTiles(bgId, sTrainerHillWindowTileset, 0xC0, 0);
+#else
     LoadBgTiles(bgId, sTrainerHillWindowTileset, sizeof(sTrainerHillWindowTileset), 0);
+#endif
     CopyToBgTilemapBufferRect(bgId, sTrainerHillWindowTilemap, 0, 0, 0x20, 0x20);
     LoadPalette(sTrainerHillWindowPalette, BG_PLTT_ID(0), sizeof(sTrainerHillWindowPalette));
 }

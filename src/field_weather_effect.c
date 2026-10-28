@@ -2634,3 +2634,35 @@ static void UpdateRainCounter(u8 newWeather, u8 oldWeather)
 }
 
 
+#ifdef PLATFORM_3DS
+// The fog's and the underwater bubbles' sprites, by their template (sprite.c).
+// Compared, never read: a map object's template pointer is left to the stack
+// frame that spawned it.
+bool8 Weather_IsFogSpriteTemplate(const struct SpriteTemplate *template)
+{
+    return template == &sFogHorizontalSpriteTemplate || template == &sFogDiagonalSpriteTemplate;
+}
+
+bool8 Weather_IsBubbleSpriteTemplate(const struct SpriteTemplate *template)
+{
+    return template == &sBubbleSpriteTemplate;
+}
+
+// How a weather sprite carries over the 3DS's wide view (sprite.c): the ash
+// and the sandstorm's sand are one picture on a 64-pixel lattice, like the
+// fog; the rain, snow, the sandstorm's swirls (its template at 32x32) and the
+// bubbles are particles that wrap round the GBA's screen.
+u8 Weather_SpriteTiling(const struct Sprite *sprite)
+{
+    const struct SpriteTemplate *template = sprite->template;
+
+    if (template == &sAshSpriteTemplate)
+        return WEATHER_TILING_LATTICE;
+    if (template == &sSandstormSpriteTemplate)
+        return sprite->oam.size == SPRITE_SIZE(64x64) ? WEATHER_TILING_LATTICE : WEATHER_TILING_PARTICLES;
+    if (template == &sRainSpriteTemplate || template == &sSnowflakeSpriteTemplate
+     || template == &sBubbleSpriteTemplate)
+        return WEATHER_TILING_PARTICLES;
+    return WEATHER_TILING_NONE;
+}
+#endif

@@ -395,6 +395,22 @@ static void STWI_init_slave(void)
     REG_SIOCNT = SIO_INTR_ENABLE | SIO_32BIT_MODE | SIO_57600_BPS | SIO_ENABLE;
 }
 
+#ifdef PLATFORM_3DS
+static void Callback_Dummy_M(int reqCommandId, int error, void (*callbackM)())
+{
+    callbackM(reqCommandId, error);
+}
+
+static void Callback_Dummy_S(u16 reqCommandId, void (*callbackS)(u16))
+{
+    callbackS(reqCommandId);
+}
+
+static void Callback_Dummy_ID(void (*callbackId)(void))
+{
+    callbackId();
+}
+#else
 NAKED
 #if __STDC_VERSION__ < 202311L
 static void Callback_Dummy_M(int reqCommandId, int error, void (*callbackM)())
@@ -402,17 +418,24 @@ static void Callback_Dummy_M(int reqCommandId, int error, void (*callbackM)())
 static void Callback_Dummy_M(int reqCommandId, int error, void (*callbackM)(...))
 #endif
 {
+#ifndef PORTABLE
     asm("bx r2");
+#endif
 }
 
 NAKED
 static void Callback_Dummy_S(u16 reqCommandId, void (*callbackS)(u16))
 {
+#ifndef PORTABLE
     asm("bx r1");
+#endif
 }
 
 NAKED
 static void Callback_Dummy_ID(void (*callbackId)(void))
 {
+#ifndef PORTABLE
     asm("bx r0");
+#endif
 }
+#endif

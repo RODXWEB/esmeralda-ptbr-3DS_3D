@@ -27,11 +27,21 @@ struct SpriteFrameImage
 {
     const void *data;
     u16 size;
+#ifdef PORT_BRIDGE
+    // data is the exact asset base (or a RAM pointer), never a stub + offset.
+    u32 offset;
+#endif
 };
 
+#ifdef PORT_BRIDGE
+#define obj_frame_tiles(ptr) {.data = (u8 *)ptr, .size = sizeof ptr, .offset = 0}
+#define sprite_frame(ptr, frameSize, frame) {.data = (const u8 *)(ptr), .size = (frameSize), .offset = (frameSize) * (frame)}
+#else
 #define obj_frame_tiles(ptr) {.data = (u8 *)ptr, .size = sizeof ptr}
+#define sprite_frame(ptr, frameSize, frame) {.data = (const u8 *)(ptr) + (frameSize) * (frame), .size = (frameSize)}
+#endif
 
-#define overworld_frame(ptr, width, height, frame) {.data = (u8 *)ptr + (width * height * frame * 64)/2, .size = (width * height * 64)/2}
+#define overworld_frame(ptr, width, height, frame) sprite_frame(ptr, ((width) * (height) * 64) / 2, frame)
 
 struct SpritePalette
 {
@@ -309,6 +319,23 @@ u8 AllocSpritePalette(u16 tag);
 u8 IndexOfSpritePaletteTag(u16 tag);
 u16 GetSpritePaletteTagByPaletteNum(u8 paletteNum);
 void FreeSpritePaletteByTag(u16 tag);
+#ifdef PLATFORM_3DS
+/*
+ * Port: sprite palettes in the ext palettes (include/palette.h), by tag as the
+ * GBA's sixteen are, returning the ext palette or 0xFF. A sprite created with
+ * a template whose tag is only an ext palette's is drawn with that palette;
+ * any other sprite can be given one (0xFF: back to oam.paletteNum).
+ * FreeSpritePaletteByTag and FreeAllSpritePalettes free them as the others.
+ * Unlike LoadSpritePalette this leaves the weather alone: on the field, call
+ * UpdateSpritePaletteExtWithWeather after a load, as field effects call
+ * UpdateSpritePaletteWithWeather.
+ */
+u8 LoadSpritePaletteExt(const struct SpritePalette *palette);
+u8 AllocSpritePaletteExt(u16 tag);
+u8 IndexOfSpritePaletteExtTag(u16 tag);
+void SetSpriteExtPalette(struct Sprite *sprite, u8 extPalette);
+u8 GetSpriteExtPalette(const struct Sprite *sprite);
+#endif
 void SetSubspriteTables(struct Sprite *sprite, const struct SubspriteTable *subspriteTables);
 bool8 AddSpriteToOamBuffer(struct Sprite *sprite, u8 *oamIndex);
 bool8 AddSubspritesToOamBuffer(struct Sprite *sprite, struct OamData *destOam, u8 *oamIndex);

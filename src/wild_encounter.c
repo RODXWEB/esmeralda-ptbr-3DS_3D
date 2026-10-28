@@ -1,21 +1,25 @@
 #include "global.h"
-#include "battle_setup.h"
-#include "battle_pike.h"
-#include "battle_pyramid.h"
-#include "event_data.h"
-#include "fieldmap.h"
-#include "field_player_avatar.h"
-#include "link.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#include "3ds_encounters.h"
+#endif
+#include "wild_encounter.h"
+#include "pokemon.h"
 #include "metatile_behavior.h"
+#include "fieldmap.h"
+#include "random.h"
+#include "field_player_avatar.h"
+#include "event_data.h"
+#include "safari_zone.h"
 #include "overworld.h"
 #include "pokeblock.h"
-#include "pokemon.h"
-#include "random.h"
+#include "battle_setup.h"
 #include "roamer.h"
-#include "safari_zone.h"
-#include "script.h"
 #include "tv.h"
-#include "wild_encounter.h"
+#include "link.h"
+#include "script.h"
+#include "battle_pike.h"
+#include "battle_pyramid.h"
 #include "constants/abilities.h"
 #include "constants/game_stat.h"
 #include "constants/items.h"
@@ -46,6 +50,17 @@ enum {
 #define WILD_CHECK_KEEN_EYE (1 << 1)
 
 #define HEADER_NONE 0xFFFF
+
+static const struct WildPokemonInfo *GetLandMonsInfo(u16 headerId)
+{
+    const struct WildPokemonHeader *header = &gWildMonHeaders[headerId];
+
+#ifdef PLATFORM_3DS
+    return CtrEncounters_Land(header->landMonsInfo, header->mapGroup, header->mapNum);
+#else
+    return header->landMonsInfo;
+#endif
+}
 
 static u16 FeebasRandom(void);
 static void FeebasSeedRng(u16 seed);
@@ -498,6 +513,18 @@ static bool8 EncounterOddsCheck(u16 encounterRate)
         return FALSE;
 }
 
+#ifdef PLATFORM_3DS
+// Wild encounter rate (OPTIONS, CHEATS) in percent: random encounters while
+// walking and surfing, and how often visible wild Pokemon appear.
+static u32 EncounterRatePercent(void)
+{
+    static const u8 percent[] = {100, 0, 25, 50, 200}; // NORMAL, OFF, 1/4, 1/2, 2X
+    u32 setting = CtrExtras_Get("encounter_rate");
+
+    return setting < ARRAY_COUNT(percent) ? percent[setting] : 100;
+}
+#endif
+
 // Returns true if it will try to create a wild encounter.
 static bool8 WildEncounterCheck(u32 encounterRate, bool8 ignoreAbility)
 {
@@ -523,6 +550,12 @@ static bool8 WildEncounterCheck(u32 encounterRate, bool8 ignoreAbility)
         else if (ability == ABILITY_SAND_VEIL && gSaveBlock1Ptr->weather == WEATHER_SANDSTORM)
             encounterRate /= 2;
     }
+#ifdef PLATFORM_3DS
+    // Wild encounter rate (OPTIONS, CHEATS): walking and surfing only; Rock
+    // Smash (ignoreAbility), fishing and set encounters keep the game's.
+    if (!ignoreAbility)
+        encounterRate = encounterRate * EncounterRatePercent() / 100;
+#endif
     if (encounterRate > MAX_ENCOUNTER_RATE)
         encounterRate = MAX_ENCOUNTER_RATE;
     return EncounterOddsCheck(encounterRate);
@@ -548,6 +581,850 @@ static bool8 AreLegendariesInSootopolisPreventingEncounters(void)
 
     return FlagGet(FLAG_LEGENDARIES_IN_SOOTOPOLIS);
 }
+
+#ifdef PLATFORM_3DS
+/*
+ * Visible wild Pokemon (OPTIONS, ENHANCEMENTS): the map's wild Pokemon wander
+ * its encounter tiles on HeartGold/SoulSilver's overworld sprites where the
+ * data pack has them (follower_mon.c, in its normal or shiny colours), else
+ * as their party icons, and touching one starts a battle with exactly that
+ * Pokemon. Species and level come from the map's own table; the personality
+ * (so a shiny) is rolled when it appears, and a shiny one sparkles. FEW and
+ * SOME come on top of the random encounters in grass, caves and water; MANY
+ * replaces them. Roamers still meet the player at random.
+ *
+ * Each one is a record (where it is, what it is) apart from its sprite, so
+ * it outlives the sprite: a battle, a menu or anything else that resets the
+ * field takes the sprites, and once back on the same map each one gets its
+ * own again where it stood. Walking into the next map keeps them too, their
+ * tiles shifted with the camera (VisibleWild_CameraShift); a warp ends them.
+ * They appear growing from a dot over a rustle of the grass (a splash on
+ * water, dust elsewhere) and vanish shrinking, on an OAM matrix the 2D
+ * compositor draws and the voxel view reads as the card's scale.
+ *
+ * They are map-anchored sprites (coordOffsetEnabled), placed each frame from
+ * their tile as object events are, so the voxel view draws them as cards.
+ * Called every overworld frame (overworld.c, CB1_Overworld); what they do
+ * goes to port.log (CTR_LOG_GAME, "visible wild: ...").
+ */
+#include "3ds_log.h"
+#include "event_object_movement.h"
+#include "field_effect.h"
+#include "field_player_avatar.h"
+#include "fieldmap.h"
+#include "follower_mon.h"
+#include "pokemon_icon.h"
+#include "port_platform.h"
+#include "script.h"
+#include "sound.h"
+#include "constants/field_effects.h"
+#include "constants/pokemon_icon.h"
+#include "constants/songs.h"
+
+/* The setting: off, or how many may be about at once (FEW, SOME, MANY). */
+static const u8 sVisibleMost[] = {0, 2, 4, 6};
+
+static u32 VisibleSetting(void)
+{
+    u32 setting = CtrExtras_Get("visible_wild");
+
+    return setting < ARRAY_COUNT(sVisibleMost) ? setting : 0;
+}
+
+#define VISIBLE_MOST() sVisibleMost[VisibleSetting()]
+/* MANY: they are the only wild Pokemon met by walking or surfing. */
+#define VISIBLE_REPLACES_RANDOM() (VisibleSetting() == ARRAY_COUNT(sVisibleMost) - 1)
+
+#define VW_MAX 6
+#define VW_MAGIC 0x5657          /* in data[7]: the sprite is one of these */
+#define VW_RANGE_X 11            /* tiles from the player they appear within */
+#define VW_RANGE_Y 6
+#define VW_NEAREST 3             /* never closer than this when they appear */
+#define VW_FORGET 15             /* gone beyond this */
+#define VW_TRIES 24              /* tiles tried for one to appear on */
+#define VW_GROW 12               /* frames it takes to appear */
+#define VW_GROW_BACK 8           /* to be back after a battle or a menu */
+#define VW_VANISH 12             /* to vanish */
+#define VW_NONE MAX_SPRITES
+
+struct VisibleWild
+{
+    bool8 active, water, shiny;
+    bool8 hgss;                  /* on HGSS's overworld sprite (follower_mon.c), else its icon */
+    bool8 vanishing;             /* shrinking away, gone at the end */
+    u8 spriteId;                 /* VW_NONE: none now (a field reset took it), made again on its tile */
+    u8 matrix;                   /* its OAM matrix while it grows or shrinks, else 0xFF */
+    u8 scaleTime, scaleFrames;   /* how far into growing or shrinking */
+    u8 level, progress;
+    s8 dx, dy;
+    s8 faceX, faceY;             /* the way it last walked */
+    u16 species, idle, sparkle;
+    s16 x, y;                    /* map coordinates (MAP_OFFSET included) */
+    u32 personality;
+};
+
+static struct VisibleWild sVisible[VW_MAX];
+static u8 sVisibleMapGroup = 0xFF, sVisibleMapNum = 0xFF;
+static bool8 sVisibleShifted;    /* the camera crossed into the next map (VisibleWild_CameraShift) */
+static u16 sVisibleSpawnTimer, sVisibleRetry;
+static u32 sVisibleFrames, sVisibleLastFail, sVisibleLastOut;
+static const char *sVisibleFailReason;
+
+#define VW_ABS(n) ((n) < 0 ? -(n) : (n))
+
+/* Why none appeared, once a reason is new or every ten seconds: a run on the
+ * console tells from port.log what held them back. */
+static void VisibleLogFail(const char *reason, u16 species)
+{
+    if (reason == sVisibleFailReason && sVisibleFrames - sVisibleLastFail < 600)
+        return;
+    sVisibleFailReason = reason;
+    sVisibleLastFail = sVisibleFrames;
+    CtrLog_Write(CTR_LOG_GAME, "visible wild: %s (species %u)", reason, species);
+}
+
+static u32 VisibleOtId(void)
+{
+    return gSaveBlock2Ptr->playerTrainerId[0]
+         | (gSaveBlock2Ptr->playerTrainerId[1] << 8)
+         | (gSaveBlock2Ptr->playerTrainerId[2] << 16)
+         | (gSaveBlock2Ptr->playerTrainerId[3] << 24);
+}
+
+static bool8 VisibleSpriteValid(const struct VisibleWild *v)
+{
+    return v->spriteId < MAX_SPRITES && gSprites[v->spriteId].inUse
+        && gSprites[v->spriteId].data[7] == VW_MAGIC;
+}
+
+/*
+ * Icon palettes. On the field OBJ palette slots 0-11 belong to the objects
+ * (written directly, gReservedSpritePaletteCount), so tags get only 12-15,
+ * shared with the field effects. A palette is loaded only when a slot is free
+ * (else that one does not appear: an icon without its slot showed another
+ * palette's colours), and freed when the last icon using it goes.
+ */
+static u16 VisiblePaletteTag(u16 species)
+{
+    return POKE_ICON_BASE_PAL_TAG + gMonIconPaletteIndices[species];
+}
+
+static bool8 VisibleLoadPalette(u16 species)
+{
+    if (IndexOfSpritePaletteTag(VisiblePaletteTag(species)) == 0xFF)
+        LoadMonIconPalette(species);
+    return IndexOfSpritePaletteTag(VisiblePaletteTag(species)) != 0xFF;
+}
+
+/* Its sprite destroyed now (the record stays). */
+static void VisibleDropSprite(struct VisibleWild *v)
+{
+    if (VisibleSpriteValid(v))
+    {
+        struct Sprite *sprite = &gSprites[v->spriteId];
+
+        if (v->matrix != 0xFF)
+        {
+            sprite->oam.affineMode = ST_OAM_AFFINE_OFF;
+            sprite->oam.matrixNum = 0;
+            FreeOamMatrix(v->matrix);
+        }
+        if (v->hgss)
+        {
+            FollowerMon_WildFree(v - sVisible, sprite);
+        }
+        else
+        {
+            u32 i;
+            bool8 shared = FALSE;
+
+            FreeAndDestroyMonIconSprite(sprite);
+            for (i = 0; i < VW_MAX; i++)
+                if (&sVisible[i] != v && sVisible[i].active && !sVisible[i].hgss && VisibleSpriteValid(&sVisible[i])
+                 && gMonIconPaletteIndices[sVisible[i].species] == gMonIconPaletteIndices[v->species])
+                    shared = TRUE;
+            if (!shared)
+                FreeMonIconPalette(v->species);
+        }
+    }
+    else if (v->hgss)
+    {
+        FollowerMon_WildFree(v - sVisible, NULL);
+    }
+    v->spriteId = VW_NONE;
+    v->matrix = 0xFF;
+}
+
+/* Its sprite went with the field (a battle, a menu, a warp): only what it
+ * held is let go; the matrices went with the sprites. */
+static void VisibleForgetSprite(struct VisibleWild *v)
+{
+    if (v->hgss)
+        FollowerMon_WildFree(v - sVisible, NULL);
+    v->spriteId = VW_NONE;
+    v->matrix = 0xFF;
+}
+
+static void VisibleRemove(struct VisibleWild *v)
+{
+    if (v->active)
+        VisibleDropSprite(v);
+    v->active = FALSE;
+}
+
+static void VisibleRemoveAll(void)
+{
+    u32 i;
+
+    for (i = 0; i < VW_MAX; i++)
+        VisibleRemove(&sVisible[i]);
+}
+
+static u32 VisibleCount(void)
+{
+    u32 i, count = 0;
+
+    for (i = 0; i < VW_MAX; i++)
+        count += sVisible[i].active && !sVisible[i].vanishing;
+    return count;
+}
+
+static struct VisibleWild *VisibleAt(s16 x, s16 y, const struct VisibleWild *except)
+{
+    u32 i;
+
+    for (i = 0; i < VW_MAX; i++)
+    {
+        struct VisibleWild *v = &sVisible[i];
+
+        if (!v->active || v == except)
+            continue;
+        if ((v->x == x && v->y == y) || (v->progress && v->x + v->dx == x && v->y + v->dy == y))
+            return v;
+    }
+    return NULL;
+}
+
+/* A tile of the right kind (grass or cave floor, or water) one can stand on. */
+static bool8 VisibleTileKind(s16 x, s16 y, bool8 water)
+{
+    u32 behavior = MapGridGetMetatileBehaviorAt(x, y);
+
+    if (water ? !MetatileBehavior_IsWaterWildEncounter(behavior)
+              : !MetatileBehavior_IsLandWildEncounter(behavior))
+        return FALSE;
+    return MapGridGetCollisionAt(x, y) == 0;
+}
+
+/* ...and no one on it. */
+static bool8 VisibleTileFits(s16 x, s16 y, bool8 water)
+{
+    return VisibleTileKind(x, y, water) && GetObjectEventIdByXY(x, y) == OBJECT_EVENTS_COUNT;
+}
+
+u32 ShinyOdds_WildPersonality(void); // pokemon.c
+
+static u32 VisibleRollPersonality(void)
+{
+    return ShinyOdds_WildPersonality();
+}
+
+/*
+ * Their icons' two frames, copied straight into OBJ VRAM. The game's own
+ * callback queues the copy for VBlank with a pointer into the asset cache,
+ * and on the field, where many assets stream through it, that slot can be
+ * reused before the copy runs: the frame came out as garbage.
+ */
+#define VW_ICON_BYTES 0x200      /* 32x32, 4bpp */
+#define VW_ICON_FRAME 14         /* frames per icon frame: a slow bob */
+
+static void SpriteCB_VisibleIcon(struct Sprite *sprite)
+{
+    if (sprite->data[6] > 0)
+    {
+        sprite->data[6]--;
+        return;
+    }
+    {
+        /* The icon is one asset holding both frames: resolve the asset, then
+         * step into it. The placeholder plus 0x200 is another symbol. */
+        const u8 *icon = Port_ResolveAssetPointer(sprite->images);
+
+        if (icon != NULL)
+            CpuCopy16(icon + VW_ICON_BYTES * sprite->data[5],
+                      (void *)(OBJ_VRAM0 + sprite->oam.tileNum * TILE_SIZE_4BPP), VW_ICON_BYTES);
+    }
+    sprite->data[5] ^= 1;
+    sprite->data[6] = VW_ICON_FRAME;
+}
+
+static void VisibleSparkle(const struct VisibleWild *v)
+{
+    gFieldEffectArguments[0] = v->x - MAP_OFFSET;
+    gFieldEffectArguments[1] = v->y - MAP_OFFSET;
+    gFieldEffectArguments[2] = 2;
+    FieldEffectStart(FLDEFF_SPARKLE);
+}
+
+/* Where it appears: the grass rustles (a splash on water, dust on a cave's
+ * floor or sand), the effects a landing jump leaves on the same tiles. */
+static void VisibleRustle(const struct VisibleWild *v)
+{
+    u32 behavior = MapGridGetMetatileBehaviorAt(v->x, v->y);
+    u8 effect;
+
+    if (v->water)
+        effect = FLDEFF_JUMP_SMALL_SPLASH;
+    else if (MetatileBehavior_IsTallGrass(behavior))
+        effect = FLDEFF_JUMP_TALL_GRASS;
+    else if (MetatileBehavior_IsLongGrass(behavior))
+        effect = FLDEFF_JUMP_LONG_GRASS;
+    else
+        effect = FLDEFF_DUST;
+    gFieldEffectArguments[0] = v->x;
+    gFieldEffectArguments[1] = v->y;
+    gFieldEffectArguments[2] = gObjectEvents[gPlayerAvatar.objectEventId].previousElevation;
+    gFieldEffectArguments[3] = 2;
+    FieldEffectStart(effect);
+}
+
+/* Growing (or shrinking): its size this frame, on its OAM matrix. Done, the
+ * sprite is an ordinary one again. Eased: fast at first, settling at the end. */
+static void VisibleScaleStep(struct VisibleWild *v)
+{
+    struct Sprite *sprite = &gSprites[v->spriteId];
+    u32 t, inv, scale;
+
+    if (v->scaleFrames == 0)
+        return;
+    if (v->scaleTime < v->scaleFrames)
+        v->scaleTime++;
+    t = v->scaleTime * 256 / v->scaleFrames;
+    if (v->vanishing)
+        t = 256 - t;
+    inv = 256 - t;
+    scale = 256 - inv * inv / 256;           /* 1/256ths */
+    if (v->scaleTime >= v->scaleFrames && !v->vanishing)
+    {
+        /* Full size: an ordinary sprite again, facing as it was. */
+        sprite->oam.affineMode = ST_OAM_AFFINE_OFF;
+        sprite->oam.matrixNum = 0;
+        if (v->matrix != 0xFF)
+            FreeOamMatrix(v->matrix);
+        v->matrix = 0xFF;
+        v->scaleFrames = 0;
+        if (v->hgss)
+        {
+            FollowerMon_WildFace(sprite, v->faceX, v->faceY, FALSE);
+            StartSpriteAnim(sprite, sprite->animNum);   /* its picture's flips, drawn again */
+        }
+        return;
+    }
+    if (v->matrix == 0xFF)
+        return;
+    if (scale < 16)
+        scale = 16;
+    /* The matrix maps the screen onto the picture: one over the scale. */
+    SetOamMatrix(v->matrix, 0x10000 / scale, 0, 0, 0x10000 / scale);
+}
+
+static void VisibleStartScale(struct VisibleWild *v, u8 frames)
+{
+    struct Sprite *sprite = &gSprites[v->spriteId];
+
+    v->scaleTime = 0;
+    v->scaleFrames = frames;
+    if (v->matrix == 0xFF)
+        v->matrix = AllocOamMatrix();
+    if (v->matrix == 0xFF)
+    {
+        /* None free: it just appears (or goes) at once. */
+        v->scaleTime = frames;
+        return;
+    }
+    /* Facing south as it grows: the picture's flips are not drawn on a
+     * matrix, and the south pictures have none. */
+    if (v->hgss)
+        FollowerMon_WildFace(sprite, 0, 1, FALSE);
+    sprite->oam.affineMode = ST_OAM_AFFINE_NORMAL;
+    sprite->oam.matrixNum = v->matrix;
+    VisibleScaleStep(v);
+}
+
+static void VisibleVanish(struct VisibleWild *v)
+{
+    if (v->vanishing)
+        return;
+    if (!VisibleSpriteValid(v))
+    {
+        VisibleRemove(v);
+        return;
+    }
+    v->vanishing = TRUE;
+    v->dx = v->dy = 0;
+    v->progress = 0;
+    VisibleStartScale(v, VW_VANISH);
+}
+
+static void VisiblePlace(struct VisibleWild *v)
+{
+    struct Sprite *sprite = &gSprites[v->spriteId];
+    s16 x, y, step = v->progress / 2;   /* half a pixel a frame (VisibleMove) */
+
+    SetSpritePosToMapCoords(v->x, v->y, &x, &y);
+    sprite->x = x + 8 + v->dx * step;
+    sprite->y = y + v->dy * step;
+    if (v->hgss)
+    {
+        /* Feet on the tile, as an object event of its size stands. */
+        sprite->y += 16 + sprite->centerToCornerVecY;
+        if (v->scaleFrames == 0)
+            FollowerMon_WildFace(sprite, v->faceX, v->faceY, v->progress != 0);
+    }
+    /* Further down the screen, drawn over: as the map's objects are. */
+    sprite->subpriority = 200 - ((sprite->y + 64) >> 1 & 0x7F);
+}
+
+/* Its sprite, on HGSS's picture if the pack has one, else its icon; it grows
+ * in over `grow` frames. */
+static bool8 VisibleMakeSprite(struct VisibleWild *v, u8 grow)
+{
+    struct Sprite *sprite;
+
+    v->matrix = 0xFF;
+    v->spriteId = FollowerMon_WildSprite(v - sVisible, v->species, v->personality, v->shiny);
+    v->hgss = v->spriteId < MAX_SPRITES;
+    if (!v->hgss)
+    {
+        if (!VisibleLoadPalette(v->species))
+        {
+            v->spriteId = VW_NONE;
+            VisibleLogFail("no HGSS sprite and no icon palette slot free", v->species);
+            return FALSE;
+        }
+        v->spriteId = CreateMonIcon(v->species, SpriteCB_VisibleIcon, 0, 0, 1, v->personality, TRUE);
+        if (v->spriteId >= MAX_SPRITES)
+        {
+            v->spriteId = VW_NONE;
+            VisibleLogFail("no sprite free for an icon", v->species);
+            return FALSE;
+        }
+        /* Its size is ours (VisibleScaleStep), not the icon's own anims'. */
+        gSprites[v->spriteId].affineAnims = gDummySpriteAffineAnimTable;
+    }
+    sprite = &gSprites[v->spriteId];
+    sprite->coordOffsetEnabled = TRUE;
+    sprite->oam.priority = 2;
+    sprite->data[7] = VW_MAGIC;
+    sprite->data[5] = 0;
+    sprite->data[6] = 0;
+    v->scaleFrames = 0;
+    VisiblePlace(v);
+    VisibleStartScale(v, grow);
+    VisiblePlace(v);
+    return TRUE;
+}
+
+static void VisibleTrySpawn(u16 headerId)
+{
+    struct ObjectEvent *player = &gObjectEvents[gPlayerAvatar.objectEventId];
+    struct VisibleWild *v = NULL;
+    const struct WildPokemonInfo *info;
+    const struct WildPokemon *wild;
+    u32 i, tries;
+    s16 x, y;
+    bool8 water;
+
+    for (i = 0; i < VW_MAX && v == NULL; i++)
+        if (!sVisible[i].active)
+            v = &sVisible[i];
+    if (v == NULL)
+        return;
+    for (tries = 0; tries < VW_TRIES; tries++)
+    {
+        x = player->currentCoords.x + (s16)(Random() % (2 * VW_RANGE_X + 1)) - VW_RANGE_X;
+        y = player->currentCoords.y + (s16)(Random() % (2 * VW_RANGE_Y + 1)) - VW_RANGE_Y;
+        if (VW_ABS(x - player->currentCoords.x) < VW_NEAREST && VW_ABS(y - player->currentCoords.y) < VW_NEAREST)
+            continue;
+        if (VisibleAt(x, y, NULL) != NULL)
+            continue;
+        water = MetatileBehavior_IsWaterWildEncounter(MapGridGetMetatileBehaviorAt(x, y));
+        info = water ? gWildMonHeaders[headerId].waterMonsInfo : GetLandMonsInfo(headerId);
+        if (info == NULL || !VisibleTileFits(x, y, water))
+            continue;
+        if (water && AreLegendariesInSootopolisPreventingEncounters())
+            continue;
+        wild = &info->wildPokemon[water ? ChooseWildMonIndex_WaterRock() : ChooseWildMonIndex_Land()];
+        v->level = ChooseWildMonLevel(wild);
+        if (!IsWildLevelAllowedByRepel(v->level))
+        {
+            VisibleLogFail("kept away by a repel", wild->species);
+            return;
+        }
+        v->species = wild->species;
+        v->personality = VisibleRollPersonality();
+        v->shiny = GET_SHINY_VALUE(VisibleOtId(), v->personality) < SHINY_ODDS;
+        v->faceX = 0;
+        v->faceY = 1;
+        v->water = water;
+        v->x = x;
+        v->y = y;
+        v->dx = v->dy = 0;
+        v->progress = 0;
+        v->vanishing = FALSE;
+        v->idle = VW_GROW + 30 + Random() % 90;
+        v->sparkle = 0;
+        if (!VisibleMakeSprite(v, VW_GROW))
+            return;
+        v->active = TRUE;
+        VisibleRustle(v);
+        if (v->shiny)
+        {
+            VisibleSparkle(v);
+            PlaySE(SE_SHINY);
+        }
+        CtrLog_Write(CTR_LOG_GAME, "visible wild: species %u lv %u%s at %d,%d on %s %u (pal %u, tile %u)",
+                     v->species, v->level, v->shiny ? " (shiny)" : "", x - MAP_OFFSET, y - MAP_OFFSET,
+                     v->hgss ? "HGSS sprite" : "icon", v->spriteId,
+                     v->hgss ? GetSpriteExtPalette(&gSprites[v->spriteId]) : gSprites[v->spriteId].oam.paletteNum,
+                     gSprites[v->spriteId].oam.tileNum);
+        return;
+    }
+    VisibleLogFail("no free encounter tile near the player", 0);
+}
+
+/* Touched: the battle with this Pokemon, as a random encounter starts one. */
+static void VisibleStartBattle(struct VisibleWild *v)
+{
+    ZeroEnemyPartyMons();
+    CreateMon(&gEnemyParty[0], v->species, v->level, USE_RANDOM_IVS, TRUE, v->personality, OT_ID_PLAYER_ID, 0);
+    CtrLog_Write(CTR_LOG_GAME, "visible wild: battle with species %u lv %u", v->species, v->level);
+    VisibleRemove(v);
+    BattleSetup_StartWildBattle();
+}
+
+static void VisibleMove(struct VisibleWild *v, s16 px, s16 py, bool8 surfing)
+{
+    static const s8 sSteps[4][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+    u32 dir;
+    s16 tx, ty;
+
+    if (v->progress)
+    {
+        /* Half a pixel a frame: a stroll. */
+        if (++v->progress >= 32)
+        {
+            v->x += v->dx;
+            v->y += v->dy;
+            v->dx = v->dy = 0;
+            v->progress = 0;
+            v->idle = 40 + Random() % 120;
+        }
+        return;
+    }
+    if (v->idle && --v->idle)
+        return;
+    dir = Random() % 4;
+    tx = v->x + sSteps[dir][0];
+    ty = v->y + sSteps[dir][1];
+    if (tx == px && ty == py)
+    {
+        /* Into the player: a battle, if the player stands where it lives. */
+        if (v->water == surfing)
+            v->idle = 0xFFFF;    /* asks for the battle (VisibleWild_Update) */
+        else
+            v->idle = 60;
+        return;
+    }
+    if (!VisibleTileFits(tx, ty, v->water) || VisibleAt(tx, ty, v) != NULL)
+    {
+        v->idle = 30;
+        return;
+    }
+    v->dx = v->faceX = sSteps[dir][0];
+    v->dy = v->faceY = sSteps[dir][1];
+    v->progress = 1;
+}
+
+/*
+ * Into the next map (event_object_movement.c, as the objects' coordinates
+ * shift with the camera): they keep walking where they were, in the new
+ * map's coordinates. Those left off the loaded map vanish next frame.
+ */
+void VisibleWild_CameraShift(s16 dx, s16 dy)
+{
+    u32 i;
+
+    for (i = 0; i < VW_MAX; i++)
+    {
+        sVisible[i].x -= dx;
+        sVisible[i].y -= dy;
+    }
+    sVisibleShifted = TRUE;
+}
+
+/*
+ * The player's step ended on one (field_control_avatar.c, every step, before
+ * the steps a random encounter waits after the last battle): its battle.
+ * VisibleWild_Update only meets one while the player stands still, so
+ * walking or running over it started nothing. On the tile it is on or, half
+ * way through a step, the one it is walking onto; never one not on show.
+ */
+bool8 VisibleWild_StepOnto(void)
+{
+    struct ObjectEvent *player = &gObjectEvents[gPlayerAvatar.objectEventId];
+    bool8 surfing = TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_SURFING) != 0;
+    s16 px = player->currentCoords.x, py = player->currentCoords.y;
+    u32 i;
+
+    if (sWildEncountersDisabled == TRUE)
+        return FALSE;
+    for (i = 0; i < VW_MAX; i++)
+    {
+        struct VisibleWild *v = &sVisible[i];
+
+        if (!v->active || v->vanishing || v->spriteId == VW_NONE || v->water != surfing)
+            continue;
+        if ((v->x == px && v->y == py) || (v->progress && v->x + v->dx == px && v->y + v->dy == py))
+        {
+            VisibleStartBattle(v);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/*
+ * The sprite is one of these (the voxel world, 3ds_port/src/voxel/
+ * voxel_entities.c): one a tile south of the player has its middle inside the
+ * player's picture, and taken for an effect drawn over the player it was put
+ * at the player's feet, a tile underground, and vanished.
+ */
+bool8 VisibleWild_IsSprite(u8 spriteId)
+{
+    u32 i;
+
+    for (i = 0; i < VW_MAX; i++)
+        if (sVisible[i].active && sVisible[i].spriteId == spriteId && VisibleSpriteValid(&sVisible[i]))
+            return TRUE;
+    return FALSE;
+}
+
+/*
+ * On each new map, whatever decides if wild Pokemon are met there at all,
+ * random or visible: a console's port.log then tells a map without them
+ * from a setting, a repel or a lock that keeps them away.
+ */
+static void WildLogMap(void)
+{
+    static u8 sGroup = 0xFF, sNum = 0xFF;
+    u16 headerId;
+
+    if (gSaveBlock1Ptr->location.mapGroup == sGroup && gSaveBlock1Ptr->location.mapNum == sNum)
+        return;
+    sGroup = gSaveBlock1Ptr->location.mapGroup;
+    sNum = gSaveBlock1Ptr->location.mapNum;
+    headerId = GetCurrentMapWildMonHeaderId();
+    CtrLog_Write(CTR_LOG_GAME, "wild: map %d/%d header %d (land %d water %d) rate %lu%% disabled %d "
+                 "repel %u lead lv %d visible %lu (replaces random %d)",
+                 sGroup, sNum, headerId == HEADER_NONE ? -1 : headerId,
+                 headerId != HEADER_NONE && GetLandMonsInfo(headerId) != NULL,
+                 headerId != HEADER_NONE && gWildMonHeaders[headerId].waterMonsInfo != NULL,
+                 (unsigned long)EncounterRatePercent(), sWildEncountersDisabled, VarGet(VAR_REPEL_STEP_COUNT),
+                 (int)GetMonData(&gPlayerParty[0], MON_DATA_LEVEL), (unsigned long)VISIBLE_MOST(),
+                 VISIBLE_REPLACES_RANDOM());
+}
+
+void VisibleWild_Update(void)
+{
+    struct ObjectEvent *player;
+    u16 headerId;
+    u32 i, percent, most;
+    bool8 surfing, idle, settled;
+
+    if (gMain.callback2 == CB2_Overworld)
+        WildLogMap();
+    most = VISIBLE_MOST();
+    if (most == 0)
+    {
+        for (i = 0; i < VW_MAX; i++)
+        {
+            if (!sVisible[i].active)
+                continue;
+            if (gMain.callback2 == CB2_Overworld)
+                VisibleRemove(&sVisible[i]);
+            else
+                VisibleForgetSprite(&sVisible[i]);
+            sVisible[i].active = FALSE;
+        }
+        sVisibleShifted = FALSE;
+        return;
+    }
+    if (gMain.callback2 != CB2_Overworld)
+        return;
+    sVisibleFrames++;
+
+    /* A battle, a menu, a warp: the sprites went with the field. The
+     * records stay; on the same map each gets its sprite back. */
+    {
+        u32 lost = 0;
+
+        for (i = 0; i < VW_MAX; i++)
+        {
+            struct VisibleWild *v = &sVisible[i];
+
+            if (v->active && v->spriteId != VW_NONE && !VisibleSpriteValid(v))
+            {
+                VisibleForgetSprite(v);
+                if (v->vanishing)
+                    v->active = FALSE;
+                else
+                    lost++;
+            }
+        }
+        if (lost)
+            CtrLog_Write(CTR_LOG_GAME, "visible wild: %lu lost their sprites with the field", (unsigned long)lost);
+    }
+    if (gSaveBlock1Ptr->location.mapGroup != sVisibleMapGroup || gSaveBlock1Ptr->location.mapNum != sVisibleMapNum)
+    {
+        if (sVisibleShifted)
+        {
+            /* Walked into the next map: those still on loaded ground stay. */
+            u32 kept = 0, gone = 0;
+
+            for (i = 0; i < VW_MAX; i++)
+            {
+                if (!sVisible[i].active)
+                    continue;
+                if (VisibleTileKind(sVisible[i].x, sVisible[i].y, sVisible[i].water))
+                {
+                    kept++;
+                    continue;
+                }
+                VisibleVanish(&sVisible[i]);
+                gone++;
+            }
+            CtrLog_Write(CTR_LOG_GAME, "visible wild: into map %d/%d, %lu kept, %lu off the loaded ground",
+                         gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum,
+                         (unsigned long)kept, (unsigned long)gone);
+        }
+        else
+        {
+            /* A warp: another place. */
+            VisibleRemoveAll();
+            sVisibleSpawnTimer = 30;
+        }
+        sVisibleMapGroup = gSaveBlock1Ptr->location.mapGroup;
+        sVisibleMapNum = gSaveBlock1Ptr->location.mapNum;
+    }
+    sVisibleShifted = FALSE;
+
+    headerId = GetCurrentMapWildMonHeaderId();
+    player = &gObjectEvents[gPlayerAvatar.objectEventId];
+    surfing = TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_SURFING) != 0;
+    idle = !ArePlayerFieldControlsLocked() && !ScriptContext_IsEnabled()
+        && gPlayerAvatar.tileTransitionState == T_NOT_MOVING;
+    settled = FollowerMon_PalettesSettled();
+
+    /* Fewer wanted now (the setting lowered): the extra ones vanish. */
+    for (i = VW_MAX; i-- > 0 && VisibleCount() > most;)
+        if (sVisible[i].active && !sVisible[i].vanishing)
+            VisibleVanish(&sVisible[i]);
+
+    if (sVisibleRetry)
+        sVisibleRetry--;
+    for (i = 0; i < VW_MAX; i++)
+    {
+        struct VisibleWild *v = &sVisible[i];
+
+        if (!v->active)
+            continue;
+        if (VW_ABS(v->x - player->currentCoords.x) > VW_FORGET || VW_ABS(v->y - player->currentCoords.y) > VW_FORGET)
+        {
+            VisibleRemove(v);
+            continue;
+        }
+        if (v->spriteId == VW_NONE)
+        {
+            /* Back from a battle or a menu: its sprite again, once the
+             * screen's fade is over. A failure waits a moment (each try
+             * reads the sprite's file). */
+            if (!settled || sVisibleRetry || v->vanishing)
+                continue;
+            if (!VisibleMakeSprite(v, VW_GROW_BACK))
+            {
+                sVisibleRetry = 30;
+                continue;
+            }
+            CtrLog_Write(CTR_LOG_GAME, "visible wild: species %u back at %d,%d", v->species,
+                         v->x - MAP_OFFSET, v->y - MAP_OFFSET);
+        }
+        if (v->scaleFrames)
+        {
+            VisibleScaleStep(v);
+            if (v->vanishing && v->scaleTime >= v->scaleFrames)
+            {
+                VisibleRemove(v);
+                continue;
+            }
+        }
+        else if (idle)
+        {
+            bool8 touched = v->idle == 0xFFFF
+                || (v->x == player->currentCoords.x && v->y == player->currentCoords.y && !v->progress);
+
+            // It walked into the player: a repel keeps it off, as it keeps random ones.
+            if (touched && v->water == surfing && (v->idle != 0xFFFF || IsWildLevelAllowedByRepel(v->level)))
+            {
+                VisibleStartBattle(v);
+                return;
+            }
+            if (v->idle == 0xFFFF)
+                v->idle = 60;
+            VisibleMove(v, player->currentCoords.x, player->currentCoords.y, surfing);
+            // Often enough to be told from the others at a glance: a shiny
+            // one's icon is drawn in the same colours as any other's.
+            if (v->shiny && ++v->sparkle >= 40)
+            {
+                v->sparkle = 0;
+                VisibleSparkle(v);
+            }
+        }
+        VisiblePlace(v);
+    }
+
+    percent = EncounterRatePercent();
+    /* None about for a while where some could be: what holds them back. */
+    if (headerId != HEADER_NONE && VisibleCount() == 0)
+    {
+        if (sVisibleFrames - sVisibleLastOut >= 1200)
+        {
+            sVisibleLastOut = sVisibleFrames;
+            CtrLog_Write(CTR_LOG_GAME, "visible wild: none out (idle %d: locked %d script %d step %d; settled %d "
+                         "rate %u%% disabled %d timer %u)", idle, ArePlayerFieldControlsLocked(),
+                         ScriptContext_IsEnabled(), gPlayerAvatar.tileTransitionState, settled, (unsigned)percent,
+                         sWildEncountersDisabled, sVisibleSpawnTimer);
+        }
+    }
+    else
+    {
+        sVisibleLastOut = sVisibleFrames;
+    }
+    if (!idle || !settled || headerId == HEADER_NONE || percent == 0 || sWildEncountersDisabled)
+        return;
+    if (sVisibleSpawnTimer)
+    {
+        sVisibleSpawnTimer--;
+        return;
+    }
+    /* One more every two seconds at the NORMAL encounter rate (1/2: every
+     * four, 2X: every second), up to the setting's number. */
+    sVisibleSpawnTimer = 120 * 100 / percent;
+    if (VisibleCount() < most)
+        VisibleTrySpawn(headerId);
+}
+#endif
+
 
 bool8 StandardWildEncounter(u16 curMetatileBehavior, u16 prevMetatileBehavior)
 {
@@ -594,11 +1471,11 @@ bool8 StandardWildEncounter(u16 curMetatileBehavior, u16 prevMetatileBehavior)
     {
         if (MetatileBehavior_IsLandWildEncounter(curMetatileBehavior) == TRUE)
         {
-            if (gWildMonHeaders[headerId].landMonsInfo == NULL)
+            if (GetLandMonsInfo(headerId) == NULL)
                 return FALSE;
             else if (prevMetatileBehavior != curMetatileBehavior && !AllowWildCheckOnNewMetatile())
                 return FALSE;
-            else if (WildEncounterCheck(gWildMonHeaders[headerId].landMonsInfo->encounterRate, FALSE) != TRUE)
+            else if (WildEncounterCheck(GetLandMonsInfo(headerId)->encounterRate, FALSE) != TRUE)
                 return FALSE;
 
             if (TryStartRoamerEncounter() == TRUE)
@@ -612,6 +1489,10 @@ bool8 StandardWildEncounter(u16 curMetatileBehavior, u16 prevMetatileBehavior)
             }
             else
             {
+#ifdef PLATFORM_3DS
+                if (VISIBLE_REPLACES_RANDOM())
+                    return FALSE;
+#endif
                 if (DoMassOutbreakEncounterTest() == TRUE && SetUpMassOutbreakEncounter(WILD_CHECK_REPEL | WILD_CHECK_KEEN_EYE) == TRUE)
                 {
                     BattleSetup_StartWildBattle();
@@ -619,7 +1500,7 @@ bool8 StandardWildEncounter(u16 curMetatileBehavior, u16 prevMetatileBehavior)
                 }
 
                 // try a regular wild land encounter
-                if (TryGenerateWildMon(gWildMonHeaders[headerId].landMonsInfo, WILD_AREA_LAND, WILD_CHECK_REPEL | WILD_CHECK_KEEN_EYE) == TRUE)
+                if (TryGenerateWildMon(GetLandMonsInfo(headerId), WILD_AREA_LAND, WILD_CHECK_REPEL | WILD_CHECK_KEEN_EYE) == TRUE)
                 {
                     BattleSetup_StartWildBattle();
                     return TRUE;
@@ -651,6 +1532,10 @@ bool8 StandardWildEncounter(u16 curMetatileBehavior, u16 prevMetatileBehavior)
             }
             else // try a regular surfing encounter
             {
+#ifdef PLATFORM_3DS
+                if (VISIBLE_REPLACES_RANDOM())
+                    return FALSE;
+#endif
                 if (TryGenerateWildMon(gWildMonHeaders[headerId].waterMonsInfo, WILD_AREA_WATER, WILD_CHECK_REPEL | WILD_CHECK_KEEN_EYE) == TRUE)
                 {
                     BattleSetup_StartWildBattle();
@@ -728,7 +1613,7 @@ bool8 SweetScentWildEncounter(void)
     {
         if (MetatileBehavior_IsLandWildEncounter(MapGridGetMetatileBehaviorAt(x, y)) == TRUE)
         {
-            if (gWildMonHeaders[headerId].landMonsInfo == NULL)
+            if (GetLandMonsInfo(headerId) == NULL)
                 return FALSE;
 
             if (TryStartRoamerEncounter() == TRUE)
@@ -740,7 +1625,7 @@ bool8 SweetScentWildEncounter(void)
             if (DoMassOutbreakEncounterTest() == TRUE)
                 SetUpMassOutbreakEncounter(0);
             else
-                TryGenerateWildMon(gWildMonHeaders[headerId].landMonsInfo, WILD_AREA_LAND, 0);
+                TryGenerateWildMon(GetLandMonsInfo(headerId), WILD_AREA_LAND, 0);
 
             BattleSetup_StartWildBattle();
             return TRUE;
@@ -807,7 +1692,7 @@ u16 GetLocalWildMon(bool8 *isWaterMon)
     headerId = GetCurrentMapWildMonHeaderId();
     if (headerId == HEADER_NONE)
         return SPECIES_NONE;
-    landMonsInfo = gWildMonHeaders[headerId].landMonsInfo;
+    landMonsInfo = GetLandMonsInfo(headerId);
     waterMonsInfo = gWildMonHeaders[headerId].waterMonsInfo;
     // Neither
     if (landMonsInfo == NULL && waterMonsInfo == NULL)

@@ -1,5 +1,16 @@
 #include "global.h"
 #include "blit.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+
+const u8 *ResolveBitmapSource(const u8 *base, u32 offset)
+{
+#ifdef PORT_BRIDGE
+    base = Port_ResolveAssetPointer(base);
+#endif
+    return base + offset;
+}
 
 void BlitBitmapRect4BitWithoutColorKey(const struct Bitmap *src, struct Bitmap *dst, u16 srcX, u16 srcY, u16 dstX, u16 dstY, u16 width, u16 height)
 {
@@ -19,6 +30,12 @@ void BlitBitmapRect4Bit(const struct Bitmap *src, struct Bitmap *dst, u16 srcX, 
     s32 toOrr;
     s32 toAnd;
     s32 toShift;
+
+#ifdef PORT_BRIDGE
+    struct Bitmap source = *src;
+    source.pixels = (u8 *)ResolveBitmapSource(source.pixels, 0);
+    src = &source;
+#endif
 
     if (dst->width - dstX < width)
         xEnd = (dst->width - dstX) + srcX;
@@ -115,6 +132,12 @@ void BlitBitmapRect4BitTo8Bit(const struct Bitmap *src, struct Bitmap *dst, u16 
     const u8 *pixelsSrc;
     u8 *pixelsDst;
     s32 colorKeyBits;
+
+#ifdef PORT_BRIDGE
+    struct Bitmap source = *src;
+    source.pixels = (u8 *)ResolveBitmapSource(source.pixels, 0);
+    src = &source;
+#endif
 
     palOffsetBits = (u32)(paletteOffset << 0x1C) >> 0x18;
     colorKeyBits = (u32)(colorKey << 0x1C) >> 0x18;

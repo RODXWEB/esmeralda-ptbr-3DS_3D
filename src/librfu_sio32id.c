@@ -26,6 +26,9 @@ s32 AgbRFU_checkID(u8 maxTries)
     vu16 *regTMCNTL;
     s32 id;
 
+#ifdef PLATFORM_3DS
+    return PortRfu_CheckID(); // the emulated adapter
+#endif
     // Interrupts must be enabled
     if (REG_IME == 0)
         return -1;

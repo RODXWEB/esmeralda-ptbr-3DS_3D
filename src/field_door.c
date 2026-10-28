@@ -7,6 +7,9 @@
 #include "task.h"
 #include "constants/songs.h"
 #include "constants/metatile_labels.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 #define DOOR_SOUND_NORMAL  0
 #define DOOR_SOUND_SLIDING 1
@@ -288,10 +291,16 @@ static const struct DoorGraphics sDoorAnimGraphicsTable[] =
 
 static void CopyDoorTilesToVram(const struct DoorGraphics *gfx, const struct DoorAnimFrame *frame)
 {
+    const u8 *tiles = gfx->tiles;
+
+#ifdef PORT_BRIDGE
+    // Resolve the exact INCBIN base before applying the frame's byte offset.
+    tiles = Port_ResolveAssetPointer(tiles);
+#endif
     if (gfx->size == 2)
-        CpuFastCopy(gfx->tiles + frame->offset, (void *)(VRAM + TILE_OFFSET_4BPP(DOOR_TILE_START_SIZE2)), 16 * TILE_SIZE_4BPP);
+        CpuFastCopy(tiles + frame->offset, (void *)(VRAM + TILE_OFFSET_4BPP(DOOR_TILE_START_SIZE2)), 16 * TILE_SIZE_4BPP);
     else
-        CpuFastCopy(gfx->tiles + frame->offset, (void *)(VRAM + TILE_OFFSET_4BPP(DOOR_TILE_START_SIZE1)), 8 * TILE_SIZE_4BPP);
+        CpuFastCopy(tiles + frame->offset, (void *)(VRAM + TILE_OFFSET_4BPP(DOOR_TILE_START_SIZE1)), 8 * TILE_SIZE_4BPP);
 }
 
 static void BuildDoorTiles(u16 *tiles, u16 tileNum, const u8 *paletteNums)
@@ -360,8 +369,49 @@ static void DrawClosedDoorTiles(const struct DoorGraphics *gfx, u32 x, u32 y)
     }
 }
 
+#ifdef PORT_BRIDGE
+// The door standing open, for the voxel view (voxel_entities.c): the frames
+// below are drawn on the tilemap, which that view does not show.
+static struct
+{
+    s16 x, y;
+    u8 width, level;
+    s8 mapGroup, mapNum;
+} sPortDoor;
+
+// Its cell (map grid), its width in cells and how far open, 1 to 3.
+bool8 PortDoor_Get(s16 *x, s16 *y, u8 *width, u8 *level)
+{
+    if (sPortDoor.level == 0
+     || sPortDoor.mapGroup != gSaveBlock1Ptr->location.mapGroup
+     || sPortDoor.mapNum != gSaveBlock1Ptr->location.mapNum)
+        return FALSE;
+    *x = sPortDoor.x;
+    *y = sPortDoor.y;
+    *width = sPortDoor.width;
+    *level = sPortDoor.level;
+    return TRUE;
+}
+
+// For now only a sliding door (a Pokemon Center's, a Mart's, a gym's) is
+// shown open: the view draws an opening, not a swinging door's own frames.
+static bool8 PortDoor_Sliding(const struct DoorGraphics *gfx)
+{
+    return gfx->sound == DOOR_SOUND_SLIDING || gfx->metatileNum == METATILE_PetalburgGym_Door;
+}
+#endif
+
 static void DrawDoor(const struct DoorGraphics *gfx, const struct DoorAnimFrame *frame, u32 x, u32 y)
 {
+#ifdef PORT_BRIDGE
+    sPortDoor.x = x;
+    sPortDoor.y = y;
+    sPortDoor.width = gfx->size == 2 ? 2 : 1;
+    sPortDoor.level = frame->offset == 0xFFFF || !PortDoor_Sliding(gfx) ? 0
+                    : frame->offset / (gfx->size == 2 ? 0x200 : 0x100) + 1;
+    sPortDoor.mapGroup = gSaveBlock1Ptr->location.mapGroup;
+    sPortDoor.mapNum = gSaveBlock1Ptr->location.mapNum;
+#endif
     if (frame->offset == 0xFFFF)
     {
         DrawClosedDoorTiles(gfx, x, y);
@@ -460,14 +510,20 @@ static s8 StartDoorAnimationTask(const struct DoorGraphics *gfx, const struct Do
 
 static void DrawClosedDoor(const struct DoorGraphics *gfx, u32 x, u32 y)
 {
-    DrawClosedDoorTiles(gfx, x, y);
+    gfx = GetDoorGraphics(gfx, MapGridGetMetatileIdAt(x, y));
+    if (gfx != NULL)
+        DrawClosedDoorTiles(gfx, x, y);
 }
 
 static void DrawOpenedDoor(const struct DoorGraphics *gfx, u32 x, u32 y)
 {
     gfx = GetDoorGraphics(gfx, MapGridGetMetatileIdAt(x, y));
     if (gfx != NULL)
-        DrawDoor(gfx, GetLastDoorFrame(sDoorOpenAnimFrames, sDoorOpenAnimFrames), x, y);
+    {
+        const struct DoorAnimFrame *frames = gfx->size == 2 ? sBigDoorOpenAnimFrames : sDoorOpenAnimFrames;
+
+        DrawDoor(gfx, GetLastDoorFrame(frames, frames), x, y);
+    }
 }
 
 static s8 StartDoorOpenAnimation(const struct DoorGraphics *gfx, u32 x, u32 y)
@@ -491,6 +547,8 @@ static s8 StartDoorCloseAnimation(const struct DoorGraphics *gfx, u32 x, u32 y)
     gfx = GetDoorGraphics(gfx, MapGridGetMetatileIdAt(x, y));
     if (gfx == NULL)
         return -1;
+    else if (gfx->size == 2)
+        return StartDoorAnimationTask(gfx, sBigDoorCloseAnimFrames, x, y);
     else
         return StartDoorAnimationTask(gfx, sDoorCloseAnimFrames, x, y);
 }

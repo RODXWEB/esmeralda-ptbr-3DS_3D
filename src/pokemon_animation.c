@@ -1644,7 +1644,7 @@ static void VerticalShakeTwice(struct Sprite *sprite)
     u8 amplitude = 0;
 
     if (var5 != (u8)-2)
-        amplitude = (var6 - var7) * var5 / var6;
+        amplitude = (var6 - var7) * SAFE_DIV(var5, var6);
     else
         amplitude = 0;
 
@@ -4073,7 +4073,7 @@ static void VerticalShakeLowTwice(struct Sprite *sprite)
     var6 = sVerticalShakeData[sprite->data[5]][1];
     var7 = 0;
     if (sVerticalShakeData[sprite->data[5]][0] != (u8)-2)
-        var7 = (var6 - var9) * var5 / var6;
+        var7 = (var6 - var9) * SAFE_DIV(var5, var6);
     else
         var7 = 0;
 

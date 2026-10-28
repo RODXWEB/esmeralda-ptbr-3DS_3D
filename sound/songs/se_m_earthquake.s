@@ -13,7 +13,7 @@
 	.global	se_m_earthquake
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_earthquake_1:
 	.byte	KEYSH , se_m_earthquake_key+0
@@ -122,31 +122,31 @@ se_m_earthquake_1_008:
 	.byte	W02
 	.byte	PEND
 	.byte	PATT
-	 .word	se_m_earthquake_1_000
+	 .int	se_m_earthquake_1_000
 	.byte	PATT
-	 .word	se_m_earthquake_1_001
+	 .int	se_m_earthquake_1_001
 	.byte	PATT
-	 .word	se_m_earthquake_1_002
+	 .int	se_m_earthquake_1_002
 	.byte	PATT
-	 .word	se_m_earthquake_1_003
+	 .int	se_m_earthquake_1_003
 	.byte	PATT
-	 .word	se_m_earthquake_1_007
+	 .int	se_m_earthquake_1_007
 	.byte	PATT
-	 .word	se_m_earthquake_1_008
+	 .int	se_m_earthquake_1_008
 	.byte	PATT
-	 .word	se_m_earthquake_1_000
+	 .int	se_m_earthquake_1_000
 	.byte	PATT
-	 .word	se_m_earthquake_1_001
+	 .int	se_m_earthquake_1_001
 	.byte	PATT
-	 .word	se_m_earthquake_1_002
+	 .int	se_m_earthquake_1_002
 	.byte	PATT
-	 .word	se_m_earthquake_1_003
+	 .int	se_m_earthquake_1_003
 	.byte	PATT
-	 .word	se_m_earthquake_1_004
+	 .int	se_m_earthquake_1_004
 	.byte	PATT
-	 .word	se_m_earthquake_1_005
+	 .int	se_m_earthquake_1_005
 	.byte	PATT
-	 .word	se_m_earthquake_1_006
+	 .int	se_m_earthquake_1_006
 	.byte		VOL   , 106*se_m_earthquake_mvl/mxv
 	.byte		PAN   , c_v+0
 	.byte		N03   , Cn2 , v112
@@ -200,7 +200,7 @@ se_m_earthquake_1_008:
 	.byte	W03
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_earthquake_2:
 	.byte	KEYSH , se_m_earthquake_key+0
@@ -228,43 +228,43 @@ se_m_earthquake_2_000:
 	.byte		N06
 	.byte	W06
 	.byte	PATT
-	 .word	se_m_earthquake_2_000
+	 .int	se_m_earthquake_2_000
 	.byte		N06   , Bn1 , v080
 	.byte	W06
 	.byte		N06
 	.byte	W06
 	.byte	PATT
-	 .word	se_m_earthquake_2_000
+	 .int	se_m_earthquake_2_000
 	.byte		N06   , Bn1 , v080
 	.byte	W06
 	.byte		N06
 	.byte	W06
 	.byte	PATT
-	 .word	se_m_earthquake_2_000
+	 .int	se_m_earthquake_2_000
 	.byte		N06   , Bn1 , v080
 	.byte	W06
 	.byte		N06
 	.byte	W06
 	.byte	PATT
-	 .word	se_m_earthquake_2_000
+	 .int	se_m_earthquake_2_000
 	.byte		N06   , Bn1 , v080
 	.byte	W06
 	.byte		N06
 	.byte	W06
 	.byte	PATT
-	 .word	se_m_earthquake_2_000
+	 .int	se_m_earthquake_2_000
 	.byte		N06   , Bn1 , v080
 	.byte	W06
 	.byte		N06
 	.byte	W06
 	.byte	PATT
-	 .word	se_m_earthquake_2_000
+	 .int	se_m_earthquake_2_000
 	.byte		N06   , Bn1 , v080
 	.byte	W06
 	.byte		N06
 	.byte	W06
 	.byte	PATT
-	 .word	se_m_earthquake_2_000
+	 .int	se_m_earthquake_2_000
 	.byte		N06   , Bn1 , v080
 	.byte	W06
 	.byte		N06
@@ -309,18 +309,18 @@ se_m_earthquake_2_000:
 	.byte	W03
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_earthquake:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_earthquake_pri	@ Priority
-	.byte	se_m_earthquake_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_earthquake_pri	/* Priority*/
+	.byte	se_m_earthquake_rev	/* Reverb.*/
 
-	.word	se_m_earthquake_grp
+	.int	se_m_earthquake_grp
 
-	.word	se_m_earthquake_1
-	.word	se_m_earthquake_2
+	.int	se_m_earthquake_1
+	.int	se_m_earthquake_2
 
 	.end

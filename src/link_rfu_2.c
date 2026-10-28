@@ -17,6 +17,9 @@
 #include "text.h"
 #include "save.h"
 #include "mystery_gift_menu.h"
+#ifdef PLATFORM_3DS
+#include "local_link.h"
+#endif
 
 enum {
     RFUSTATE_INIT,
@@ -1072,11 +1075,53 @@ void Rfu_SetBerryBlenderLinkCallback(void)
         gRfu.callback = Rfu_BerryBlenderSendHeldKeys;
 }
 
+#ifdef PLATFORM_3DS
+// Where a host's link layer puts the data of the child in this slot (see
+// RfuMain2_Parent): a child's whole blocks are filed there too.
+u8 PlatformRfuPlayerIndexForSlot(u8 slot)
+{
+    return slot < RFU_CHILD_MAX ? gRfu.linkPlayerIdx[slot] : 0;
+}
+
+// Blocks that came whole over the emulated adapter (see Rfu_InitBlockSend): each
+// player's next one arrives as if it had come in frames, once the game has
+// dealt with their last (frames that came meanwhile would have been lost).
+static void TakeDirectBlocks(void)
+{
+    u8 i, count;
+    u16 size;
+
+    for (i = 0; i < MAX_RFU_PLAYERS; i++)
+    {
+        if (gRfu.recvBlock[i].receiving != RECV_STATE_READY)
+            continue;
+        size = PlatformLinkBlockTake(i, gBlockRecvBuffer[i], sizeof(gBlockRecvBuffer[i]));
+        if (size == 0)
+            continue;
+        count = (size + COMM_SLOT_LENGTH - 3) / (COMM_SLOT_LENGTH - 2);
+        if (count >= ARRAY_COUNT(sAllBlocksReceived))
+            count = ARRAY_COUNT(sAllBlocksReceived) - 1;
+        gRfu.recvBlock[i].count = count;
+        gRfu.recvBlock[i].next = count - 1;
+        gRfu.recvBlock[i].owner = i;
+        gRfu.recvBlock[i].receivedFlags = sAllBlocksReceived[count];
+        gRfu.recvBlock[i].receiving = RECV_STATE_FINISHED;
+        gRfu.blockReceived[i] = FALSE;
+        Rfu_SetBlockReceivedFlag(i);
+        if (GetHostRfuGameData()->activity == (ACTIVITY_CHAT | IN_UNION_ROOM) && gReceivedRemoteLinkPlayers && gRfu.parentChild == MODE_CHILD)
+            ValidateAndReceivePokemonSioInfo(gBlockRecvBuffer);
+    }
+}
+#endif
+
 static void RfuHandleReceiveCommand(u8 unused)
 {
     u16 i;
     u16 j;
 
+#ifdef PLATFORM_3DS
+    TakeDirectBlocks();
+#endif
     for (i = 0; i < MAX_RFU_PLAYERS; i++)
     {
         switch (gRecvCmds[i][0] & RFUCMD_MASK)
@@ -1298,6 +1343,18 @@ bool32 Rfu_InitBlockSend(const u8 *src, size_t size)
         sRfuDebug.blockSendTime++;
         return FALSE;
     }
+#ifdef PLATFORM_3DS
+    if (PlatformLocalLinkActive())
+    {
+        // The block goes whole (3ds_port/src/3ds_rfu_adapter.c) instead of 12
+        // bytes a frame with a child waiting for the host to echo it, which
+        // costs a round trip or two over local wireless. It's sent at once.
+        if (size > BLOCK_BUFFER_SIZE)
+            size = BLOCK_BUFFER_SIZE;
+        PlatformLinkBlockSend(src, size);
+        return TRUE;
+    }
+#endif
     r4 = (size % 12) != 0;
     gRfu.sendBlock.owner = GetMultiplayerId();
     gRfu.sendBlock.sending = TRUE;
@@ -1988,7 +2045,12 @@ static void RfuCheckErrorStatus(void)
 {
     if (gRfu.errorState == RFU_ERROR_STATE_OCCURRED && lman.childClockSlave_flag == 0)
     {
+#ifdef PLATFORM_3DS
+        // No Mystery Gift screen on the 3DS (3ds_port/full.mk leaves it out).
+        if (lman.init_param->mboot_flag)
+#else
         if (gMain.callback2 == CB2_MysteryGiftEReader || lman.init_param->mboot_flag)
+#endif
             gWirelessCommType = 2;
         SetMainCallback2(CB2_LinkError);
         gMain.savedCallback = CB2_LinkError;

@@ -219,7 +219,7 @@ static void Task_ExitCaveTransition2(u8 taskId)
     LZ77UnCompVram(sCaveTransitionTiles, (void *)(VRAM + 0xC000));
     LZ77UnCompVram(sCaveTransitionTilemap, (void *)(VRAM + 0xF800));
     LoadPalette(sCaveTransitionPalette_White, BG_PLTT_ID(14), PLTT_SIZE_4BPP);
-    LoadPalette(&sCaveTransitionPalette_Enter[8], BG_PLTT_ID(14), PLTT_SIZEOF(8));
+    LoadPaletteWithOffset(sCaveTransitionPalette_Enter, PLTT_SIZEOF(8), BG_PLTT_ID(14), PLTT_SIZEOF(8));
     SetGpuReg(REG_OFFSET_BLDCNT, BLDCNT_TGT1_BG0
                                 | BLDCNT_EFFECT_BLEND
                                 | BLDCNT_TGT2_BG1
@@ -270,7 +270,7 @@ static void Task_ExitCaveTransition4(u8 taskId)
     if (count < 8)
     {
         gTasks[taskId].data[2]++;
-        LoadPalette(&sCaveTransitionPalette_Enter[8 + count], BG_PLTT_ID(14), PLTT_SIZEOF(8) - PLTT_SIZEOF(count));
+        LoadPaletteWithOffset(sCaveTransitionPalette_Enter, PLTT_SIZEOF(8 + count), BG_PLTT_ID(14), PLTT_SIZEOF(8) - PLTT_SIZEOF(count));
     }
     else
     {
@@ -331,7 +331,7 @@ static void Task_EnterCaveTransition3(u8 taskId)
     {
         gTasks[taskId].data[2]++;
         gTasks[taskId].data[2]++;
-        LoadPalette(&sCaveTransitionPalette_Enter[15 - count], BG_PLTT_ID(14), PLTT_SIZEOF(count + 1));
+        LoadPaletteWithOffset(sCaveTransitionPalette_Enter, PLTT_SIZEOF(15 - count), BG_PLTT_ID(14), PLTT_SIZEOF(count + 1));
     }
     else
     {

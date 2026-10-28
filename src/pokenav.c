@@ -588,3 +588,24 @@ bool32 CanViewRibbonsMenu(void)
 {
     return gPokenavResources->hasAnyRibbons;
 }
+
+#ifdef PLATFORM_3DS
+// The 3DS bottom screen shows the PokéNav while it runs.
+bool8 CtrPokenav_IsOpen(void)
+{
+    return gMain.callback2 == CB2_Pokenav && gPokenavResources != NULL;
+}
+
+// The screen on show (POKENAV_MAIN_MENU...), and whether it waits for input:
+// Task_Pokenav reads the menu's input callback, nothing is animating or fading.
+u32 CtrPokenav_Screen(bool8 *ready)
+{
+    u8 taskId = FindTaskIdByFunc(Task_Pokenav);
+
+    *ready = FALSE;
+    if (gPokenavResources == NULL || taskId == TASK_NONE)
+        return 0;
+    *ready = gTasks[taskId].data[0] == 3 && !gPaletteFade.active;
+    return gPokenavResources->currentMenuIndex + POKENAV_MENU_IDS_START;
+}
+#endif

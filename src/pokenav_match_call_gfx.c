@@ -10,6 +10,9 @@
 #include "overworld.h"
 #include "palette.h"
 #include "pokenav.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "region_map.h"
 #include "sound.h"
 #include "sprite.h"
@@ -913,7 +916,15 @@ static void Task_FlashPokeballIcons(u8 taskId)
         tSinIdx += 4;
         tSinIdx &= 0x7F;
         tSinVal = gSineTable[tSinIdx] >> 4;
+#ifdef PORT_BRIDGE
+        {
+            // sPokeball_Pal is a stub: its second palette is in the loaded data.
+            const u16 *pal = Port_ResolveAssetPointer(sPokeball_Pal);
+            PokenavCopyPalette(pal, &pal[0x10], 0x10, 0x10, tSinVal, &gPlttBufferUnfaded[BG_PLTT_ID(5)]);
+        }
+#else
         PokenavCopyPalette(sPokeball_Pal, &sPokeball_Pal[0x10], 0x10, 0x10, tSinVal, &gPlttBufferUnfaded[BG_PLTT_ID(5)]);
+#endif
         if (!gPaletteFade.active)
             CpuCopy32(&gPlttBufferUnfaded[BG_PLTT_ID(5)], &gPlttBufferFaded[BG_PLTT_ID(5)], PLTT_SIZE_4BPP);
     }
@@ -1022,7 +1033,7 @@ static void PrintMatchCallLocation(struct Pokenav_MatchCallGfx *gfx, int delta)
     u8 mapName[32];
     int x;
     int index = PokenavList_GetSelectedIndex() + delta;
-    mapsec_s32_t mapSec = GetMatchCallMapSec(index);
+    int mapSec = GetMatchCallMapSec(index);
     if (mapSec != MAPSEC_NONE)
         GetMapName(mapName, mapSec, 0);
     else

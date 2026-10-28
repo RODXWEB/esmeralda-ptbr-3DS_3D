@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "money.h"
 #include "graphics.h"
 #include "event_data.h"
@@ -71,6 +74,13 @@ static const struct CompressedSpritePalette sSpritePalette_MoneyLabel =
 
 u32 GetMoney(u32 *moneyPtr)
 {
+#ifdef PLATFORM_3DS
+    // Infinite money (OPTIONS, CHEATS): the player's money is back at the most
+    // whenever it is read; what was spent is gone only until then.
+    if (moneyPtr == &gSaveBlock1Ptr->money && CtrExtras_Get("infinite_money")
+     && (*moneyPtr ^ gSaveBlock2Ptr->encryptionKey) != MAX_MONEY)
+        *moneyPtr = MAX_MONEY ^ gSaveBlock2Ptr->encryptionKey;
+#endif
     return *moneyPtr ^ gSaveBlock2Ptr->encryptionKey;
 }
 

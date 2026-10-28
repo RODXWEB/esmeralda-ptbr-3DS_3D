@@ -12,6 +12,9 @@
 #include "menu.h"
 #include "dynamic_placeholder_text_util.h"
 #include "fonts.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 static u16 RenderText(struct TextPrinter *);
 static u32 RenderFont(struct TextPrinter *);
@@ -34,6 +37,9 @@ static u32 GetGlyphWidth_Normal(u16, bool32);
 static u32 GetGlyphWidth_Short(u16, bool32);
 static u32 GetGlyphWidth_Narrow(u16, bool32);
 static u32 GetGlyphWidth_SmallNarrow(u16, bool32);
+#ifdef PORT_BRIDGE
+static const u8 *ResolveTextString(const u8 *str);
+#endif
 
 static EWRAM_DATA struct TextPrinter sTempTextPrinter = {0};
 static EWRAM_DATA struct TextPrinter sTextPrinters[WINDOWS_MAX] = {0};
@@ -286,6 +292,9 @@ bool16 AddTextPrinter(struct TextPrinterTemplate *printerTemplate, u8 speed, voi
         sTempTextPrinter.subStructFields[i] = 0;
 
     sTempTextPrinter.printerTemplate = *printerTemplate;
+#ifdef PORT_BRIDGE
+    sTempTextPrinter.printerTemplate.currentChar = ResolveTextString(printerTemplate->currentChar);
+#endif
     sTempTextPrinter.callback = callback;
     sTempTextPrinter.minLetterSpacing = 0;
     sTempTextPrinter.japanese = 0;
@@ -509,6 +518,7 @@ void GenerateFontHalfRowLookupTable(u8 fgColor, u8 bgColor, u8 shadowColor)
     *(current++) = (bg12) | temp;
     *(current++) = (fg12) | temp;
     *(current++) = (shadow12) | temp;
+
 }
 
 void SaveTextColors(u8 *fgColor, u8 *bgColor, u8 *shadowColor)
@@ -523,11 +533,28 @@ void RestoreTextColors(u8 *fgColor, u8 *bgColor, u8 *shadowColor)
     GenerateFontHalfRowLookupTable(*fgColor, *bgColor, *shadowColor);
 }
 
+#ifdef PORT_BRIDGE
+static const u16 *ResolveFontAssetBase(const u16 *glyphs)
+{
+    const void *resolved = Port_ResolveFontPointer(glyphs);
+
+    if (resolved == glyphs)
+        resolved = Port_ResolveAssetPointer(glyphs);
+
+    return resolved;
+}
+
+static const u8 *ResolveTextString(const u8 *str)
+{
+    return Port_ResolveTextPointer(str);
+}
+#endif
+
 void DecompressGlyphTile(const void *src_, void *dest_)
 {
-    u32 temp;
     const u16 *src = src_;
     u32 *dest = dest_;
+    u32 temp;
 
     temp = *(src++);
     *(dest)++ = ((sFontHalfRowLookupTable[sFontHalfRowOffsets[temp & 0xFF]]) << 16) | (sFontHalfRowLookupTable[sFontHalfRowOffsets[temp >> 8]]);
@@ -862,6 +889,20 @@ bool8 TextPrinterWaitAutoMode(struct TextPrinter *textPrinter)
     }
 }
 
+#ifdef PLATFORM_3DS
+// menu.c: a tap on a game screen shown on the 3DS bottom screen (the bag),
+// which goes on with a message as A or B would.
+bool8 CtrMenu_TakeAck(void);
+#define TEXT_AB_NEW() (JOY_NEW(A_BUTTON | B_BUTTON) || CtrMenu_TakeAck())
+// A tap that sped a message up keeps it going fast, as A held would, until
+// the message waits.
+static bool8 sCtrTextHurry;
+#define TEXT_AB_HELD() (JOY_HELD(A_BUTTON | B_BUTTON) || sCtrTextHurry)
+#else
+#define TEXT_AB_NEW() JOY_NEW(A_BUTTON | B_BUTTON)
+#define TEXT_AB_HELD() JOY_HELD(A_BUTTON | B_BUTTON)
+#endif
+
 bool16 TextPrinterWaitWithDownArrow(struct TextPrinter *textPrinter)
 {
     bool8 result = FALSE;
@@ -872,7 +913,10 @@ bool16 TextPrinterWaitWithDownArrow(struct TextPrinter *textPrinter)
     else
     {
         TextPrinterDrawDownArrow(textPrinter);
-        if (JOY_NEW(A_BUTTON | B_BUTTON))
+#ifdef PLATFORM_3DS
+        sCtrTextHurry = FALSE;
+#endif
+        if (TEXT_AB_NEW())
         {
             result = TRUE;
             PlaySE(SE_SELECT);
@@ -890,7 +934,10 @@ bool16 TextPrinterWait(struct TextPrinter *textPrinter)
     }
     else
     {
-        if (JOY_NEW(A_BUTTON | B_BUTTON))
+#ifdef PLATFORM_3DS
+        sCtrTextHurry = FALSE;
+#endif
+        if (TEXT_AB_NEW())
         {
             result = TRUE;
             PlaySE(SE_SELECT);
@@ -941,14 +988,17 @@ static u16 RenderText(struct TextPrinter *textPrinter)
     switch (textPrinter->state)
     {
     case RENDER_STATE_HANDLE_CHAR:
-        if (JOY_HELD(A_BUTTON | B_BUTTON) && subStruct->hasPrintBeenSpedUp)
+        if (TEXT_AB_HELD() && subStruct->hasPrintBeenSpedUp)
             textPrinter->delayCounter = 0;
 
         if (textPrinter->delayCounter && textPrinter->textSpeed)
         {
             textPrinter->delayCounter--;
-            if (gTextFlags.canABSpeedUpPrint && (JOY_NEW(A_BUTTON | B_BUTTON)))
+            if (gTextFlags.canABSpeedUpPrint && TEXT_AB_NEW())
             {
+#ifdef PLATFORM_3DS
+                sCtrTextHurry = !JOY_NEW(A_BUTTON | B_BUTTON);
+#endif
                 subStruct->hasPrintBeenSpedUp = TRUE;
                 textPrinter->delayCounter = 0;
             }
@@ -1239,7 +1289,11 @@ static u32 UNUSED GetStringWidthFixedWidthFont(const u8 *str, u8 fontId, u8 lett
 
     width = 0;
     line = 0;
+#ifdef PORT_BRIDGE
+    strLocal = ResolveTextString(str);
+#else
     strLocal = str;
+#endif
     strPos = 0;
 
     do
@@ -1352,6 +1406,10 @@ s32 GetStringWidth(u8 fontId, const u8 *str, s16 letterSpacing)
     lineWidth = 0;
     bufferPointer = 0;
 
+#ifdef PORT_BRIDGE
+    str = ResolveTextString(str);
+#endif
+
     while (*str != EOS)
     {
         switch (*str)
@@ -1379,6 +1437,9 @@ s32 GetStringWidth(u8 fontId, const u8 *str, s16 letterSpacing)
         case CHAR_DYNAMIC:
             if (bufferPointer == NULL)
                 bufferPointer = DynamicPlaceholderTextUtil_GetPlaceholderPtr(*++str);
+#ifdef PORT_BRIDGE
+            bufferPointer = ResolveTextString(bufferPointer);
+#endif
             while (*bufferPointer != EOS)
             {
                 glyphWidth = func(*bufferPointer++, isJapanese);
@@ -1515,7 +1576,11 @@ u8 RenderTextHandleBold(u8 *pixels, u8 fontId, u8 *str)
     shadowColor = TEXT_COLOR_LIGHT_GRAY;
 
     GenerateFontHalfRowLookupTable(TEXT_COLOR_WHITE, TEXT_COLOR_TRANSPARENT, TEXT_COLOR_LIGHT_GRAY);
+#ifdef PORT_BRIDGE
+    strLocal = (u8 *)ResolveTextString(str);
+#else
     strLocal = str;
+#endif
     strPos = 0;
 
     do
@@ -1610,7 +1675,7 @@ u8 DrawKeypadIcon(u8 windowId, u8 keypadIconId, u16 x, u16 y)
 {
     BlitBitmapRectToWindow(
         windowId,
-        sKeypadIconTiles + (sKeypadIcons[keypadIconId].tileOffset * 0x20),
+        ResolveBitmapSource(sKeypadIconTiles, sKeypadIcons[keypadIconId].tileOffset * 0x20),
         0,
         0,
         0x80,
@@ -1686,7 +1751,12 @@ static void DecompressGlyph_Small(u16 glyphId, bool32 isJapanese)
 
     if (isJapanese == 1)
     {
-        glyphs = gFontSmallJapaneseGlyphs + (0x100 * (glyphId >> 0x4)) + (0x8 * (glyphId & 0xF));
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontSmallJapaneseGlyphs);
+#else
+        glyphs = gFontSmallJapaneseGlyphs;
+#endif
+        glyphs += (0x100 * (glyphId >> 0x4)) + (0x8 * (glyphId & 0xF));
         DecompressGlyphTile(glyphs, gCurGlyph.gfxBufferTop);
         DecompressGlyphTile(glyphs + 0x80, gCurGlyph.gfxBufferBottom);
         gCurGlyph.width = 8;
@@ -1694,7 +1764,12 @@ static void DecompressGlyph_Small(u16 glyphId, bool32 isJapanese)
     }
     else
     {
-        glyphs = gFontSmallLatinGlyphs + (0x20 * glyphId);
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontSmallLatinGlyphs);
+#else
+        glyphs = gFontSmallLatinGlyphs;
+#endif
+        glyphs += (0x20 * glyphId);
         gCurGlyph.width = gFontSmallLatinGlyphWidths[glyphId];
 
         if (gCurGlyph.width <= 8)
@@ -1728,7 +1803,12 @@ static void DecompressGlyph_Narrow(u16 glyphId, bool32 isJapanese)
 
     if (isJapanese == TRUE)
     {
-        glyphs = gFontNormalJapaneseGlyphs + (0x100 * (glyphId >> 0x4)) + (0x8 * (glyphId % 0x10));
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontNormalJapaneseGlyphs);
+#else
+        glyphs = gFontNormalJapaneseGlyphs;
+#endif
+        glyphs += (0x100 * (glyphId >> 0x4)) + (0x8 * (glyphId % 0x10));
         DecompressGlyphTile(glyphs, gCurGlyph.gfxBufferTop);
         DecompressGlyphTile(glyphs + 0x80, gCurGlyph.gfxBufferBottom);
         gCurGlyph.width = 8;
@@ -1736,7 +1816,12 @@ static void DecompressGlyph_Narrow(u16 glyphId, bool32 isJapanese)
     }
     else
     {
-        glyphs = gFontNarrowLatinGlyphs + (0x20 * glyphId);
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontNarrowLatinGlyphs);
+#else
+        glyphs = gFontNarrowLatinGlyphs;
+#endif
+        glyphs += (0x20 * glyphId);
         gCurGlyph.width = gFontNarrowLatinGlyphWidths[glyphId];
 
         if (gCurGlyph.width <= 8)
@@ -1770,7 +1855,12 @@ static void DecompressGlyph_SmallNarrow(u16 glyphId, bool32 isJapanese)
 
     if (isJapanese == TRUE)
     {
-        glyphs = gFontSmallJapaneseGlyphs + (0x100 * (glyphId >> 0x4)) + (0x8 * (glyphId & 0xF));
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontSmallJapaneseGlyphs);
+#else
+        glyphs = gFontSmallJapaneseGlyphs;
+#endif
+        glyphs += (0x100 * (glyphId >> 0x4)) + (0x8 * (glyphId & 0xF));
         DecompressGlyphTile(glyphs, gCurGlyph.gfxBufferTop);
         DecompressGlyphTile(glyphs + 0x80, gCurGlyph.gfxBufferBottom);
         gCurGlyph.width = 8;
@@ -1778,7 +1868,12 @@ static void DecompressGlyph_SmallNarrow(u16 glyphId, bool32 isJapanese)
     }
     else
     {
-        glyphs = gFontSmallNarrowLatinGlyphs + (0x20 * glyphId);
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontSmallNarrowLatinGlyphs);
+#else
+        glyphs = gFontSmallNarrowLatinGlyphs;
+#endif
+        glyphs += (0x20 * glyphId);
         gCurGlyph.width = gFontSmallNarrowLatinGlyphWidths[glyphId];
 
         if (gCurGlyph.width <= 8)
@@ -1812,7 +1907,12 @@ static void DecompressGlyph_Short(u16 glyphId, bool32 isJapanese)
 
     if (isJapanese == TRUE)
     {
-        glyphs = gFontShortJapaneseGlyphs + (0x100 * (glyphId >> 0x3)) + (0x10 * (glyphId & 0x7));
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontShortJapaneseGlyphs);
+#else
+        glyphs = gFontShortJapaneseGlyphs;
+#endif
+        glyphs += (0x100 * (glyphId >> 0x3)) + (0x10 * (glyphId & 0x7));
         DecompressGlyphTile(glyphs, gCurGlyph.gfxBufferTop);
         DecompressGlyphTile(glyphs + 0x8, gCurGlyph.gfxBufferTop + 8);
         DecompressGlyphTile(glyphs + 0x80, gCurGlyph.gfxBufferBottom);    // gCurGlyph + 0x20
@@ -1822,7 +1922,12 @@ static void DecompressGlyph_Short(u16 glyphId, bool32 isJapanese)
     }
     else
     {
-        glyphs = gFontShortLatinGlyphs + (0x20 * glyphId);
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontShortLatinGlyphs);
+#else
+        glyphs = gFontShortLatinGlyphs;
+#endif
+        glyphs += (0x20 * glyphId);
         gCurGlyph.width = gFontShortLatinGlyphWidths[glyphId];
 
         if (gCurGlyph.width <= 8)
@@ -1856,7 +1961,12 @@ static void DecompressGlyph_Normal(u16 glyphId, bool32 isJapanese)
 
     if (isJapanese == TRUE)
     {
-        glyphs = gFontNormalJapaneseGlyphs + (0x100 * (glyphId >> 0x4)) + (0x8 * (glyphId % 0x10));
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontNormalJapaneseGlyphs);
+#else
+        glyphs = gFontNormalJapaneseGlyphs;
+#endif
+        glyphs += (0x100 * (glyphId >> 0x4)) + (0x8 * (glyphId % 0x10));
         DecompressGlyphTile(glyphs, gCurGlyph.gfxBufferTop);
         DecompressGlyphTile(glyphs + 0x80, gCurGlyph.gfxBufferBottom);
         gCurGlyph.width = 8;
@@ -1864,7 +1974,12 @@ static void DecompressGlyph_Normal(u16 glyphId, bool32 isJapanese)
     }
     else
     {
-        glyphs = gFontNormalLatinGlyphs + (0x20 * glyphId);
+#ifdef PORT_BRIDGE
+        glyphs = ResolveFontAssetBase(gFontNormalLatinGlyphs);
+#else
+        glyphs = gFontNormalLatinGlyphs;
+#endif
+        glyphs += (0x20 * glyphId);
         gCurGlyph.width = gFontNormalLatinGlyphWidths[glyphId];
 
         if (gCurGlyph.width <= 8)
@@ -1896,7 +2011,12 @@ static void DecompressGlyph_Bold(u16 glyphId)
 {
     const u16 *glyphs;
 
-    glyphs = sFontBoldJapaneseGlyphs + (0x100 * (glyphId >> 4)) + (0x8 * (glyphId & 0xF));
+#ifdef PORT_BRIDGE
+    glyphs = ResolveFontAssetBase(sFontBoldJapaneseGlyphs);
+#else
+    glyphs = sFontBoldJapaneseGlyphs;
+#endif
+    glyphs += (0x100 * (glyphId >> 4)) + (0x8 * (glyphId & 0xF));
     DecompressGlyphTile(glyphs, gCurGlyph.gfxBufferTop);
     DecompressGlyphTile(glyphs + 0x80, gCurGlyph.gfxBufferBottom);
     gCurGlyph.width = 8;

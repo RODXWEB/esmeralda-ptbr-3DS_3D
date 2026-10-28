@@ -12,7 +12,6 @@
 #include "battle_util2.h"
 #include "battle_bg.h"
 #include "pokeball.h"
-#include "main.h"
 
 #define GET_BATTLER_SIDE(battler)         (GetBattlerPosition(battler) & BIT_SIDE)
 #define GET_BATTLER_SIDE2(battler)        (gBattlerPositions[battler] & BIT_SIDE)
@@ -431,7 +430,7 @@ struct BattleStruct
     u8 wishPerishSongState;
     u8 wishPerishSongBattlerId;
     bool8 overworldWeatherDone;
-    u8 atkCancelerTracker;
+    u8 atkCancellerTracker;
     struct BattleTvMovePoints tvMovePoints;
     struct BattleTv tv;
     u8 unused_7[0x28];
@@ -463,6 +462,24 @@ STATIC_ASSERT(sizeof(((struct BattleStruct *)0)->palaceFlags) * 8 >= MAX_BATTLER
 
 #define IS_TYPE_PHYSICAL(moveType) (moveType < TYPE_MYSTERY)
 #define IS_TYPE_SPECIAL(moveType) (moveType > TYPE_MYSTERY)
+
+// Whether a move hits with Attack/Defense or Sp. Atk/Sp. Def. On the GBA it
+// depends on the move's type; with ENHANCEMENTS' PHYS/SPEC SPLIT on, the 3DS
+// port uses each move's own category, as Generation IV and later do
+// (pokemon.c, MoveSplitEnabled; src/data/move_categories.h).
+#ifdef PLATFORM_3DS
+extern const u8 gMoveCategories[];
+bool8 MoveSplitEnabled(void);
+// The category icons, 32x16 frames by MOVE_CATEGORY_* (pokemon_summary_screen.c).
+const u8 *GetMoveCategoryIconGfx(const u16 **palette);
+#define IS_MOVE_PHYSICAL(move, moveType) \
+    (MoveSplitEnabled() ? gMoveCategories[move] == MOVE_CATEGORY_PHYSICAL : IS_TYPE_PHYSICAL(moveType))
+#define IS_MOVE_SPECIAL(move, moveType) \
+    (MoveSplitEnabled() ? gMoveCategories[move] == MOVE_CATEGORY_SPECIAL : IS_TYPE_SPECIAL(moveType))
+#else
+#define IS_MOVE_PHYSICAL(move, moveType) IS_TYPE_PHYSICAL(moveType)
+#define IS_MOVE_SPECIAL(move, moveType) IS_TYPE_SPECIAL(moveType)
+#endif
 
 #define TARGET_TURN_DAMAGED ((gSpecialStatuses[gBattlerTarget].physicalDmg != 0 || gSpecialStatuses[gBattlerTarget].specialDmg != 0))
 
@@ -717,7 +734,7 @@ extern u16 gBattleMovePower;
 extern u16 gMoveToLearn;
 extern u8 gBattleMonForms[MAX_BATTLERS_COUNT];
 
-extern MainCallback gPreBattleCallback1;
+extern void (*gPreBattleCallback1)(void);
 extern void (*gBattleMainFunc)(void);
 extern struct BattleResults gBattleResults;
 extern u8 gLeveledUpInBattle;

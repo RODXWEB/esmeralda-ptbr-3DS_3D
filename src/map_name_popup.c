@@ -228,6 +228,47 @@ enum {
 #define tIncomingPopUp data[3]
 #define tPrintTimer    data[4]
 
+#ifdef PLATFORM_3DS
+// The pop up slides by scrolling BG0, whose map is 256 pixels tall. On the GBA
+// the 96 rows below the screen hide the window as it scrolls off the top; the
+// 3DS screen is 240 tall, so past 16 pixels the window wraps round into the
+// bottom of the screen. While it slides, the tile rows of the window (frame
+// included) that have wrapped that far are blanked, and put back as it slides
+// in again.
+#define POPUP_TILE_ROWS 5  // window rows 1-3 and the frame above and below
+#define POPUP_TILE_COLS 12 // window columns 1-10 and the frame on each side
+#define BG_MAP_WIDTH    32
+
+static EWRAM_DATA u16 sPopUpTilemap[POPUP_TILE_ROWS][POPUP_TILE_COLS] = {0};
+
+static void SavePopUpTilemap(void)
+{
+    u16 *map = GetBgTilemapBuffer(0);
+    s32 row, col;
+
+    for (row = 0; row < POPUP_TILE_ROWS; row++)
+        for (col = 0; col < POPUP_TILE_COLS; col++)
+            sPopUpTilemap[row][col] = map[row * BG_MAP_WIDTH + col];
+}
+
+static void ClipPopUpTilemap(s16 yOffset)
+{
+    u16 *map = GetBgTilemapBuffer(0);
+    s32 row, col;
+
+    if (GetMapNamePopUpWindowId() == WINDOW_NONE)
+        return;
+    for (row = 0; row < POPUP_TILE_ROWS; row++)
+    {
+        bool32 wrapped = row * TILE_HEIGHT < yOffset - (256 - DISPLAY_HEIGHT);
+
+        for (col = 0; col < POPUP_TILE_COLS; col++)
+            map[row * BG_MAP_WIDTH + col] = wrapped ? 0 : sPopUpTilemap[row][col];
+    }
+    CopyBgTilemapBufferToVram(0);
+}
+#endif
+
 void ShowMapNamePopup(void)
 {
     if (FlagGet(FLAG_HIDE_MAP_NAME_POPUP) != TRUE)
@@ -264,11 +305,18 @@ static void Task_MapNamePopUpWindow(u8 taskId)
             task->tState = STATE_SLIDE_IN;
             task->tPrintTimer = 0;
             ShowMapNamePopUpWindow();
+        #ifdef PLATFORM_3DS
+            SavePopUpTilemap();
+            ClipPopUpTilemap(task->tYOffset);
+        #endif
         }
         break;
     case STATE_SLIDE_IN:
         // Slide the window onscreen.
         task->tYOffset -= POPUP_SLIDE_SPEED;
+    #ifdef PLATFORM_3DS
+        ClipPopUpTilemap(task->tYOffset);
+    #endif
         if (task->tYOffset <= 0 )
         {
             task->tYOffset = 0;
@@ -287,6 +335,9 @@ static void Task_MapNamePopUpWindow(u8 taskId)
     case STATE_SLIDE_OUT:
         // Slide the window offscreen.
         task->tYOffset += POPUP_SLIDE_SPEED;
+    #ifdef PLATFORM_3DS
+        ClipPopUpTilemap(task->tYOffset);
+    #endif
         if (task->tYOffset >= POPUP_OFFSCREEN_Y)
         {
             task->tYOffset = POPUP_OFFSCREEN_Y;
@@ -404,7 +455,7 @@ static void LoadMapNamePopUpWindowBg(void)
 {
     u8 popUpThemeId;
     u8 popupWindowId = GetMapNamePopUpWindowId();
-    mapsec_u16_t regionMapSectionId = gMapHeader.regionMapSectionId;
+    u16 regionMapSectionId = gMapHeader.regionMapSectionId;
 
     if (regionMapSectionId >= KANTO_MAPSEC_START)
     {
@@ -415,7 +466,13 @@ static void LoadMapNamePopUpWindowBg(void)
     }
     popUpThemeId = sMapSectionToThemeId[regionMapSectionId];
 
+#ifdef PORT_BRIDGE
+    // 0x400 runs past the outline (960 bytes) into the next one; the asset
+    // lookup refuses that for the last theme, which then loaded nothing.
+    LoadBgTiles(GetWindowAttribute(popupWindowId, WINDOW_BG), sMapPopUp_OutlineTable[popUpThemeId], sizeof(sMapPopUp_OutlineTable[0]), 0x21D);
+#else
     LoadBgTiles(GetWindowAttribute(popupWindowId, WINDOW_BG), sMapPopUp_OutlineTable[popUpThemeId], 0x400, 0x21D);
+#endif
     CallWindowFunction(popupWindowId, DrawMapNamePopUpFrame);
     PutWindowTilemap(popupWindowId);
     if (gMapHeader.weather == WEATHER_UNDERWATER_BUBBLES)

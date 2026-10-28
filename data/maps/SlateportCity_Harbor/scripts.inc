@@ -105,7 +105,7 @@ SlateportCity_Harbor_Movement_AquaBoardSub:
 	set_invisible
 	step_end
 
-@ Unused, Archie instead shares above identical movement script with Grunt
+/* Unused, Archie instead shares above identical movement script with Grunt*/
 SlateportCity_Harbor_Movement_ArchieBoardSub:
 	delay_16
 	delay_16
@@ -187,7 +187,7 @@ SlateportCity_Harbor_EventScript_ChooseDestinationWithBattleFrontier::
 	case MULTI_B_PRESSED, SlateportCity_Harbor_EventScript_CancelDestinationSelect
 	end
 
-@ Unused. Should be impossible for player to reach Ferry without having received SS Tidal ticket
+/* Unused. Should be impossible for player to reach Ferry without having received SS Tidal ticket*/
 SlateportCity_Harbor_EventScript_NoTicket::
 	msgbox SlateportCity_Harbor_Text_YouMustHaveTicket, MSGBOX_DEFAULT
 	release
@@ -228,7 +228,7 @@ SlateportCity_Harbor_EventScript_BoardFerry::
 	call_if_eq VAR_FACING, DIR_NORTH, SlateportCity_Harbor_EventScript_BoardFerryNorth
 	call_if_eq VAR_FACING, DIR_EAST, SlateportCity_Harbor_EventScript_BoardFerryEast
 	delay 30
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	setvar VAR_0x8004, LOCALID_SLATEPORT_HARBOR_SS_TIDAL
 	call Common_EventScript_FerryDepart
 	return
@@ -264,7 +264,7 @@ SlateportCity_Harbor_EventScript_Sailor::
 	setvar VAR_0x8004, 0
 	call_if_set FLAG_DEFEATED_KYOGRE, SlateportCity_Harbor_EventScript_CountDefeatedLegendary
 	call_if_set FLAG_DEFEATED_GROUDON, SlateportCity_Harbor_EventScript_CountDefeatedLegendary
-	goto_if_eq VAR_0x8004, 2, SlateportCity_Harbor_EventScript_SailorNoAbnormalWeather  @ Defeated both
+	goto_if_eq VAR_0x8004, 2, SlateportCity_Harbor_EventScript_SailorNoAbnormalWeather  /* Defeated both*/
 	msgbox SlateportCity_Harbor_Text_AbnormalWeather, MSGBOX_DEFAULT
 	release
 	end

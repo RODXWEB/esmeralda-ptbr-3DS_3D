@@ -42,6 +42,9 @@
 #include "constants/moves.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 // This file's functions.
 static void LoadContestPalettes(void);
@@ -4025,6 +4028,9 @@ static void Task_FlashJudgeAttentionEye(u8 taskId)
              || gTasks[taskId].data[offset + 0] == 0)
                 gTasks[taskId].data[offset + 1] ^= 1;
 
+#ifdef PORTABLE
+            if (gContestResources != NULL)
+#endif
             BlendPalette(BG_PLTT_ID(5 + eContest.prevTurnOrder[i]) + 6, 2, gTasks[taskId].data[offset + 0], RGB(31, 31, 18));
         }
     }
@@ -4728,15 +4734,27 @@ static void DoJudgeSpeechBubble(u8 symbolId)
 static void UpdateApplauseMeter(void)
 {
     s32 i;
+#ifdef PORT_BRIDGE
+    // The meter's tiles are an INCBIN stub here: offsets into the stub are not
+    // the file's, so the file (0x80 bytes) is resolved first.
+    const u8 *meterGfx = Port_ResolveAssetPointerSized(gContestApplauseMeterGfx, 0x80);
+#endif
 
     for (i = 0; i < APPLAUSE_METER_SIZE; i++)
     {
         const u8 *src;
 
+#ifdef PORT_BRIDGE
+        if (i < eContest.applauseLevel)
+            src = &meterGfx[64];
+        else
+            src = meterGfx;
+#else
         if (i < eContest.applauseLevel)
             src = &gContestApplauseMeterGfx[64];
         else
             src = gContestApplauseMeterGfx;
+#endif
         CpuCopy32(src, (void *)(OBJ_VRAM0 + (gSprites[eContest.applauseMeterSpriteId].oam.tileNum + 17 + i) * 32), 32);
         CpuCopy32(src + 32, (void *)(OBJ_VRAM0 + (gSprites[eContest.applauseMeterSpriteId].oam.tileNum + 25 + i) * 32), 32);
 
@@ -5033,7 +5051,12 @@ static const u8 *GetTurnOrderNumberGfx(u8 contestant)
     if (eContestantStatus[contestant].turnOrderMod != 1)
         return gContestNextTurnRandomGfx;
     else
+#ifdef PORT_BRIDGE
+        // An offset into the INCBIN stub is not one into the file (4 tiles, 0x80 bytes).
+        return (const u8 *)Port_ResolveAssetPointerSized(gContestNextTurnNumbersGfx, 0x80) + eContestantStatus[contestant].nextTurnOrder * 32;
+#else
         return gContestNextTurnNumbersGfx + eContestantStatus[contestant].nextTurnOrder * 32;
+#endif
 }
 
 static void DrawUnnervedSymbols(void)

@@ -36,5 +36,13 @@ void FishingWildEncounter(u8 rod);
 u16 GetLocalWildMon(bool8 *isWaterMon);
 u16 GetLocalWaterMon(void);
 bool8 UpdateRepelCounter(void);
+#ifdef PLATFORM_3DS
+/* The visible wild Pokemon's tiles, shifted as the camera crosses into the next map. */
+void VisibleWild_CameraShift(s16 dx, s16 dy);
+/* A step of the player's ended on a visible wild Pokemon: its battle, TRUE. */
+bool8 VisibleWild_StepOnto(void);
+/* The sprite is a visible wild Pokemon's. */
+bool8 VisibleWild_IsSprite(u8 spriteId);
+#endif
 
 #endif // GUARD_WILD_ENCOUNTER_H

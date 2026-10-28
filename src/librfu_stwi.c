@@ -15,6 +15,10 @@ void STWI_init_all(struct RfuIntrStruct *interruptStruct, IntrFunc *interrupt, b
     // If we're copying our interrupt into RAM, DMA it to block1 and use
     // block2 for our STWIStatus, otherwise block1 holds the STWIStatus.
     // interrupt usually is a pointer to gIntrTable[1]
+#ifdef PLATFORM_3DS
+    // No serial interrupts on the 3DS (see STWI_start_Command), and no code to copy.
+    copyInterruptToRam = FALSE;
+#endif
     if (copyInterruptToRam == TRUE)
     {
         *interrupt = (IntrFunc)interruptStruct->block1;
@@ -66,8 +70,10 @@ void AgbRFU_SoftReset(void)
     *timerH = 0;
     *timerL = 0;
     *timerH = TIMER_ENABLE | TIMER_1024CLK;
+#ifndef PLATFORM_3DS // no wireless adapter; this would spin on a hardware timer
     while (*timerL <= 0x11)
         REG_RCNT = 0x80A2;
+#endif
     *timerH = 3;
     REG_RCNT = 0x80A0;
     REG_SIOCNT = SIO_INTR_ENABLE | SIO_32BIT_MODE | SIO_115200_BPS;
@@ -597,6 +603,13 @@ static s32 STWI_start_Command(void)
     // equivalent to gSTWIStatus->txPacket->rfuPacket32.command,
     // but the cast here is required to avoid register issue
     *(u32 *)gSTWIStatus->txPacket->rfuPacket8.data = 0x99660000 | (gSTWIStatus->reqLength << 8) | gSTWIStatus->reqActiveCommand;
+#ifdef PLATFORM_3DS
+    // The emulated adapter takes the whole command and answers it, as the
+    // serial interrupt handler would after the last word.
+    (void)imeTemp;
+    PortRfu_Command();
+    return 0;
+#endif
     REG_SIODATA32 = gSTWIStatus->txPacket->rfuPacket32.command;
     gSTWIStatus->state = 0; // master send req
     gSTWIStatus->reqNext = 1;

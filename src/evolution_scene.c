@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "malloc.h"
 #include "battle.h"
 #include "battle_message.h"
@@ -33,6 +36,9 @@
 #include "constants/songs.h"
 #include "constants/rgb.h"
 #include "constants/items.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 extern struct Evolution gEvolutionTable[][EVOS_PER_MON];
 
@@ -206,6 +212,20 @@ void BeginEvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopE
     SetMainCallback2(CB2_BeginEvolutionScene);
 }
 
+#ifdef PLATFORM_3DS
+/*
+ * The scene shows the right half of the battle's background (BG3 at x 256):
+ * plain stripes. The 3DS's wider screen carries BG3 out past the GBA's edges,
+ * and on the left that wrapped into the half with the battle's platforms, an
+ * opponent's platform at the screen's left edge. That half is never seen on
+ * the GBA here: it is made the same stripes.
+ */
+static void CtrPlainBackgroundBothHalves(void)
+{
+    CpuCopy16((void *)BG_SCREEN_ADDR(27), (void *)BG_SCREEN_ADDR(26), BG_SCREEN_SIZE);
+}
+#endif
+
 void EvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u8 partyId)
 {
     u8 name[POKEMON_NAME_BUFFER_SIZE];
@@ -241,6 +261,9 @@ void EvolutionScene(struct Pokemon *mon, u16 postEvoSpecies, bool8 canStopEvo, u
 
     InitBattleBgsVideo();
     LoadBattleTextboxAndBackground();
+#ifdef PLATFORM_3DS
+    CtrPlainBackgroundBothHalves();
+#endif
     ResetSpriteData();
     ScanlineEffect_Stop();
     ResetTasks();
@@ -347,6 +370,9 @@ static void CB2_EvolutionSceneLoadGraphics(void)
 
     InitBattleBgsVideo();
     LoadBattleTextboxAndBackground();
+#ifdef PLATFORM_3DS
+    CtrPlainBackgroundBothHalves();
+#endif
     ResetSpriteData();
     FreeAllSpritePalettes();
     gReservedSpritePaletteCount = 4;
@@ -738,14 +764,18 @@ static void Task_EvolutionScene(u8 taskId)
         }
         break;
     case EVOSTATE_RESTORE_SCREEN: // stop music, return screen to pre-fade state
+#ifndef PORTABLE
         if (IsSEPlaying())
         {
+#endif
             m4aMPlayAllStop();
             memcpy(&gPlttBufferUnfaded[BG_PLTT_ID(2)], sEvoStructPtr->savedPalette, sizeof(sEvoStructPtr->savedPalette));
             RestoreBgAfterAnim();
             BeginNormalPaletteFade(0x1C, 0, 0x10, 0, RGB_BLACK);
             gTasks[taskId].tState++;
+#ifndef PORTABLE
         }
+#endif
         break;
     case EVOSTATE_EVO_MON_ANIM:
         if (!gPaletteFade.active)
@@ -755,19 +785,42 @@ static void Task_EvolutionScene(u8 taskId)
         }
         break;
     case EVOSTATE_SET_MON_EVOLVED:
+#ifndef PORTABLE
         if (IsCryFinished())
         {
+#endif
             StringExpandPlaceholders(gStringVar4, gText_CongratsPkmnEvolved);
             BattlePutTextOnWindow(gStringVar4, B_WIN_MSG);
             PlayBGM(MUS_EVOLVED);
             gTasks[taskId].tState++;
+#ifdef PLATFORM_3DS
+            // A trade-item evolution reached by level (pokemon.c,
+            // TRADE_EVO_LEVEL): the item is used up, as a trade does.
+            {
+                u16 pre = gTasks[taskId].tPreEvoSpecies, post = gTasks[taskId].tPostEvoSpecies;
+                u16 held = GetMonData(mon, MON_DATA_HELD_ITEM, NULL);
+                int e;
+
+                for (e = 0; e < EVOS_PER_MON; e++)
+                    if (gEvolutionTable[pre][e].method == EVO_TRADE_ITEM
+                     && gEvolutionTable[pre][e].targetSpecies == post
+                     && gEvolutionTable[pre][e].param == held && held != ITEM_NONE)
+                    {
+                        held = ITEM_NONE;
+                        SetMonData(mon, MON_DATA_HELD_ITEM, &held);
+                        break;
+                    }
+            }
+#endif
             SetMonData(mon, MON_DATA_SPECIES, (void *)(&gTasks[taskId].tPostEvoSpecies));
             CalculateMonStats(mon);
             EvolutionRenameMon(mon, gTasks[taskId].tPreEvoSpecies, gTasks[taskId].tPostEvoSpecies);
             GetSetPokedexFlag(SpeciesToNationalPokedexNum(gTasks[taskId].tPostEvoSpecies), FLAG_SET_SEEN);
             GetSetPokedexFlag(SpeciesToNationalPokedexNum(gTasks[taskId].tPostEvoSpecies), FLAG_SET_CAUGHT);
             IncrementGameStat(GAME_STAT_EVOLVED_POKEMON);
+#ifndef PORTABLE
         }
+#endif
         break;
     case EVOSTATE_TRY_LEARN_MOVE:
         if (!IsTextPrinterActive(0))
@@ -1581,12 +1634,21 @@ static void Task_AnimateBg(u8 taskId)
 static void InitMovingBgPalette(u16 *palette)
 {
     s32 i, j;
+#ifdef PORT_BRIDGE
+    // sBgAnim_Pal is a one-element INCBIN stub here: indexed directly, GCC folded
+    // every read to 0 and the background stayed black. 0x40 = bg_anim.gbapal.
+    const u16 *bgAnimPal = Port_ResolveAssetPointerSized(sBgAnim_Pal, 0x40);
+#endif
 
     for (i = 0; i < (int)ARRAY_COUNT(sBgAnim_PalIndexes); i++)
     {
         for (j = 0; j < 16; j++)
         {
+#ifdef PORT_BRIDGE
+            palette[i * 16 + j] = bgAnimPal[sBgAnim_PalIndexes[i][j]];
+#else
             palette[i * 16 + j] = sBgAnim_Pal[sBgAnim_PalIndexes[i][j]];
+#endif
         }
     }
 }

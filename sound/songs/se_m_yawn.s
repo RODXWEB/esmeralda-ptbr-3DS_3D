@@ -13,7 +13,7 @@
 	.global	se_m_yawn
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_yawn_1:
 	.byte		VOL   , 110*se_m_yawn_mvl/mxv
@@ -85,7 +85,7 @@ se_m_yawn_1:
 	.byte	W02
 	.byte	FINE
 
-@********************** Track  2 **********************@
+/*********************** Track  2 **********************@*/
 
 se_m_yawn_2:
 	.byte	KEYSH , se_m_yawn_key+0
@@ -110,18 +110,18 @@ se_m_yawn_2:
 	.byte	W03
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_yawn:
-	.byte	2	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_yawn_pri	@ Priority
-	.byte	se_m_yawn_rev	@ Reverb.
+	.byte	2	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_yawn_pri	/* Priority*/
+	.byte	se_m_yawn_rev	/* Reverb.*/
 
-	.word	se_m_yawn_grp
+	.int	se_m_yawn_grp
 
-	.word	se_m_yawn_1
-	.word	se_m_yawn_2
+	.int	se_m_yawn_1
+	.int	se_m_yawn_2
 
 	.end

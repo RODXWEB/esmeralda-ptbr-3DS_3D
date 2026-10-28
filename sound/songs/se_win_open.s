@@ -13,7 +13,7 @@
 	.global	se_win_open
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_win_open_1:
 	.byte	KEYSH , se_win_open_key+0
@@ -26,17 +26,17 @@ se_win_open_1:
 	.byte	W21
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_win_open:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_win_open_pri	@ Priority
-	.byte	se_win_open_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_win_open_pri	/* Priority*/
+	.byte	se_win_open_rev	/* Reverb.*/
 
-	.word	se_win_open_grp
+	.int	se_win_open_grp
 
-	.word	se_win_open_1
+	.int	se_win_open_1
 
 	.end

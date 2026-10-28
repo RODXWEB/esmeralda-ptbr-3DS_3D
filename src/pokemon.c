@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_extras.h" // optional settings (OPTIONS pages)
+#endif
 #include "malloc.h"
 #include "apprentice.h"
 #include "battle.h"
@@ -47,6 +50,9 @@
 #include "constants/songs.h"
 #include "constants/trainers.h"
 #include "constants/union_room.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 
 #define DAY_EVO_HOUR_BEGIN       12
 #define DAY_EVO_HOUR_END         HOURS_PER_DAY
@@ -81,6 +87,18 @@ EWRAM_DATA struct SpriteTemplate gMultiuseSpriteTemplate = {0};
 EWRAM_DATA static struct MonSpritesGfxManager *sMonSpritesGfxManagers[MON_SPR_GFX_MANAGERS_COUNT] = {NULL};
 
 #include "data/battle_moves.h"
+#ifdef PLATFORM_3DS
+#include "data/move_categories.h"
+
+// ENHANCEMENTS' PHYS/SPEC SPLIT, off by default. Never in a link battle or
+// its recording: both sides must play by the same rules.
+bool8 MoveSplitEnabled(void)
+{
+    if (gMain.inBattle && (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK)))
+        return FALSE;
+    return CtrExtras_Get("move_split") != 0;
+}
+#endif
 
 // Used in an unreferenced function in RS.
 // Unreferenced here and in FRLG.
@@ -2203,6 +2221,52 @@ void CreateMon(struct Pokemon *mon, u16 species, u8 level, u8 fixedIV, u8 hasFix
     CalculateMonStats(mon);
 }
 
+#ifdef PLATFORM_3DS
+// Shiny odds (OPTIONS, CHEATS): a new Pokemon for the player rolls its
+// personality up to this many times, keeping the first shiny one (1: the
+// game's 1 in 8192; 0: until it is shiny). Eggs and trades keep the game's.
+static const u16 sShinyRolls[] = {1, 2, 8, 32, 128, 0};
+
+static u32 ShinyRolls(void)
+{
+    u32 setting = CtrExtras_Get("shiny_odds");
+
+    return setting < ARRAY_COUNT(sShinyRolls) ? sShinyRolls[setting] : 1;
+}
+
+static bool8 ShinyForPlayer(u32 personality)
+{
+    u32 otId = gSaveBlock2Ptr->playerTrainerId[0]
+             | (gSaveBlock2Ptr->playerTrainerId[1] << 8)
+             | (gSaveBlock2Ptr->playerTrainerId[2] << 16)
+             | (gSaveBlock2Ptr->playerTrainerId[3] << 24);
+
+    return GET_SHINY_VALUE(otId, personality) < SHINY_ODDS;
+}
+
+// TRUE while another roll is due: `rolls` counts down (0: no limit).
+static bool8 ShinyRollAgain(u32 *rolls, u32 personality)
+{
+    if (ShinyForPlayer(personality))
+        return FALSE;
+    if (*rolls == 0)
+        return TRUE;
+    return --*rolls > 0;
+}
+
+// Visible wild Pokemon (wild_encounter.c) roll their personality when they
+// appear and keep it for the battle, so they get the rolls here.
+u32 ShinyOdds_WildPersonality(void)
+{
+    u32 personality = Random32();
+    u32 rolls = ShinyRolls();
+
+    while (ShinyRollAgain(&rolls, personality))
+        personality = Random32();
+    return personality;
+}
+#endif
+
 void CreateBoxMon(struct BoxPokemon *boxMon, u16 species, u8 level, u8 fixedIV, u8 hasFixedPersonality, u32 fixedPersonality, u8 otIdType, u32 fixedOtId)
 {
     u8 speciesName[POKEMON_NAME_LENGTH + 1];
@@ -2216,6 +2280,15 @@ void CreateBoxMon(struct BoxPokemon *boxMon, u16 species, u8 level, u8 fixedIV, 
         personality = fixedPersonality;
     else
         personality = Random32();
+#ifdef PLATFORM_3DS
+    if (!hasFixedPersonality && otIdType == OT_ID_PLAYER_ID)
+    {
+        u32 rolls = ShinyRolls();
+
+        while (ShinyRollAgain(&rolls, personality))
+            personality = Random32();
+    }
+#endif
 
     SetBoxMonData(boxMon, MON_DATA_PERSONALITY, &personality);
 
@@ -2311,6 +2384,21 @@ void CreateMonWithNature(struct Pokemon *mon, u16 species, u8 level, u8 fixedIV,
         personality = Random32();
     }
     while (nature != GetNatureFromPersonality(personality));
+#ifdef PLATFORM_3DS
+    {
+        // Wild Pokemon: more rolls, the nature kept.
+        u32 rolls = ShinyRolls();
+
+        while (ShinyRollAgain(&rolls, personality))
+        {
+            do
+            {
+                personality = Random32();
+            }
+            while (nature != GetNatureFromPersonality(personality));
+        }
+    }
+#endif
 
     CreateMon(mon, species, level, fixedIV, TRUE, personality, OT_ID_PLAYER_ID, 0);
 }
@@ -2581,7 +2669,7 @@ void CreateMonWithEVSpreadNatureOTID(struct Pokemon *mon, u16 species, u8 level,
         evsBits >>= 1;
     }
 
-    evAmount = MAX_TOTAL_EVS / statCount;
+    evAmount = SAFE_DIV(MAX_TOTAL_EVS, statCount);
     evsBits = 1;
     for (i = 0; i < NUM_STATS; i++)
     {
@@ -3173,7 +3261,7 @@ s32 CalculateBaseDamage(struct BattlePokemon *attacker, struct BattlePokemon *de
         if (attackerHoldEffect == sHoldEffectToType[i][0]
             && type == sHoldEffectToType[i][1])
         {
-            if (IS_TYPE_PHYSICAL(type))
+            if (IS_MOVE_PHYSICAL(move, type))
                 attack = (attack * (attackerHoldEffectParam + 100)) / 100;
             else
                 spAttack = (spAttack * (attackerHoldEffectParam + 100)) / 100;
@@ -3229,7 +3317,7 @@ s32 CalculateBaseDamage(struct BattlePokemon *attacker, struct BattlePokemon *de
     if (gBattleMoves[gCurrentMove].effect == EFFECT_EXPLOSION)
         defense /= 2;
 
-    if (IS_TYPE_PHYSICAL(type))
+    if (IS_MOVE_PHYSICAL(move, type))
     {
         if (gCritMultiplier == 2)
         {
@@ -3284,7 +3372,7 @@ s32 CalculateBaseDamage(struct BattlePokemon *attacker, struct BattlePokemon *de
     if (type == TYPE_MYSTERY)
         damage = 0; // is ??? type. does 0 damage.
 
-    if (IS_TYPE_SPECIAL(type))
+    if (IS_MOVE_SPECIAL(move, type))
     {
         if (gCritMultiplier == 2)
         {
@@ -4074,19 +4162,6 @@ u32 GetBoxMonData2(struct BoxPokemon *boxMon, s32 field) __attribute__((alias("G
 #define SET8(lhs) (lhs) = *data
 #define SET16(lhs) (lhs) = data[0] + (data[1] << 8)
 #define SET32(lhs) (lhs) = data[0] + (data[1] << 8) + (data[2] << 16) + (data[3] << 24)
-//
-// Prefer SET_BY_WIDTH for fields whose types might be extended (e.g. 
-// anything whose typedef is in gametypes.h).
-//
-#define SET_BY_WIDTH(lhs) \
-    do { \
-       if (sizeof(lhs) == 1) \
-          SET8(lhs); \
-       else if (sizeof(lhs) == 2) \
-          SET16(lhs); \
-       else if (sizeof(lhs) == 4) \
-          SET32(lhs); \
-   } while (0)
 
 void SetMonData(struct Pokemon *mon, s32 field, const void *dataArg)
 {
@@ -4276,7 +4351,7 @@ void SetBoxMonData(struct BoxPokemon *boxMon, s32 field, const void *dataArg)
         SET8(substruct3->pokerus);
         break;
     case MON_DATA_MET_LOCATION:
-        SET_BY_WIDTH(substruct3->metLocation);
+        SET8(substruct3->metLocation);
         break;
     case MON_DATA_MET_LEVEL:
     {
@@ -5486,6 +5561,13 @@ u8 GetNatureFromPersonality(u32 personality)
     return personality % NUM_NATURES;
 }
 
+#ifdef PLATFORM_3DS
+// Trade evolutions at Lv. 40 (OPTIONS, ENHANCEMENTS): without a link partner,
+// a trade evolution also happens on reaching this level, an item one while
+// holding the item.
+#define TRADE_EVO_LEVEL 40
+#endif
+
 u16 GetEvolutionTargetSpecies(struct Pokemon *mon, u8 mode, u16 evolutionItem)
 {
     int i;
@@ -5567,6 +5649,19 @@ u16 GetEvolutionTargetSpecies(struct Pokemon *mon, u8 mode, u16 evolutionItem)
                 if (gEvolutionTable[species][i].param <= beauty)
                     targetSpecies = gEvolutionTable[species][i].targetSpecies;
                 break;
+#ifdef PLATFORM_3DS
+            // The item is given up when the evolution completes
+            // (evolution_scene.c), not here: it can still be cancelled.
+            case EVO_TRADE:
+                if (CtrExtras_Get("trade_evo") && level >= TRADE_EVO_LEVEL)
+                    targetSpecies = gEvolutionTable[species][i].targetSpecies;
+                break;
+            case EVO_TRADE_ITEM:
+                if (CtrExtras_Get("trade_evo") && level >= TRADE_EVO_LEVEL
+                 && gEvolutionTable[species][i].param == heldItem)
+                    targetSpecies = gEvolutionTable[species][i].targetSpecies;
+                break;
+#endif
             }
         }
         break;
@@ -5734,7 +5829,16 @@ u16 SpeciesToCryId(u16 species)
         *(pixels) += (SPOT_COLOR_ADJUSTMENT << (shift)); \
     }
 
-#define DRAW_SPINDA_SPOTS(personality, dest)                                    \
+#ifdef PORT_BRIDGE
+// The spot images are INCBINs inside the structs, zero-filled here; the asset
+// table holds the four images back to back at the table's address.
+#define SPINDA_SPOT_IMAGE(i) ((const u16 *)Port_ResolveAssetPointerSized(gSpindaSpotGraphics, \
+    ARRAY_COUNT(gSpindaSpotGraphics) * SPINDA_SPOT_HEIGHT * sizeof(u16)) + (i) * SPINDA_SPOT_HEIGHT)
+#else
+#define SPINDA_SPOT_IMAGE(i) (gSpindaSpotGraphics[(i)].image)
+#endif
+
+#define DRAW_SPINDA_SPOTS(personality, dest)                                  \
 {                                                                               \
     s32 i;                                                                      \
     for (i = 0; i < (s32)ARRAY_COUNT(gSpindaSpotGraphics); i++)                 \
@@ -5746,7 +5850,7 @@ u16 SpeciesToCryId(u16 species)
         for (row = 0; row < SPINDA_SPOT_HEIGHT; row++)                          \
         {                                                                       \
             s32 column;                                                         \
-            s32 spotPixelRow = gSpindaSpotGraphics[i].image[row];               \
+            s32 spotPixelRow = SPINDA_SPOT_IMAGE(i)[row];                       \
                                                                                 \
             for (column = x; column < x + SPINDA_SPOT_WIDTH; column++)          \
             {                                                                   \

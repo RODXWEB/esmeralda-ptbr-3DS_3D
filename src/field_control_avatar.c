@@ -34,6 +34,9 @@
 #include "constants/map_types.h"
 #include "constants/songs.h"
 #include "constants/trainer_hill.h"
+#ifdef PLATFORM_3DS
+#include "follower_mon.h"
+#endif
 
 static EWRAM_DATA u8 sWildEncounterImmunitySteps = 0;
 static EWRAM_DATA u16 sPrevMetatileBehavior = 0;
@@ -97,6 +100,10 @@ void FieldGetPlayerInput(struct FieldInput *input, u16 newKeys, u16 heldKeys)
         if (GetPlayerSpeed() != PLAYER_SPEED_FASTEST)
         {
             if (newKeys & START_BUTTON)
+#ifdef PLATFORM_3DS
+                // The bottom screen is the start menu: START alone opens nothing.
+                if (CtrStartMenu_AcceptStart())
+#endif
                 input->pressedStartButton = TRUE;
             if (newKeys & SELECT_BUTTON)
                 input->pressedSelectButton = TRUE;
@@ -304,6 +311,10 @@ static const u8 *GetInteractedObjectEventScript(struct MapPosition *position, u8
     gSpecialVar_LastTalked = gObjectEvents[objectEventId].localId;
     gSpecialVar_Facing = direction;
 
+#ifdef PLATFORM_3DS
+    if (FollowerMon_IsFollower(&gObjectEvents[objectEventId]))
+        return FollowerMon_TalkScript();
+#endif
     if (InTrainerHill() == TRUE)
         script = GetTrainerHillTrainerScript();
     else
@@ -667,6 +678,15 @@ void RestartWildEncounterImmunitySteps(void)
 
 static bool8 CheckStandardWildEncounter(u16 metatileBehavior)
 {
+#ifdef PLATFORM_3DS
+    // Onto a visible wild Pokemon: met at once, whatever the steps since the last battle.
+    if (VisibleWild_StepOnto())
+    {
+        sWildEncounterImmunitySteps = 0;
+        sPrevMetatileBehavior = metatileBehavior;
+        return TRUE;
+    }
+#endif
     if (sWildEncounterImmunitySteps < 4)
     {
         sWildEncounterImmunitySteps++;

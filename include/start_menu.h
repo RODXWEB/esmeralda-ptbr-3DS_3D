@@ -12,5 +12,8 @@ void CB2_SetUpSaveAfterLinkBattle(void);
 void SaveForBattleTowerLink(void);
 void HideStartMenu(void);
 void AppendToList(u8 *list, u8 *pos, u8 newEntry);
+#ifdef PLATFORM_3DS
+bool8 CtrStartMenu_AcceptStart(void);
+#endif
 
 #endif // GUARD_START_MENU_H

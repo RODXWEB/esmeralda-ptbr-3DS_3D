@@ -13,7 +13,7 @@
 	.global	se_dex_scroll
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_dex_scroll_1:
 	.byte	KEYSH , se_dex_scroll_key+0
@@ -30,17 +30,17 @@ se_dex_scroll_1:
 	.byte	W02
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_dex_scroll:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_dex_scroll_pri	@ Priority
-	.byte	se_dex_scroll_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_dex_scroll_pri	/* Priority*/
+	.byte	se_dex_scroll_rev	/* Reverb.*/
 
-	.word	se_dex_scroll_grp
+	.int	se_dex_scroll_grp
 
-	.word	se_dex_scroll_1
+	.int	se_dex_scroll_1
 
 	.end

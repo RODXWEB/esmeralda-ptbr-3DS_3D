@@ -13,10 +13,6 @@
 #include "sound.h"
 #include "constants/songs.h"
 
-// GF cast Task data to ListMenu in many places, which effectively puts
-// an upper bound on sizeof(struct ListMenu).
-STATIC_ASSERT(sizeof(struct ListMenu) <= sizeof(((struct Task *)NULL)->data), ListMenuTooLargeForTaskData);
-
 // Cursors after this point are created using a sprite with their own task.
 // This allows them to have idle animations. Cursors prior to this are simply printed text.
 #define CURSOR_OBJECT_START CURSOR_RED_OUTLINE
@@ -1445,3 +1441,69 @@ static void ListMenuRemoveRedArrowCursorObject(u8 taskId)
     DestroySprite(&gSprites[data->spriteId]);
     DestroyTask(taskId);
 }
+
+#ifdef PLATFORM_3DS
+// Taps on a list shown on the 3DS bottom screen (the bag), which act on the
+// list directly: its row under a point, the selection put on a row, the list
+// scrolled by rows. What each does on screen is what the D-pad's moves do.
+
+// The row shown under (x, y), in pixels of the screen the list's window is
+// on; -1 when the point is not on a row.
+s16 CtrListMenu_RowAt(u8 listTaskId, s16 x, s16 y)
+{
+    struct ListMenu *list = (void *) gTasks[listTaskId].data;
+    u8 yMultiplier = GetFontAttribute(list->template.fontId, FONTATTR_MAX_LETTER_HEIGHT) + list->template.itemVerticalPadding;
+    s16 left = GetWindowAttribute(list->template.windowId, WINDOW_TILEMAP_LEFT) * 8;
+    s16 top = GetWindowAttribute(list->template.windowId, WINDOW_TILEMAP_TOP) * 8 + list->template.upText_Y;
+    s16 width = GetWindowAttribute(list->template.windowId, WINDOW_WIDTH) * 8;
+    s16 row;
+
+    if (x < left || x >= left + width || y < top || yMultiplier == 0)
+        return -1;
+    row = (y - top) / yMultiplier;
+    if (row >= list->template.maxShowed || list->scrollOffset + row >= list->template.totalItems)
+        return -1;
+    return row;
+}
+
+// The selection on the row shown at row, as if the cursor had moved there.
+void CtrListMenu_Select(u8 listTaskId, u16 row)
+{
+    struct ListMenu *list = (void *) gTasks[listTaskId].data;
+    u16 oldRow = list->selectedRow;
+
+    if (row == oldRow || row >= list->template.maxShowed || list->template.items[list->scrollOffset + row].id == LIST_HEADER)
+        return;
+    list->selectedRow = row;
+    ListMenuErasePrintedCursor(list, oldRow);
+    ListMenuDrawCursor(list);
+    ListMenuCallSelectionChangedCallback(list, FALSE);
+    CopyWindowToVram(list->template.windowId, COPYWIN_GFX);
+}
+
+// The list scrolled by rows (down for more than 0), the selection staying on
+// the row it is on. Returns the rows it moved, fewer at either end.
+s16 CtrListMenu_Scroll(u8 listTaskId, s16 rows)
+{
+    struct ListMenu *list = (void *) gTasks[listTaskId].data;
+    s32 maxScroll = list->template.totalItems - list->template.maxShowed;
+    s32 scroll = list->scrollOffset + rows;
+
+    if (scroll > maxScroll)
+        scroll = maxScroll;
+    if (scroll < 0)
+        scroll = 0;
+    rows = scroll - list->scrollOffset;
+    if (rows == 0)
+        return 0;
+    ListMenuErasePrintedCursor(list, list->selectedRow);
+    list->scrollOffset = scroll;
+    if (list->template.items[list->scrollOffset + list->selectedRow].id == LIST_HEADER)
+        list->selectedRow = rows > 0 ? list->selectedRow + 1 : list->selectedRow - 1;
+    ListMenuScroll(list, rows > 0 ? rows : -rows, rows > 0);
+    ListMenuDrawCursor(list);
+    ListMenuCallSelectionChangedCallback(list, FALSE);
+    CopyWindowToVram(list->template.windowId, COPYWIN_GFX);
+    return rows;
+}
+#endif

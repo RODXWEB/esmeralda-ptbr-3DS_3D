@@ -13,7 +13,7 @@
 	.global	se_m_crabhammer
 	.align	2
 
-@********************** Track  1 **********************@
+/*********************** Track  1 **********************@*/
 
 se_m_crabhammer_1:
 	.byte	KEYSH , se_m_crabhammer_key+0
@@ -42,17 +42,17 @@ se_m_crabhammer_1:
 	.byte	W16
 	.byte	FINE
 
-@******************************************************@
+/*******************************************************@*/
 	.align	2
 
 se_m_crabhammer:
-	.byte	1	@ NumTrks
-	.byte	0	@ NumBlks
-	.byte	se_m_crabhammer_pri	@ Priority
-	.byte	se_m_crabhammer_rev	@ Reverb.
+	.byte	1	/* NumTrks*/
+	.byte	0	/* NumBlks*/
+	.byte	se_m_crabhammer_pri	/* Priority*/
+	.byte	se_m_crabhammer_rev	/* Reverb.*/
 
-	.word	se_m_crabhammer_grp
+	.int	se_m_crabhammer_grp
 
-	.word	se_m_crabhammer_1
+	.int	se_m_crabhammer_1
 
 	.end

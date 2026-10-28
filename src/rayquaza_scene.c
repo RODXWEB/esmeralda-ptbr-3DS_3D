@@ -4,6 +4,7 @@
 #include "task.h"
 #include "graphics.h"
 #include "bg.h"
+#include "main.h"
 #include "malloc.h"
 #include "palette.h"
 #include "scanline_effect.h"
@@ -1284,7 +1285,7 @@ static const struct BgTemplate sBgTemplates_ChasesAway[] =
     }
 };
 
-void DoRayquazaScene(u8 animId, bool8 endEarly, MainCallback exitCallback)
+void DoRayquazaScene(u8 animId, bool8 endEarly, void (*exitCallback)(void))
 {
     sRayScene = AllocZeroed(sizeof(*sRayScene));
     sRayScene->animId = animId;
@@ -2275,6 +2276,38 @@ static void HBlankCB_RayDescends(void)
     }
 }
 
+#ifdef PLATFORM_3DS
+/*
+ * The port runs no HBlank outside a battle transition, so the ray of light
+ * never showed. The light is BG0 on the rows the callback above reveals: here
+ * those rows are window 0, BG0 blended inside it and not drawn outside, the
+ * rows growing once a frame as the callback grows them at line 0.
+ */
+static void RayDescendsLightFrame(void)
+{
+    int bottom;
+
+    if (sRayScene->revealedLightLine <= 0x1FFF)
+    {
+        if (sRayScene->revealedLightLine <= 39)
+            sRayScene->revealedLightLine += 4;
+        else if (sRayScene->revealedLightLine <= 79)
+            sRayScene->revealedLightLine += 2;
+        else
+            sRayScene->revealedLightLine += 1;
+    }
+    bottom = 24 + sRayScene->revealedLightLine + 1;
+    if (bottom > 136)
+        bottom = 136;
+    SetGpuReg(REG_OFFSET_WIN0H, WIN_RANGE(0, DISPLAY_WIDTH));
+    SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE(24, bottom));
+    SetGpuReg(REG_OFFSET_WININ, WININ_WIN0_ALL);
+    SetGpuReg(REG_OFFSET_WINOUT, WINOUT_WIN01_BG1 | WINOUT_WIN01_BG2 | WINOUT_WIN01_BG3 | WINOUT_WIN01_OBJ);
+    SetGpuReg(REG_OFFSET_BLDALPHA, 0xD08);
+    SetGpuRegBits(REG_OFFSET_DISPCNT, DISPCNT_WIN0_ON);
+}
+#endif
+
 #define tState data[0]
 #define tTimer data[1]
 
@@ -2300,6 +2333,10 @@ static void Task_RayDescendsAnim(u8 taskId)
 static void Task_HandleRayDescends(u8 taskId)
 {
     s16 *data = gTasks[taskId].data;
+#ifdef PLATFORM_3DS
+    if (gMain.hblankCallback == HBlankCB_RayDescends)
+        RayDescendsLightFrame();
+#endif
     switch (tState)
     {
     case 0:
@@ -2695,6 +2732,26 @@ static void Task_RayChasesAwayAnim(u8 taskId)
     InitChasesAwaySceneBgs();
     LoadChasesAwaySceneGfx();
     SetWindowsHideVertBorders();
+#ifdef PLATFORM_3DS
+    // No bottom bar on the 3DS: the window opened down to the bottom edge, the
+    // legendaries lowered onto it (DUO_LOWER), the art's black rows filled with
+    // its first (3) and last (16) rows of tiles. The top stays at 24, where the
+    // art cuts Rayquaza's tail off: the 3DS screen starts there (RenderEye).
+    SetGpuReg(REG_OFFSET_WIN0V, WIN_RANGE(24, DISPLAY_HEIGHT));
+    {
+        int bg, row;
+
+        for (bg = 0; bg < 2; bg++)
+        {
+            u16 *map = (u16 *)sRayScene->tilemapBuffers[bg];
+
+            for (row = 0; row < 3; row++)
+                memcpy(&map[row * 32], &map[3 * 32], 32 * sizeof(u16));
+            for (row = 17; row < 20; row++)
+                memcpy(&map[row * 32], &map[16 * 32], 32 * sizeof(u16));
+        }
+    }
+#endif
     ClearGpuRegBits(REG_OFFSET_DISPCNT, DISPCNT_BG2_ON);
     SetGpuReg(REG_OFFSET_BLDCNT, BLDCNT_TGT1_BG0 | BLDCNT_TGT2_BG1 | BLDCNT_EFFECT_BLEND);
     SetGpuReg(REG_OFFSET_BLDALPHA, BLDALPHA_BLEND(9, 14));
@@ -2843,22 +2900,34 @@ static void Task_RayChasesAwayEnd(u8 taskId)
 #define tKyogreSpriteId   taskData[4]
 #define tRayquazaSpriteId taskData[5]
 
+#ifdef PLATFORM_3DS
+/*
+ * The scene's art ends Groudon and Kyogre at line 136, where its black bar
+ * began on the GBA. The 3DS shows lines 24 to 160 of the scene, the whole
+ * screen's height (CtrVideo_SetStageZoomed), with no bar at the bottom
+ * (Task_RayChasesAwayAnim): they are lowered to stand on its bottom edge.
+ */
+#define DUO_LOWER 24
+#else
+#define DUO_LOWER 0
+#endif
+
 static void ChasesAway_CreateTrioSprites(u8 taskId)
 {
     s16 *taskData, *spriteData;
 
     taskData = gTasks[taskId].data;
 
-    tGroudonSpriteId = CreateSprite(&sSpriteTemplate_ChasesAway_Groudon, 64, 120, 0);
+    tGroudonSpriteId = CreateSprite(&sSpriteTemplate_ChasesAway_Groudon, 64, 120 + DUO_LOWER, 0);
     spriteData = gSprites[tGroudonSpriteId].data;
-    spriteData[0] = CreateSprite(&sSpriteTemplate_ChasesAway_GroudonTail, 16, 130, 0);
+    spriteData[0] = CreateSprite(&sSpriteTemplate_ChasesAway_GroudonTail, 16, 130 + DUO_LOWER, 0);
     gSprites[tGroudonSpriteId].oam.priority = 1;
     gSprites[spriteData[0]].oam.priority = 1;
 
-    tKyogreSpriteId = CreateSprite(&sSpriteTemplate_ChasesAway_Kyogre, 160, 128, 1);
+    tKyogreSpriteId = CreateSprite(&sSpriteTemplate_ChasesAway_Kyogre, 160, 128 + DUO_LOWER, 1);
     spriteData = gSprites[tKyogreSpriteId].data;
-    spriteData[0] = CreateSprite(&sSpriteTemplate_ChasesAway_Kyogre, 192, 128, 1);
-    spriteData[1] = CreateSprite(&sSpriteTemplate_ChasesAway_Kyogre, 224, 128, 1);
+    spriteData[0] = CreateSprite(&sSpriteTemplate_ChasesAway_Kyogre, 192, 128 + DUO_LOWER, 1);
+    spriteData[1] = CreateSprite(&sSpriteTemplate_ChasesAway_Kyogre, 224, 128 + DUO_LOWER, 1);
     gSprites[tKyogreSpriteId].oam.priority = 1;
     gSprites[spriteData[0]].oam.priority = 1;
     gSprites[spriteData[1]].oam.priority = 1;
@@ -2990,9 +3059,9 @@ static void SpriteCB_ChasesAway_KyogreLeave(struct Sprite *sprite)
     }
     if (sprite->data[5] == 128)
     {
-        sprite->data[7] = CreateSprite(&sSpriteTemplate_ChasesAway_KyogreSplash, 152, 132, 0);
+        sprite->data[7] = CreateSprite(&sSpriteTemplate_ChasesAway_KyogreSplash, 152, 132 + DUO_LOWER, 0);
         gSprites[sprite->data[7]].oam.priority = 1;
-        sprite->data[7] = CreateSprite(&sSpriteTemplate_ChasesAway_KyogreSplash, 224, 132, 0);
+        sprite->data[7] = CreateSprite(&sSpriteTemplate_ChasesAway_KyogreSplash, 224, 132 + DUO_LOWER, 0);
         gSprites[sprite->data[7]].oam.priority = 1;
         gSprites[sprite->data[7]].hFlip = 1;
         sprite->data[5]++;
@@ -3025,9 +3094,27 @@ static void SpriteCB_ChasesAway_KyogreLeave(struct Sprite *sprite)
 #define sTailFloatDelay  data[4]
 #define sTailFloatPeak   data[5]
 
+#ifdef PLATFORM_3DS
+/*
+ * Rayquaza and its tail start above the screen, the tail's top 129 lines up.
+ * A sprite's line is 8 bits on the GBA, so one whose top is more than 96
+ * lines above the screen comes round at its bottom, where the black bar hid
+ * them; the 3DS shows that edge (Task_RayChasesAwayAnim), so they are hidden
+ * until they come down within reach.
+ */
+static void ChasesAway_HideWrapped(struct Sprite *sprite)
+{
+    sprite->invisible = sprite->y + sprite->y2 + sprite->centerToCornerVecY < -(256 - DISPLAY_HEIGHT);
+}
+#endif
+
 static void SpriteCB_ChasesAway_Rayquaza(struct Sprite *sprite)
 {
     s16 frame = sprite->sTimer;
+#ifdef PLATFORM_3DS
+    ChasesAway_HideWrapped(sprite);
+    ChasesAway_HideWrapped(&gSprites[sprite->sTailSpriteId]);
+#endif
     if (frame <= 64)
     {
         sprite->y2 += 2;

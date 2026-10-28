@@ -12,7 +12,7 @@ BattleFrontier_BattleTowerLobby_OnResume:
 BattleFrontier_BattleTowerLobby_OnTransition:
 	call BattleFrontier_BattleTowerLobby_EventScript_ShowOrHideReporter
 	apprentice_shouldcheckgone
-	goto_if_eq VAR_0x8004, FALSE, BattleFrontier_BattleTowerLobby_EventScript_ShowApprentice  @ VAR_0x8004 always TRUE here
+	goto_if_eq VAR_0x8004, FALSE, BattleFrontier_BattleTowerLobby_EventScript_ShowApprentice  /* VAR_0x8004 always TRUE here*/
 	goto_if_set FLAG_DAILY_APPRENTICE_LEAVES, BattleFrontier_BattleTowerLobby_EventScript_HideApprentice
 BattleFrontier_BattleTowerLobby_EventScript_ShowApprentice::
 	clearflag FLAG_HIDE_APPRENTICE
@@ -26,7 +26,7 @@ BattleFrontier_BattleTowerLobby_EventScript_HideApprentice::
 
 BattleFrontier_BattleTowerLobby_OnWarp:
 	map_script_2 VAR_TEMP_1, 0, BattleFrontier_BattleTowerLobby_EventScript_PlayerFaceNorth
-	.2byte 0
+	.short 0
 
 BattleFrontier_BattleTowerLobby_EventScript_PlayerFaceNorth::
 	setvar VAR_TEMP_1, 1
@@ -39,7 +39,7 @@ BattleFrontier_BattleTowerLobby_OnFrame:
 	map_script_2 VAR_TEMP_CHALLENGE_STATUS, CHALLENGE_STATUS_PAUSED, BattleFrontier_BattleTowerLobby_EventScript_ResumeChallenge
 	map_script_2 VAR_TEMP_CHALLENGE_STATUS, CHALLENGE_STATUS_WON, BattleFrontier_BattleTowerLobby_EventScript_WonChallenge
 	map_script_2 VAR_TEMP_CHALLENGE_STATUS, CHALLENGE_STATUS_LOST, BattleFrontier_BattleTowerLobby_EventScript_LostChallenge
-	.2byte 0
+	.short 0
 
 BattleFrontier_BattleTowerLobby_EventScript_GetChallengeStatus::
 	frontier_getstatus
@@ -371,6 +371,11 @@ BattleFrontier_BattleTowerLobby_EventScript_AskEnterLinkMultisChallenge::
 	case MULTI_B_PRESSED, BattleFrontier_BattleTowerLobby_EventScript_CancelChallenge
 
 BattleFrontier_BattleTowerLobby_EventScript_TryEnterLinkMultisChallenge::
+	@ Link multi battles: in the session of this counter with players nearby.
+	setvar VAR_0x800A, LOCAL_KIND_BATTLE_TOWER
+	call CableClub_EventScript_LocalSession
+	specialvar VAR_RESULT, LocalSession_CanEnter
+	goto_if_eq VAR_RESULT, FALSE, BattleFrontier_BattleTowerLobby_EventScript_CancelChallenge
 	setvar VAR_FRONTIER_BATTLE_MODE, FRONTIER_MODE_LINK_MULTIS
 	message BattleFrontier_BattleTowerLobby_Text_WhichLevelMode
 	waitmessage
@@ -404,19 +409,19 @@ BattleFrontier_BattleTowerLobby_EventScript_SaveBeforeLinkMultisChallenge::
 	special LoadPlayerParty
 	closemessage
 	delay 2
-@ The command tower_save ultimately calls TrySavingData(SAVE_LINK), which writes data in SaveBlock1 and SaveBlock2
-@ to the flash, but not data in PokemonStorage. The SaveGame script that follows asks the player to do a full save,
-@ which they can opt out of. As a result the player can save their party and quit without having saved the PC.
-@ This allows players to clone pokemon and their held items by withdrawing them (or erase them by despositing).
+/* The command tower_save ultimately calls TrySavingData(SAVE_LINK), which writes data in SaveBlock1 and SaveBlock2*/
+/* to the flash, but not data in PokemonStorage. The SaveGame script that follows asks the player to do a full save,*/
+/* which they can opt out of. As a result the player can save their party and quit without having saved the PC.*/
+/* This allows players to clone pokemon and their held items by withdrawing them (or erase them by despositing).*/
 #ifndef BUGFIX
 	tower_save 0
 #endif
 	call Common_EventScript_SaveGame
 	setvar VAR_TEMP_CHALLENGE_STATUS, 255
 	goto_if_eq VAR_RESULT, 0, BattleFrontier_BattleTowerLobby_EventScript_CancelChallengeSaveFailed
-@ GAME_STAT_ENTERED_BATTLE_TOWER should not be incremented here, for two reasons:
-@ 1. It is incremented again in BattleFrontier_BattleTowerLobby_EventScript_CableLinkSuccessful or BattleFrontier_BattleTowerLobby_EventScript_WirelessLinkSuccessful
-@ 2. If the player tries to connect, but fails, the counter will still be incremented even if the player never enters the tower.
+/* GAME_STAT_ENTERED_BATTLE_TOWER should not be incremented here, for two reasons:*/
+/* 1. It is incremented again in BattleFrontier_BattleTowerLobby_EventScript_CableLinkSuccessful or BattleFrontier_BattleTowerLobby_EventScript_WirelessLinkSuccessful*/
+/* 2. If the player tries to connect, but fails, the counter will still be incremented even if the player never enters the tower.*/
 #ifndef BUGFIX
 	incrementgamestat GAME_STAT_ENTERED_BATTLE_TOWER
 #endif
@@ -569,7 +574,7 @@ BattleFrontier_BattleTowerLobby_EventScript_NotEnoughValidMonsLvOpenDoubles::
 	end
 
 BattleFrontier_BattleTowerLobby_EventScript_CancelChallengeSaveFailed::
-	frontier_set FRONTIER_DATA_CHALLENGE_STATUS  @ No status provided, so it relies on VAR_0x8006 being 0 already
+	frontier_set FRONTIER_DATA_CHALLENGE_STATUS  /* No status provided, so it relies on VAR_0x8006 being 0 already*/
 	goto BattleFrontier_BattleTowerLobby_EventScript_CancelChallenge
 	end
 
@@ -642,7 +647,7 @@ BattleFrontier_BattleTowerLobby_Movement_PlayerEnterElevator:
 	set_invisible
 	step_end
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Movement_UnusedEnterElevator:
 	walk_fast_up
 	walk_fast_up
@@ -914,7 +919,7 @@ BattleFrontier_BattleTowerLobby_EventScript_ExitRules::
 	releaseall
 	end
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_DirectYouToBattleRoom:
 	.string "I'll direct you to your BATTLE ROOM now.$"
 
@@ -930,7 +935,7 @@ BattleFrontier_BattleTowerLobby_Text_CongratsBeatenSeven:
 	.string "You've beaten all seven TRAINERS!\p"
 	.string "$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_EarnedFabulousPrize:
 	.string "For beating seven TRAINERS in a row,\n"
 	.string "you have earned this fabulous prize!\p"
@@ -940,7 +945,7 @@ BattleFrontier_BattleTowerLobby_Text_ReceivedPrize:
 	.string "{PLAYER} received the prize\n"
 	.string "{STR_VAR_1}.$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_BagFullMakeRoom:
 	.string "Oh, your BAG appears to be full.\p"
 	.string "Please make room in your BAG, then come\n"
@@ -1024,7 +1029,7 @@ BattleFrontier_BattleTowerLobby_Text_CanLeaveUntilLossOrSevenWins:
 	.string "You'd best be certain that you're up\n"
 	.string "to the challenge.$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_DoubleBattleRoomConstruction:
 	.string "Welcome to the BATTLE TOWER\n"
 	.string "DOUBLE BATTLE CORNER!\p"
@@ -1033,7 +1038,7 @@ BattleFrontier_BattleTowerLobby_Text_DoubleBattleRoomConstruction:
 	.string "Please come back when the work\n"
 	.string "is completed.$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_MultiBattleRoomConstruction:
 	.string "Welcome to the BATTLE TOWER\n"
 	.string "MULTI BATTLE CORNER!\p"
@@ -1051,7 +1056,7 @@ BattleFrontier_BattleTowerLobby_Text_WhichLevelMode:
 	.string "of challenge, Level 50 and Open Level.\l"
 	.string "Which is your choice?$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_PleaseSelectMons:
 	.string "Please select the POKéMON you wish\n"
 	.string "to enter.$"
@@ -1068,7 +1073,7 @@ BattleFrontier_BattleTowerLobby_Text_RecordLastMatch:
 	.string "Shall I record your last BATTLE TOWER\n"
 	.string "match on your FRONTIER PASS?$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_NotEnoughValidMonsLv50:
 	.string "Excuse me!\p"
 	.string "You don't have {STR_VAR_2} eligible POKéMON.\p"
@@ -1079,7 +1084,7 @@ BattleFrontier_BattleTowerLobby_Text_NotEnoughValidMonsLv50:
 	.string "EGGS{STR_VAR_1} ineligible.\p"
 	.string "Please come see me when you are ready.$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_NotEnoughValidMonsLvOpen:
 	.string "Excuse me!\p"
 	.string "You don't have {STR_VAR_2} eligible POKéMON.\p"
@@ -1284,7 +1289,7 @@ BattleFrontier_BattleTowerLobby_Text_PleaseSelectTwoMons2:
 	.string "Now please select the two POKéMON\n"
 	.string "that are to be entered.$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_ChoseSameMonAsFriend:
 	.string "You have chosen the same kind of\n"
 	.string "POKéMON as your friend.\p"
@@ -1308,14 +1313,14 @@ BattleFrontier_BattleTowerLobby_Text_FriendChoseDifferentLvlMode:
 	.string "Your friend has chosen a different\n"
 	.string "battle level.$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_FriendChoseDifferentLvlModeSameMon:
 	.string "Your friend has chosen a different\n"
 	.string "battle level.\p"
 	.string "Your friend has also selected\n"
 	.string "the POKéMON {STR_VAR_1}.$"
 
-@ Unused
+/* Unused*/
 BattleFrontier_BattleTowerLobby_Text_FriendChoseDifferentLvlModeSameMons:
 	.string "Your friend has chosen a different\n"
 	.string "battle level.\p"

@@ -8,6 +8,9 @@
 #include "menu.h"
 #include "window.h"
 #include "pokenav.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
 #include "graphics.h"
 #include "sound.h"
 #include "gym_leader_rematch.h"
@@ -100,6 +103,12 @@ static void Task_CurrentMenuOptionGlow(u8);
 static void SetMenuOptionGlow(void);
 
 static const u16 sPokenavBgDotsPal[] = INCBIN_U16("graphics/pokenav/bg_dots.gbapal");
+#ifdef PORT_BRIDGE
+// A stub on the port: colours inside it are read from the loaded data.
+#define BgDotsPal() ((const u16 *)Port_ResolveAssetPointer(sPokenavBgDotsPal))
+#else
+#define BgDotsPal() sPokenavBgDotsPal
+#endif
 static const u32 sPokenavBgDotsTiles[] = INCBIN_U32("graphics/pokenav/bg_dots.4bpp.lz");
 static const u32 sPokenavBgDotsTilemap[] = INCBIN_U32("graphics/pokenav/bg_dots.bin.lz");
 static const u16 sPokenavDeviceBgPal[] = INCBIN_U16("graphics/pokenav/device_outline.gbapal");
@@ -794,10 +803,27 @@ static u32 LoopedTask_OpenPokenavFeature(s32 state)
 static void LoadPokenavOptionPalettes(void)
 {
     s32 i;
+#ifdef PORT_BRIDGE
+    // gPokenavOptions_Pal is a stub here: &gPokenavOptions_Pal[0x10] is the
+    // address of the next asset, not the second palette. Offset the loaded data.
+    struct SpritePalette palettes[ARRAY_COUNT(sPokenavOptionsSpritePalettes)];
+    const u16 *options = Port_ResolveAssetPointer(gPokenavOptions_Pal);
+
+    for (i = 0; i < (s32)ARRAY_COUNT(palettes); i++)
+    {
+        palettes[i] = sPokenavOptionsSpritePalettes[i];
+        if (palettes[i].data >= gPokenavOptions_Pal && palettes[i].data < gPokenavOptions_Pal + 0x50)
+            palettes[i].data = options + (palettes[i].data - gPokenavOptions_Pal);
+    }
+#endif
 
     for (i = 0; i < ARRAY_COUNT(sPokenavOptionsSpriteSheets); i++)
         LoadCompressedSpriteSheet(&sPokenavOptionsSpriteSheets[i]);
+#ifdef PORT_BRIDGE
+    Pokenav_AllocAndLoadPalettes(palettes);
+#else
     Pokenav_AllocAndLoadPalettes(sPokenavOptionsSpritePalettes);
+#endif
 }
 
 static void FreeAndDestroyMainMenuSprites(void)
@@ -1266,20 +1292,20 @@ static void Task_MoveBgDots(u8 taskId)
 static void CreateBgDotPurplePalTask(void)
 {
     u8 taskId = CreateTask(Task_UpdateBgDotsPalette, 3);
-    SetWordTaskArg(taskId, 1, (uintptr_t)(sPokenavBgDotsPal + 1));
-    SetWordTaskArg(taskId, 3, (uintptr_t)(sPokenavBgDotsPal + 7));
+    SetWordTaskArg(taskId, 1, (uintptr_t)(BgDotsPal() + 1));
+    SetWordTaskArg(taskId, 3, (uintptr_t)(BgDotsPal() + 7));
 }
 
 static void ChangeBgDotsColorToPurple(void)
 {
-    CopyPaletteIntoBufferUnfaded(sPokenavBgDotsPal + 7, BG_PLTT_ID(3) + 1, PLTT_SIZEOF(2));
+    CopyPaletteIntoBufferUnfaded(BgDotsPal() + 7, BG_PLTT_ID(3) + 1, PLTT_SIZEOF(2));
 }
 
 static void CreateBgDotLightBluePalTask(void)
 {
     u8 taskId = CreateTask(Task_UpdateBgDotsPalette, 3);
-    SetWordTaskArg(taskId, 1, (uintptr_t)(sPokenavBgDotsPal + 7));
-    SetWordTaskArg(taskId, 3, (uintptr_t)(sPokenavBgDotsPal + 1));
+    SetWordTaskArg(taskId, 1, (uintptr_t)(BgDotsPal() + 7));
+    SetWordTaskArg(taskId, 3, (uintptr_t)(BgDotsPal() + 1));
 }
 
 static bool32 IsTaskActive_UpdateBgDotsPalette(void)
@@ -1315,14 +1341,7 @@ static void SetupPokenavMenuScanlineEffects(void)
     SetGpuRegBits(REG_OFFSET_DISPCNT, DISPCNT_WIN0_ON);
     SetGpuRegBits(REG_OFFSET_WININ, WININ_WIN0_ALL);
     SetGpuRegBits(REG_OFFSET_WINOUT, WINOUT_WIN01_BG_ALL | WINOUT_WIN01_OBJ);
-#ifdef BUGFIX
-    // BUGFIX: Use full register write instead of |=.
-    // SetGpuRegBits left leftover window values from the Party screen,
-    // causing partial/missing glow highlights. SetGpuReg clears them fully.
-    SetGpuReg(REG_OFFSET_WIN0V, DISPLAY_HEIGHT);
-#else
     SetGpuRegBits(REG_OFFSET_WIN0V, DISPLAY_HEIGHT);
-#endif
     ScanlineEffect_Stop();
     SetMenuOptionGlow();
     ScanlineEffect_SetParams(sPokenavMainMenuScanlineEffectParams);
@@ -1378,3 +1397,15 @@ void ResetBldCnt_(void)
 {
     ResetBldCnt();
 }
+
+#ifdef PLATFORM_3DS
+// Where the options of the menu on show are: option i is centred on line
+// yStart + deltaY * i, as the glow behind the chosen one is (SetMenuOptionGlow).
+void CtrPokenavMenu_Rows(int *yStart, int *deltaY)
+{
+    int menuType = GetPokenavMenuType();
+
+    *yStart = sPokenavMenuOptionLabelGfx[menuType].yStart;
+    *deltaY = sPokenavMenuOptionLabelGfx[menuType].deltaY;
+}
+#endif

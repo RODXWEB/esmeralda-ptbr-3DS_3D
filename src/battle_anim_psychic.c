@@ -452,11 +452,17 @@ static void AnimDefensiveWall(struct Sprite *sprite)
         {
             sprite->x = 72;
             sprite->y = 80;
+#ifdef PLATFORM_3DS
+            sprite->y += CtrBattleSideShiftOf(B_SIDE_PLAYER);
+#endif
         }
         else
         {
             sprite->x = 176;
             sprite->y = 40;
+#ifdef PLATFORM_3DS
+            sprite->y += CtrBattleSideShiftOf(B_SIDE_OPPONENT);
+#endif
         }
     }
     else
@@ -594,11 +600,17 @@ static void AnimWallSparkle(struct Sprite *sprite)
             {
                 sprite->x = 72 - gBattleAnimArgs[0];
                 sprite->y = gBattleAnimArgs[1] + 80;
+#ifdef PLATFORM_3DS
+                sprite->y += CtrBattleSideShiftOf(B_SIDE_PLAYER);
+#endif
             }
             else
             {
                 sprite->x = gBattleAnimArgs[0] + 176;
                 sprite->y = gBattleAnimArgs[1] + 40;
+#ifdef PLATFORM_3DS
+                sprite->y += CtrBattleSideShiftOf(B_SIDE_OPPONENT);
+#endif
             }
         }
         else

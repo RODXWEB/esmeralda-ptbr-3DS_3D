@@ -20,6 +20,11 @@
 #include "window.h"
 #include "constants/songs.h"
 
+#ifdef PORT_BRIDGE
+#include "port_log.h"
+#include "port_platform.h"
+#endif
+
 #define DLG_WINDOW_PALETTE_NUM 15
 #define DLG_WINDOW_BASE_TILE_NUM 0x200
 #define STD_WINDOW_PALETTE_NUM 14
@@ -66,6 +71,9 @@ static EWRAM_DATA struct Menu sMenu = {0};
 static EWRAM_DATA u16 sTileNum = 0;
 static EWRAM_DATA u8 sPaletteNum = 0;
 static EWRAM_DATA u8 sYesNoWindowId = 0;
+#ifdef PLATFORM_3DS
+static bool8 sCtrYesNoOpen;
+#endif
 static EWRAM_DATA u8 sHofPCTopBarWindowId = 0;
 static EWRAM_DATA u16 sFiller = 0;  // needed to align
 static EWRAM_DATA bool8 sScheduledBgCopiesToVram[4] = {FALSE};
@@ -85,8 +93,18 @@ static const struct WindowTemplate sStandardTextBox_WindowTemplates[] =
 {
     {
         .bg = 0,
+#if defined(PLATFORM_3DS)
+        // Low on the 240px viewport, with 16px of air below it. It cannot be
+        // centered horizontally: the text layer is a 32-column tilemap, so it
+        // only addresses the left 256px of the 400px viewport, and widening it
+        // does not fit in the 64 KiB of background VRAM the game has (see
+        // docs/ARCHITECTURE.md).
+        .tilemapLeft = 2,
+        .tilemapTop = 24,
+#else
         .tilemapLeft = 2,
         .tilemapTop = 15,
+#endif
         .width = 27,
         .height = 4,
         .paletteNum = 15,
@@ -98,8 +116,15 @@ static const struct WindowTemplate sStandardTextBox_WindowTemplates[] =
 static const struct WindowTemplate sYesNo_WindowTemplates =
 {
     .bg = 0,
+#if defined(PLATFORM_3DS)
+    // This sits just above the standard text box and follows it down, or it
+    // would be left stranded in the middle of the screen.
+    .tilemapLeft = 21,
+    .tilemapTop = 18,
+#else
     .tilemapLeft = 21,
     .tilemapTop = 9,
+#endif
     .width = 5,
     .height = 4,
     .paletteNum = 15,
@@ -986,8 +1011,14 @@ s8 Menu_ProcessInput(void)
 {
     if (JOY_NEW(A_BUTTON))
     {
+#ifdef PORT_BRIDGE
+        Port_SetBirchDebugEx(0x7220, sMenu.cursorPos, gMain.newKeys, gMain.heldKeys, 0);
+#endif
         if (!sMenu.APressMuted)
             PlaySE(SE_SELECT);
+#ifdef PORT_BRIDGE
+        Port_SetBirchDebugEx(0x7221, sMenu.cursorPos, gMain.newKeys, gMain.heldKeys, 0);
+#endif
         return sMenu.cursorPos;
     }
     else if (JOY_NEW(B_BUTTON))
@@ -1211,6 +1242,15 @@ static void UNUSED CreateYesNoMenuInTopLeft(const struct WindowTemplate *window,
 s8 Menu_ProcessInputNoWrapClearOnChoose(void)
 {
     s8 result = Menu_ProcessInputNoWrap();
+#ifdef PORT_BRIDGE
+    // Debug starter selection freeze: if we hang when choosing YES/NO,
+    // the last tag printed here will identify the step.
+    Port_SetBirchDebugEx(0x7210,
+                        (u16)(result & 0xFFFF),
+                        sYesNoWindowId,
+                        gMain.newKeys,
+                        gMain.heldKeys);
+#endif
     if (result != MENU_NOTHING_CHOSEN)
         EraseYesNoWindow();
     return result;
@@ -1218,8 +1258,20 @@ s8 Menu_ProcessInputNoWrapClearOnChoose(void)
 
 void EraseYesNoWindow(void)
 {
+#ifdef PLATFORM_3DS
+    sCtrYesNoOpen = FALSE;
+#endif
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x7211, sYesNoWindowId, 0, 0, 0);
+#endif
     ClearStdWindowAndFrameToTransparent(sYesNoWindowId, TRUE);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x7212, sYesNoWindowId, 0, 0, 0);
+#endif
     RemoveWindow(sYesNoWindowId);
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x7213, sYesNoWindowId, 0, 0, 0);
+#endif
 }
 
 static void PrintMenuActionGridText(u8 windowId, u8 fontId, u8 left, u8 top, u8 width, u8 height, u8 columns, u8 rows, const struct MenuAction *menuActions)
@@ -1783,11 +1835,24 @@ void *DecompressAndCopyTileDataToVram(u8 bgId, const void *src, u32 size, u16 of
     if (sTempTileDataBufferIdx < ARRAY_COUNT(sTempTileDataBuffer))
     {
         void *ptr = malloc_and_decompress(src, &sizeOut);
+#ifdef PORT_BRIDGE
+        // Tileset callers pass slot capacity, which can exceed the actual data.
+        if (!size || size > sizeOut)
+#else
         if (!size)
+#endif
             size = sizeOut;
         if (ptr)
         {
+#ifdef PORT_BRIDGE
+            if (copy_decompressed_tile_data_to_vram(bgId, ptr, size, offset, mode) == (u16)-1)
+            {
+                Free(ptr);
+                return NULL;
+            }
+#else
             copy_decompressed_tile_data_to_vram(bgId, ptr, size, offset, mode);
+#endif
             sTempTileDataBuffer[sTempTileDataBufferIdx++] = ptr;
         }
         return ptr;
@@ -1799,13 +1864,26 @@ void DecompressAndLoadBgGfxUsingHeap(u8 bgId, const void *src, u32 size, u16 off
 {
     u32 sizeOut;
     void *ptr = malloc_and_decompress(src, &sizeOut);
+#ifdef PORT_BRIDGE
+    if (!size || size > sizeOut)
+#else
     if (!size)
+#endif
         size = sizeOut;
     if (ptr)
     {
+#ifdef PORT_BRIDGE
+        // Complete shadow-VRAM writes while their source is owned here. Unlike
+        // GBA VRAM, this RAM destination does not require a VBlank task.
+        ProcessDma3Requests();
+        copy_decompressed_tile_data_to_vram(bgId, ptr, size, offset, mode);
+        ProcessDma3Requests();
+        Free(ptr);
+#else
         u8 taskId = CreateTask(task_free_buf_after_copying_tile_data_to_vram, 0);
         gTasks[taskId].data[0] = copy_decompressed_tile_data_to_vram(bgId, ptr, size, offset, mode);
         SetWordTaskArg(taskId, 1, (u32)ptr);
+#endif
     }
 }
 
@@ -1821,18 +1899,67 @@ void task_free_buf_after_copying_tile_data_to_vram(u8 taskId)
 void *malloc_and_decompress(const void *src, u32 *size)
 {
     void *ptr;
-    u8 *sizeAsBytes = (u8 *)size;
-    u8 *srcAsBytes = (u8 *)src;
+#ifdef PORT_BRIDGE
+    const char *assetPath = Port_GetAssetPath(src);
+    const void *asset = src;
+    void *compressed = NULL;
+    u32 compressedSize = Port_GetAssetSize(src);
 
-    sizeAsBytes[0] = srcAsBytes[1];
-    sizeAsBytes[1] = srcAsBytes[2];
-    sizeAsBytes[2] = srcAsBytes[3];
-    sizeAsBytes[3] = 0;
+    *size = 0;
+    if (Port_IsAssetStub(src))
+    {
+        if (compressedSize < 4)
+            goto fail;
+        // Own the complete input in the game heap. The BIOS asset path uses a
+        // second, libc-heap allocation and cannot report a failed load to us.
+        compressed = Alloc(compressedSize);
+        if (compressed == NULL
+         || !Port_LoadAssetPointerToBufferSized(src, compressed, compressedSize))
+            goto fail;
+        src = compressed;
+    }
+    if (src == NULL || ((const u8 *)src)[0] != 0x10)
+        goto fail;
+#endif
 
+    *size = GetDecompressedDataSize(src);
+#ifdef PORT_BRIDGE
+    if (*size == 0)
+        goto fail;
+#endif
     ptr = Alloc(*size);
+#ifdef PORT_BRIDGE
+    if (ptr == NULL)
+        goto fail;
+#endif
     if (ptr)
         LZ77UnCompWram(src, ptr);
+#ifdef PORT_BRIDGE
+    Free(compressed);
+    if (assetPath != NULL && strstr(assetPath, "data/tilesets/") != NULL)
+    {
+        u8 nonzero = 0;
+
+        if (ptr != NULL)
+            for (u32 i = 0; i < *size && i < 256; i++)
+                nonzero |= ((const u8 *)ptr)[i];
+        Port_SetGfxTilesetDebug(strstr(assetPath, "/primary/") == NULL,
+                               (u16)*size, nonzero);
+        PORT_LOG("Tileset %c out=%lu ptr=%08lX nz=%02X\n",
+                strstr(assetPath, "/primary/") != NULL ? 'P' : 'S',
+                (unsigned long)*size, (unsigned long)ptr, nonzero);
+    }
+#endif
     return ptr;
+#ifdef PORT_BRIDGE
+fail:
+    Free(compressed);
+    Port_SetAssetDebugEx(0x00E8, (u16)(u32)asset, (u16)compressedSize, (u16)*size, 0);
+    PORT_LOG("BG decompress load failed: src=%08lX input=%lu output=%lu\n",
+            (unsigned long)asset, (unsigned long)compressedSize, (unsigned long)*size);
+    *size = 0;
+    return NULL;
+#endif
 }
 
 u16 copy_decompressed_tile_data_to_vram(u8 bgId, const void *src, u16 size, u16 offset, u8 mode)
@@ -2097,7 +2224,7 @@ void ListMenuLoadStdPalAt(u8 palOffset, u8 palId)
 
 void BlitMenuInfoIcon(u8 windowId, u8 iconId, u16 x, u16 y)
 {
-    BlitBitmapRectToWindow(windowId, &gMenuInfoElements_Gfx[sMenuInfoIcons[iconId].offset * 32], 0, 0, 128, 128, x, y, sMenuInfoIcons[iconId].width, sMenuInfoIcons[iconId].height);
+    BlitBitmapRectToWindow(windowId, ResolveBitmapSource(gMenuInfoElements_Gfx, sMenuInfoIcons[iconId].offset * 32), 0, 0, 128, 128, x, y, sMenuInfoIcons[iconId].width, sMenuInfoIcons[iconId].height);
 }
 
 void BufferSaveMenuText(u8 textId, u8 *dest, u8 color)
@@ -2145,3 +2272,115 @@ void BufferSaveMenuText(u8 textId, u8 *dest, u8 color)
             break;
     }
 }
+
+#ifdef PLATFORM_3DS
+// The 3DS bottom screen offers YES/NO buttons while a yes/no box is open.
+bool8 CtrMenu_YesNoOpen(void)
+{
+    return sCtrYesNoOpen;
+}
+
+// The entry of the open menu under (x, y), in pixels of the screen its window
+// is on; -1 when the point is not on one of its entries. A grid's entries go
+// row by row, as its cursor counts them.
+s8 CtrMenu_EntryAt(s16 x, s16 y)
+{
+    s16 left = GetWindowAttribute(sMenu.windowId, WINDOW_TILEMAP_LEFT) * 8;
+    s16 top = GetWindowAttribute(sMenu.windowId, WINDOW_TILEMAP_TOP) * 8 + sMenu.top;
+    s16 width = GetWindowAttribute(sMenu.windowId, WINDOW_WIDTH) * 8;
+    s16 row, column = 0;
+
+    if (sMenu.optionHeight == 0 || x < left || x >= left + width || y < top)
+        return -1;
+    row = (y - top) / sMenu.optionHeight;
+    if (sMenu.columns > 1)
+    {
+        if (sMenu.optionWidth == 0 || row >= sMenu.rows)
+            return -1;
+        column = (x - left - sMenu.left) / sMenu.optionWidth;
+        if (column < 0)
+            column = 0;
+        if (column >= sMenu.columns)
+            column = sMenu.columns - 1;
+        row = row * sMenu.columns + column;
+    }
+    if (row < sMenu.minCursorPos || row > sMenu.maxCursorPos)
+        return -1;
+    return row;
+}
+
+// A tap on an entry: the cursor goes to it and the entry is chosen, as A
+// chooses it (with its sound where the menu makes one).
+s8 CtrMenu_Choose(s8 entry, bool8 sound)
+{
+    if (sMenu.columns > 1)
+    {
+        u8 old = sMenu.cursorPos;
+
+        sMenu.cursorPos = entry;
+        MoveMenuGridCursor(old, entry);
+    }
+    else
+    {
+        Menu_MoveCursorNoWrapAround(entry - sMenu.cursorPos);
+    }
+    if (sound && !sMenu.APressMuted)
+        PlaySE(SE_SELECT);
+    return sMenu.cursorPos;
+}
+
+// A tap on a game screen shown on the 3DS bottom screen (the bag), in pixels
+// of that screen, for whatever waits for input there to take: a menu, a
+// yes/no box, a message waiting to go on. A tap nothing took for half a
+// second is dropped, so it does not act later on something else.
+static struct {
+    bool8 pending;
+    s16 x, y;
+    u32 frame;
+} sCtrTap;
+
+void CtrMenu_PostTap(s16 x, s16 y)
+{
+    sCtrTap.pending = TRUE;
+    sCtrTap.x = x;
+    sCtrTap.y = y;
+    sCtrTap.frame = gMain.vblankCounter1;
+}
+
+bool8 CtrMenu_TakeTap(s16 *x, s16 *y)
+{
+    if (!sCtrTap.pending)
+        return FALSE;
+    sCtrTap.pending = FALSE;
+    if (gMain.vblankCounter1 - sCtrTap.frame > 30)
+        return FALSE;
+    *x = sCtrTap.x;
+    *y = sCtrTap.y;
+    return TRUE;
+}
+
+// A message waiting for A or B: any tap goes on.
+bool8 CtrMenu_TakeAck(void)
+{
+    s16 x, y;
+
+    return CtrMenu_TakeTap(&x, &y);
+}
+
+// A yes/no box: YES or NO tapped is chosen, a tap away from it is B.
+s8 CtrMenu_YesNoInput(void)
+{
+    s16 x, y;
+    s8 entry;
+
+    if (!CtrMenu_TakeTap(&x, &y))
+        return Menu_ProcessInputNoWrapClearOnChoose();
+    entry = CtrMenu_EntryAt(x, y);
+    if (entry >= 0)
+        CtrMenu_Choose(entry, TRUE);
+    else
+        entry = MENU_B_PRESSED;
+    EraseYesNoWindow();
+    return entry;
+}
+#endif

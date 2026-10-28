@@ -106,7 +106,7 @@ enum {
 
 struct FrontierPassData
 {
-    MainCallback callback;
+    void (*callback)(void);
     u16 state;
     u16 battlePoints;
     s16 cursorX;
@@ -137,14 +137,14 @@ struct FrontierPassGfx
 
 struct FrontierPassSaved
 {
-    MainCallback callback;
+    void (*callback)(void);
     s16 cursorX;
     s16 cursorY;
 };
 
 struct FrontierMapData
 {
-    MainCallback callback;
+    void (*callback)(void);
     struct Sprite *cursorSprite;
     struct Sprite *playerHeadSprite;
     struct Sprite *mapIndicatorSprite;
@@ -160,8 +160,8 @@ static EWRAM_DATA struct FrontierPassGfx *sPassGfx = NULL;
 static EWRAM_DATA struct FrontierMapData *sMapData = NULL;
 static EWRAM_DATA struct FrontierPassSaved sSavedPassData = {0};
 
-static u32 AllocateFrontierPassData(MainCallback callback);
-static void ShowFrontierMap(MainCallback callback);
+static u32 AllocateFrontierPassData(void (*callback)(void));
+static void ShowFrontierMap(void (*callback)(void));
 static void CB2_InitFrontierPass(void);
 static void DrawFrontierPassBg(void);
 static void FreeCursorAndSymbolSprites(void);
@@ -604,11 +604,9 @@ static void LeaveFrontierPass(void)
     FreeFrontierPassData();
 }
 
-static u32 AllocateFrontierPassData(MainCallback callback)
+static u32 AllocateFrontierPassData(void (*callback)(void))
 {
-    // This variable is a MAPSEC initially, but is recycled as a 
-    // bare integer near the end of the function.
-    mapsec_u8_t i;
+    u8 i;
 
     if (sPassData != NULL)
         return ERR_ALREADY_DONE;
@@ -688,7 +686,13 @@ static u32 FreeFrontierPassGfx(void)
 
 static void VBlankCB_FrontierPass(void)
 {
+    #ifdef UBFIX
+    //Game doesn't clear VBlank interrupt handler when freeing sPassGfx
+    //Check was added instead of disabling VBlank after freeing to ensure there are no new bugs introduced
+    if (sPassGfx != NULL && sPassGfx->zooming)
+    #else
     if (sPassGfx->zooming)
+    #endif
     {
         SetBgAffine(2,
                     sBgAffineCoords[sPassData->areaToShow - 1][0] << 8,
@@ -782,7 +786,7 @@ static bool32 InitFrontierPass(void)
         break;
     case 8:
         LoadPalette(gFrontierPassBg_Pal, 0, NUM_BG_PAL_SLOTS * PLTT_SIZE_4BPP);
-        LoadPalette(gFrontierPassBg_Pal[1 + sPassData->trainerStars], BG_PLTT_ID(1), PLTT_SIZE_4BPP);
+        LoadPaletteWithOffset(gFrontierPassBg_Pal, PLTT_SIZEOF((1 + sPassData->trainerStars) * 16), BG_PLTT_ID(1), PLTT_SIZE_4BPP);
         LoadPalette(GetTextWindowPalette(0), BG_PLTT_ID(15), PLTT_SIZE_4BPP);
         DrawFrontierPassBg();
         UpdateAreaHighlight(sPassData->cursorArea, sPassData->previousCursorArea);
@@ -1365,7 +1369,7 @@ static void PrintOnFrontierMap(void);
 static void InitFrontierMapSprites(void);
 static void HandleFrontierMapCursorMove(u8 direction);
 
-static void ShowFrontierMap(MainCallback callback)
+static void ShowFrontierMap(void (*callback)(void))
 {
     if (sMapData != NULL)
         SetMainCallback2(callback); // This line doesn't make sense at all, since it gets overwritten later anyway.

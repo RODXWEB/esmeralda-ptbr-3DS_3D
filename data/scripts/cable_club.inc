@@ -42,7 +42,7 @@ CableClub_EventScript_DistributeEonTicket::
 	release
 	end
 
-@ Unused?
+/* Unused?*/
 CableClub_EventScript_MysteryGiftThankYou2::
 	msgbox gText_ThankYouForAccessingMysteryGift, MSGBOX_DEFAULT
 	release
@@ -57,7 +57,7 @@ CableClub_OnWarp:
 	map_script_2 VAR_CABLE_CLUB_STATE, USING_UNION_ROOM, CableClub_EventScript_CheckTurnAttendant
 	map_script_2 VAR_CABLE_CLUB_STATE, USING_BERRY_CRUSH, CableClub_EventScript_CheckTurnAttendant
 	map_script_2 VAR_CABLE_CLUB_STATE, USING_MINIGAME, CableClub_EventScript_CheckTurnAttendant
-	.2byte 0
+	.short 0
 
 CableClub_EventScript_CheckTurnAttendant::
 	goto_if_eq VAR_0x8007, 0, CableClub_EventScript_DontTurnAttendant
@@ -110,7 +110,7 @@ CableClub_OnFrame:
 	map_script_2 VAR_CABLE_CLUB_STATE, USING_UNION_ROOM, CableClub_EventScript_ExitUnionRoom
 	map_script_2 VAR_CABLE_CLUB_STATE, USING_BERRY_CRUSH, CableClub_EventScript_ExitLinkRoom
 	map_script_2 VAR_CABLE_CLUB_STATE, USING_MINIGAME, CableClub_EventScript_ExitMinigameRoom
-	.2byte 0
+	.short 0
 
 CableClub_EventScript_ExitLinkRoom::
 	lockall
@@ -356,7 +356,7 @@ CableClub_EventScript_EnterColosseum::
 	waitdooranim
 	applymovement LOCALID_PLAYER, Movement_PlayerEnterLinkRoom
 	waitmovement 0
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	closedoor 9, 1
 	waitdooranim
 	release
@@ -367,7 +367,7 @@ CableClub_EventScript_EnterColosseum::
 	waitstate
 	end
 
-@ Unused
+/* Unused*/
 CableClub_EventScript_PlayerApproachLinkRoomRight::
 	applymovement LOCALID_PLAYER, Movement_PlayerApproachLinkRoomRight
 	waitmovement 0
@@ -407,7 +407,7 @@ CableClub_EventScript_AbortLinkWrongNumberForSingleBattle::
 	end
 
 CableClub_EventScript_ConfirmNumberAndRestart::
-	special CloseLink  @ Redundant
+	special CloseLink  /* Redundant*/
 	msgbox CableClub_Text_PleaseConfirmNumberAndRestart, MSGBOX_DEFAULT
 	release
 	end
@@ -450,7 +450,7 @@ CableClub_EventScript_EnterTradeCenter::
 	waitdooranim
 	applymovement LOCALID_PLAYER, Movement_PlayerEnterLinkRoom
 	waitmovement 0
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	closedoor 9, 1
 	waitdooranim
 	release
@@ -515,7 +515,7 @@ CableClub_EventScript_EnterRecordCorner::
 	waitdooranim
 	applymovement LOCALID_PLAYER, Movement_PlayerEnterLinkRoom
 	waitmovement 0
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	closedoor 9, 1
 	waitdooranim
 	release
@@ -567,7 +567,7 @@ MossdeepCity_GameCorner_1F_EventScript_AbortMinigame::
 	release
 	end
 
-@ Unused
+/* Unused*/
 CableClub_EventScript_CableClubWarp::
 	special SetCableClubWarp
 	special DoCableClubWarp
@@ -606,7 +606,7 @@ Movement_AttendantFaceDown:
 	face_down
 	step_end
 
-@ Unused
+/* Unused*/
 Movement_AttendantFaceRight:
 	face_right
 	step_end
@@ -620,7 +620,7 @@ Movement_PlayerExitLinkRoom:
 	walk_down
 	step_end
 
-@ Functionally unused
+/* Functionally unused*/
 Movement_PlayerApproachLinkRoomRight:
 	walk_right
 	walk_up
@@ -637,7 +637,7 @@ Movement_PlayerEnterLinkRoom:
 	walk_up
 	step_end
 
-@ Unused
+/* Unused*/
 Movement_PlayerFaceAttendantLeft:
 	face_left
 	step_end
@@ -858,6 +858,15 @@ CableClub_EventScript_UnionRoomAttendant::
 	specialvar VAR_RESULT, IsBadEggInParty
 	goto_if_eq VAR_RESULT, TRUE, CableClub_EventScript_AbortLinkPlayerHasBadEgg
 	copyvar VAR_0x8007, VAR_LAST_TALKED
+	@ Turned away (two POKeMON needed, no ENIGMA BERRY) before joining a
+	@ session, so nobody waits for a player who cannot come in.
+	call CableClub_EventScript_CheckPartyUnionRoomRequirements
+	goto_if_eq VAR_RESULT, 0, CableClub_EventScript_AbortLink
+	setvar VAR_0x800A, LOCAL_KIND_UNION_ROOM
+	call CableClub_EventScript_LocalSession
+	@ No way in without a session (when local wireless is set up).
+	specialvar VAR_RESULT, LocalSession_CanEnter
+	goto_if_eq VAR_RESULT, FALSE, CableClub_EventScript_AbortLink
 	specialvar VAR_RESULT, IsWirelessAdapterConnected
 	goto_if_eq VAR_RESULT, FALSE, CableClub_EventScript_UnionRoomAdapterNotConnected
 	message CableClub_Text_WelcomeUnionRoomEnter
@@ -902,7 +911,7 @@ CableClub_EventScript_EnterUnionRoom::
 	waitdooranim
 	applymovement LOCALID_PLAYER, Movement_PlayerEnterLinkRoom
 	waitmovement 0
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	closedoor 5, 1
 	waitdooranim
 	special Script_ResetUnionRoomTrade
@@ -951,13 +960,95 @@ CableClub_EventScript_DontAskAboutLinking::
 	release
 	return
 
+@ Local wireless play: a session with the players nearby at this counter.
+@ The game joins the session a 3DS nearby is hosting here, or hosts one;
+@ players in the same session find each other through the wireless features.
+@ See src/local_session.c. VAR_0x800A: the counter (LOCAL_KIND_*).
+CableClub_EventScript_LocalSession::
+	specialvar VAR_RESULT, LocalSession_IsEnabled
+	goto_if_eq VAR_RESULT, FALSE, CableClub_EventScript_LocalSessionEnd
+	specialvar VAR_RESULT, LocalSession_Start
+	goto_if_eq VAR_RESULT, TRUE, CableClub_EventScript_LocalSessionEnd
+	message CableClub_Text_LocalLooking
+	waitmessage
+	special LocalSession_Wait
+	waitstate
+	goto_if_eq VAR_RESULT, LOCAL_SESSION_IN, CableClub_EventScript_LocalSessionEnd
+	goto_if_eq VAR_RESULT, LOCAL_SESSION_OTHER_BUILD, CableClub_EventScript_LocalOtherBuild
+	msgbox CableClub_Text_LocalFailed, MSGBOX_DEFAULT
+CableClub_EventScript_LocalSessionEnd::
+	return
+
+CableClub_EventScript_LocalOtherBuild::
+	msgbox CableClub_Text_LocalOtherBuild, MSGBOX_DEFAULT
+	return
+
+#if GAME_LANGUAGE == LANGUAGE_SPANISH
+CableClub_Text_LocalLooking:
+	.string "Buscando jugadores cercanos…$"
+
+CableClub_Text_LocalOtherBuild:
+	.string "El jugador cercano tiene otra\n"
+	.string "versión del juego.\p"
+	.string "Las dos consolas deben tener la\n"
+	.string "misma versión para jugar juntas.$"
+
+CableClub_Text_LocalFailed:
+	.string "No se pudo iniciar la conexión\n"
+	.string "inalámbrica. ¿Está activada?$"
+#elif GAME_LANGUAGE == LANGUAGE_FRENCH
+CableClub_Text_LocalLooking:
+	.string "Recherche de joueurs à proximité…$"
+
+CableClub_Text_LocalOtherBuild:
+	.string "Le joueur à proximité a une autre\n"
+	.string "version du jeu.\p"
+	.string "Les deux consoles doivent avoir la\n"
+	.string "même version pour jouer ensemble.$"
+
+CableClub_Text_LocalFailed:
+	.string "Impossible de lancer la connexion\n"
+	.string "sans fil. Est-elle activée?$"
+#elif GAME_LANGUAGE == LANGUAGE_ITALIAN
+CableClub_Text_LocalLooking:
+	.string "Ricerca di altri giocatori vicini…$"
+
+CableClub_Text_LocalOtherBuild:
+	.string "Il giocatore vicino ha una\n"
+	.string "versione diversa del gioco.\p"
+	.string "Per giocare insieme, le console\n"
+	.string "devono avere la stessa versione.$"
+
+CableClub_Text_LocalFailed:
+	.string "Impossibile avviare la connessione\n"
+	.string "wireless. È attiva?$"
+#else
+CableClub_Text_LocalLooking:
+	.string "Looking for other players nearby…$"
+
+CableClub_Text_LocalOtherBuild:
+	.string "The player nearby has a different\n"
+	.string "version of the game.\p"
+	.string "Please put the same version on both\n"
+	.string "systems to play together.$"
+
+CableClub_Text_LocalFailed:
+	.string "The wireless connection couldn't be\n"
+	.string "started. Is wireless turned on?$"
+#endif
+
 CableClub_EventScript_DirectCornerAttendant::
 	lock
 	faceplayer
-	setvar VAR_FRONTIER_FACILITY, FACILITY_MULTI_OR_EREADER  @ Set preemptively for multi battles, ignored otherwise
+	setvar VAR_FRONTIER_FACILITY, FACILITY_MULTI_OR_EREADER  /* Set preemptively for multi battles, ignored otherwise*/
 	goto_if_unset FLAG_SYS_POKEDEX_GET, CableClub_EventScript_WirelessClubAdjustements
 	specialvar VAR_RESULT, IsBadEggInParty
 	goto_if_eq VAR_RESULT, TRUE, CableClub_EventScript_AbortLinkPlayerHasBadEgg
+	setvar VAR_0x800A, LOCAL_KIND_DIRECT_CORNER
+	call CableClub_EventScript_LocalSession
+	@ No way in without a session (when local wireless is set up).
+	specialvar VAR_RESULT, LocalSession_CanEnter
+	goto_if_eq VAR_RESULT, FALSE, CableClub_EventScript_AbortLink
 	specialvar VAR_RESULT, IsWirelessAdapterConnected
 	goto_if_eq VAR_RESULT, FALSE, CableClub_EventScript_WelcomeToCableClub
 	message CableClub_Text_WelcomeWhichDirectCornerRoom
@@ -1202,7 +1293,7 @@ CableClub_EventScript_EnterWirelessLinkRoom::
 	waitdooranim
 	applymovement LOCALID_PLAYER, Movement_PlayerEnterLinkRoom
 	waitmovement 0
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	closedoor 9, 1
 	waitdooranim
 	release
@@ -1291,6 +1382,11 @@ MossdeepCity_GameCorner_1F_EventScript_MinigameInfoExit::
 MossdeepCity_GameCorner_1F_EventScript_OldMan2::
 	lock
 	faceplayer
+	@ The wireless minigames: in the session of this counter too.
+	setvar VAR_0x800A, LOCAL_KIND_GAME_CORNER
+	call CableClub_EventScript_LocalSession
+	specialvar VAR_RESULT, LocalSession_CanEnter
+	goto_if_eq VAR_RESULT, FALSE, MossdeepCity_GameCorner_1F_EventScript_AbortMinigame
 	message MossdeepCity_GameCorner_1F_Text_WelcomeCanYouWait
 	waitmessage
 	specialvar VAR_RESULT, IsWirelessAdapterConnected
@@ -1380,7 +1476,7 @@ MossdeepCity_GameCorner_1F_EventScript_EnterMinigameRoom::
 	closemessage
 	applymovement LOCALID_PLAYER, Movement_PlayerEnterMinigameRoom
 	waitmovement 0
-	hideplayer
+	hideobjectat LOCALID_PLAYER, 0
 	release
 	waitstate
 	end

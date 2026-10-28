@@ -22,6 +22,13 @@
 #include "trainer_see.h"
 #include "trainer_hill.h"
 #include "util.h"
+#ifdef PORT_BRIDGE
+#include "port_platform.h"
+#endif
+#ifdef PLATFORM_3DS
+#include "follower_mon.h"
+#include "wild_encounter.h"
+#endif
 #include "constants/event_object_movement.h"
 #include "constants/event_objects.h"
 #include "constants/field_effects.h"
@@ -29,6 +36,9 @@
 #include "constants/mauville_old_man.h"
 #include "constants/trainer_types.h"
 #include "constants/union_room.h"
+#if defined(PLATFORM_3DS)
+#include "3ds_field_view.h"
+#endif
 
 #define SPECIAL_LOCALIDS_START (min(LOCALID_CAMERA, \
                                 min(LOCALID_PLAYER, \
@@ -1398,7 +1408,7 @@ void RemoveObjectEventByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup)
 
 static void RemoveObjectEventInternal(struct ObjectEvent *objectEvent)
 {
-    struct SpriteFrameImage image;
+    struct SpriteFrameImage image = {0};
     image.size = GetObjectEventGraphicsInfo(objectEvent->graphicsId)->size;
     gSprites[objectEvent->spriteId].images = &image;
     DestroySprite(&gSprites[objectEvent->spriteId]);
@@ -1463,6 +1473,10 @@ static u8 TrySetupObjectEventSprite(const struct ObjectEventTemplate *objectEven
     sprite->x += 8;
     sprite->y += 16 + sprite->centerToCornerVecY;
     sprite->oam.paletteNum = paletteSlot;
+#ifdef PLATFORM_3DS
+    if (objectEvent->graphicsId == OBJ_EVENT_GFX_FOLLOWER)
+        FollowerMon_BindSprite(sprite);
+#endif
     sprite->coordOffsetEnabled = TRUE;
     sprite->sObjEventId = objectEventId;
     objectEvent->spriteId = spriteId;
@@ -1479,7 +1493,7 @@ static u8 TrySpawnObjectEventTemplate(const struct ObjectEventTemplate *objectEv
 {
     u8 objectEventId;
     struct SpriteTemplate spriteTemplate;
-    struct SpriteFrameImage spriteFrameImage;
+    struct SpriteFrameImage spriteFrameImage = {0};
     const struct ObjectEventGraphicsInfo *graphicsInfo;
     const struct SubspriteTable *subspriteTables = NULL;
 
@@ -1642,6 +1656,236 @@ u8 CreateVirtualObject(u8 graphicsId, u8 virtualObjId, s16 x, s16 y, u8 elevatio
     return spriteId;
 }
 
+#if defined(PLATFORM_3DS)
+/*
+ * There is room for OBJECT_EVENTS_COUNT objects, a number the save keeps, and
+ * the 3DS top screen shows more of the map than that many cover: the window
+ * below is its view (3ds_field_view.h), which for the voxel camera reaches far
+ * up the map. When the people in it outnumber the room, the ones on screen and
+ * nearest the player come first, and a person further off - out of sight, or
+ * far up the view - gives its room to them. Spawned in template order with the
+ * first come keeping the room, people standing on screen were never created
+ * while others out of sight were, and came and went as the player walked.
+ */
+
+// The window, in metatiles from the player's: the view and a margin of two,
+// as the original keeps, for people to appear before they are on screen.
+#define OBJECT_EVENT_VIEW_MARGIN 2
+// How much further off a person has to be than one waiting for room to give
+// its room up: without a gap, two at about the same distance would trade
+// places step after step, both flickering in and out.
+#define OBJECT_EVENT_EVICT_GAP 4
+
+static void GetObjectEventWindow(s16 *left, s16 *right, s16 *top, s16 *bottom)
+{
+    s16 playerX = gSaveBlock1Ptr->pos.x + MAP_OFFSET;
+    s16 playerY = gSaveBlock1Ptr->pos.y + MAP_OFFSET;
+    int sideways, north, south;
+
+    CtrFieldView_Window(CtrFieldView_Current(), OBJECT_EVENT_VIEW_MARGIN, &sideways, &north, &south);
+    *left = playerX - sideways;
+    *right = playerX + sideways;
+    *top = playerY - north;
+    *bottom = playerY + south;
+}
+
+// Smaller comes first: tiles out of sight count double, then the distance.
+static float ObjectEventViewScore(s16 x, s16 y)
+{
+    return CtrFieldView_Score(CtrFieldView_Current(),
+                              x - (gSaveBlock1Ptr->pos.x + MAP_OFFSET),
+                              y - (gSaveBlock1Ptr->pos.y + MAP_OFFSET));
+}
+
+static bool8 IsLinkPlayerObjectEvent(u8 objectEventId)
+{
+    u8 j;
+
+    for (j = 0; j < ARRAY_COUNT(gLinkPlayerObjectEvents); j++)
+    {
+        if (gLinkPlayerObjectEvents[j].active && objectEventId == gLinkPlayerObjectEvents[j].objEventId)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static u8 GetSpawnableObjectEventCount(void)
+{
+    if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
+        return GetNumBattlePyramidObjectEvents();
+    else if (InTrainerHill())
+        return HILL_TRAINERS_PER_FLOOR;
+    else
+        return gMapHeader.events->objectEventCount;
+}
+
+static bool8 IsInObjectEventWindow(s16 x, s16 y, s16 left, s16 right, s16 top, s16 bottom)
+{
+    return x >= left && x <= right && y >= top && y <= bottom;
+}
+
+// Can this object give its room up? Not the player or a link partner, and not
+// one a script or a trainer's approach is moving or holding: anything else is
+// spawned again from its template once it comes back into view, as when it
+// leaves the window. An object spawned without one (a special object) can
+// only go once it is outside the window, where it would be removed anyway.
+static bool8 CanEvictObjectEvent(u8 objectEventId, s16 left, s16 right, s16 top, s16 bottom)
+{
+    struct ObjectEvent *objectEvent = &gObjectEvents[objectEventId];
+    u8 count;
+
+    if (!objectEvent->active || objectEvent->isPlayer || objectEvent->frozen
+     || objectEvent->heldMovementActive || IsLinkPlayerObjectEvent(objectEventId))
+        return FALSE;
+    if (!IsInObjectEventWindow(objectEvent->currentCoords.x, objectEvent->currentCoords.y, left, right, top, bottom)
+     && !IsInObjectEventWindow(objectEvent->initialCoords.x, objectEvent->initialCoords.y, left, right, top, bottom))
+        return TRUE;
+    if (objectEvent->mapNum != gSaveBlock1Ptr->location.mapNum
+     || objectEvent->mapGroup != gSaveBlock1Ptr->location.mapGroup)
+        return FALSE;
+    count = GetSpawnableObjectEventCount();
+    return FindObjectEventTemplateByLocalId(objectEvent->localId, gSaveBlock1Ptr->objectEventTemplates, count) != NULL;
+}
+
+static bool8 HasFreeObjectEventSlot(void)
+{
+    u8 i;
+
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        if (!gObjectEvents[i].active)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+// Frees the room of the object furthest off, if it is further off than a
+// person scored `score` by more than the gap.
+static bool8 EvictFurthestObjectEvent(float score, s16 left, s16 right, s16 top, s16 bottom)
+{
+    u8 i, furthest = OBJECT_EVENTS_COUNT;
+    float furthestScore = score + OBJECT_EVENT_EVICT_GAP;
+
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        float objectScore;
+
+        if (!CanEvictObjectEvent(i, left, right, top, bottom))
+            continue;
+        objectScore = ObjectEventViewScore(gObjectEvents[i].currentCoords.x, gObjectEvents[i].currentCoords.y);
+        if (objectScore > furthestScore)
+        {
+            furthestScore = objectScore;
+            furthest = i;
+        }
+    }
+    if (furthest == OBJECT_EVENTS_COUNT)
+        return FALSE;
+    RemoveObjectEvent(&gObjectEvents[furthest]);
+    return TRUE;
+}
+
+void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
+{
+    u8 i, j, objectCount, waiting = 0;
+    u8 order[OBJECT_EVENT_TEMPLATES_COUNT];
+    float score[OBJECT_EVENT_TEMPLATES_COUNT];
+    s16 left, right, top, bottom;
+    u8 mapNum = gSaveBlock1Ptr->location.mapNum;
+    u8 mapGroup = gSaveBlock1Ptr->location.mapGroup;
+
+    if (gMapHeader.events == NULL)
+        return;
+
+    GetObjectEventWindow(&left, &right, &top, &bottom);
+    objectCount = GetSpawnableObjectEventCount();
+    if (objectCount > OBJECT_EVENT_TEMPLATES_COUNT)
+        objectCount = OBJECT_EVENT_TEMPLATES_COUNT;
+
+    // The people in the window not yet spawned, nearest the view first.
+    for (i = 0; i < objectCount; i++)
+    {
+        struct ObjectEventTemplate *template = &gSaveBlock1Ptr->objectEventTemplates[i];
+        s16 npcX = template->x + MAP_OFFSET;
+        s16 npcY = template->y + MAP_OFFSET;
+        float npcScore;
+
+        if (!IsInObjectEventWindow(npcX, npcY, left, right, top, bottom) || FlagGet(template->flagId)
+         || GetObjectEventIdByLocalIdAndMap(template->localId, mapNum, mapGroup) != OBJECT_EVENTS_COUNT)
+            continue;
+        npcScore = ObjectEventViewScore(npcX, npcY);
+        for (j = waiting; j > 0 && score[j - 1] > npcScore; j--)
+        {
+            order[j] = order[j - 1];
+            score[j] = score[j - 1];
+        }
+        order[j] = i;
+        score[j] = npcScore;
+        waiting++;
+    }
+
+    for (i = 0; i < waiting; i++)
+    {
+        // The rest are further off still: none of them would take a room.
+        if (!HasFreeObjectEventSlot() && !EvictFurthestObjectEvent(score[i], left, right, top, bottom))
+            break;
+        TrySpawnObjectEventTemplate(&gSaveBlock1Ptr->objectEventTemplates[order[i]], mapNum, mapGroup, cameraX, cameraY);
+    }
+}
+
+// Room for an object made at the player's side (the follower, follower_mon.c):
+// with every room taken, the person furthest off gives its room up, as it
+// would for a person standing there.
+bool8 FreeObjectEventSlotNearPlayer(void)
+{
+    s16 left, right, top, bottom;
+
+    if (HasFreeObjectEventSlot())
+        return TRUE;
+    GetObjectEventWindow(&left, &right, &top, &bottom);
+    return EvictFurthestObjectEvent(ObjectEventViewScore(gSaveBlock1Ptr->pos.x + MAP_OFFSET, gSaveBlock1Ptr->pos.y + MAP_OFFSET),
+                                    left, right, top, bottom);
+}
+
+void RemoveObjectEventsOutsideView(void)
+{
+    u8 i;
+
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        struct ObjectEvent *objectEvent = &gObjectEvents[i];
+
+        if (objectEvent->active && !objectEvent->isPlayer && !IsLinkPlayerObjectEvent(i))
+            RemoveObjectEventIfOutsideView(objectEvent);
+    }
+}
+
+static void RemoveObjectEventIfOutsideView(struct ObjectEvent *objectEvent)
+{
+    s16 left, right, top, bottom;
+
+    GetObjectEventWindow(&left, &right, &top, &bottom);
+    if (IsInObjectEventWindow(objectEvent->currentCoords.x, objectEvent->currentCoords.y, left, right, top, bottom)
+     || IsInObjectEventWindow(objectEvent->initialCoords.x, objectEvent->initialCoords.y, left, right, top, bottom))
+        return;
+    RemoveObjectEvent(objectEvent);
+}
+
+// The view changed under a still camera (the 2D/voxel option, the voxel
+// camera's pitch or zoom): the people it now reaches, or no longer does,
+// are brought in or let go as a step would (field_camera.c).
+void UpdateObjectEventsForViewChange(void)
+{
+    static unsigned sViewGeneration;
+    unsigned generation = CtrFieldView_Generation();
+
+    if (generation == sViewGeneration)
+        return;
+    sViewGeneration = generation;
+    RemoveObjectEventsOutsideView();
+    TrySpawnObjectEvents(0, 0);
+}
+#else
 void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
 {
     u8 i;
@@ -1649,10 +1893,10 @@ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
 
     if (gMapHeader.events != NULL)
     {
-        s16 left = gSaveBlock1Ptr->pos.x - 2;
-        s16 right = gSaveBlock1Ptr->pos.x + MAP_OFFSET_W + 2;
-        s16 top = gSaveBlock1Ptr->pos.y;
-        s16 bottom = gSaveBlock1Ptr->pos.y + MAP_OFFSET_H + 2;
+        s16 left = gSaveBlock1Ptr->pos.x - OBJECT_EVENT_VIEW_LEFT;
+        s16 right = gSaveBlock1Ptr->pos.x + OBJECT_EVENT_VIEW_RIGHT;
+        s16 top = gSaveBlock1Ptr->pos.y - OBJECT_EVENT_VIEW_TOP;
+        s16 bottom = gSaveBlock1Ptr->pos.y + OBJECT_EVENT_VIEW_BOTTOM;
 
         if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
             objectCount = GetNumBattlePyramidObjectEvents();
@@ -1698,10 +1942,12 @@ void RemoveObjectEventsOutsideView(void)
 
 static void RemoveObjectEventIfOutsideView(struct ObjectEvent *objectEvent)
 {
-    s16 left =   gSaveBlock1Ptr->pos.x - 2;
-    s16 right =  gSaveBlock1Ptr->pos.x + 17;
-    s16 top =    gSaveBlock1Ptr->pos.y;
-    s16 bottom = gSaveBlock1Ptr->pos.y + 16;
+    // Matching the spawn window, or an object would be created and dropped
+    // again on the same frame.
+    s16 left =   gSaveBlock1Ptr->pos.x - OBJECT_EVENT_VIEW_LEFT;
+    s16 right =  gSaveBlock1Ptr->pos.x + OBJECT_EVENT_VIEW_RIGHT;
+    s16 top =    gSaveBlock1Ptr->pos.y - OBJECT_EVENT_VIEW_TOP;
+    s16 bottom = gSaveBlock1Ptr->pos.y + OBJECT_EVENT_VIEW_BOTTOM;
 
     if (objectEvent->currentCoords.x >= left && objectEvent->currentCoords.x <= right
      && objectEvent->currentCoords.y >= top && objectEvent->currentCoords.y <= bottom)
@@ -1711,6 +1957,7 @@ static void RemoveObjectEventIfOutsideView(struct ObjectEvent *objectEvent)
         return;
     RemoveObjectEvent(objectEvent);
 }
+#endif
 
 void SpawnObjectEventsOnReturnToField(s16 x, s16 y)
 {
@@ -1732,7 +1979,7 @@ static void SpawnObjectEventOnReturnToField(u8 objectEventId, s16 x, s16 y)
     struct Sprite *sprite;
     struct ObjectEvent *objectEvent;
     struct SpriteTemplate spriteTemplate;
-    struct SpriteFrameImage spriteFrameImage;
+    struct SpriteFrameImage spriteFrameImage = {0};
     const struct SubspriteTable *subspriteTables;
     const struct ObjectEventGraphicsInfo *graphicsInfo;
 
@@ -1785,6 +2032,10 @@ static void SpawnObjectEventOnReturnToField(u8 objectEventId, s16 x, s16 y)
             SetSubspriteTables(sprite, subspriteTables);
 
         sprite->oam.paletteNum = paletteSlot;
+#ifdef PLATFORM_3DS
+        if (objectEvent->graphicsId == OBJ_EVENT_GFX_FOLLOWER)
+            FollowerMon_BindSprite(sprite);
+#endif
         sprite->coordOffsetEnabled = TRUE;
         sprite->sObjEventId = objectEventId;
         objectEvent->spriteId = i;
@@ -1924,11 +2175,24 @@ const struct ObjectEventGraphicsInfo *GetObjectEventGraphicsInfo(u8 graphicsId)
         return gMauvilleOldManGraphicsInfoPointers[bard];
     }
 
+#ifdef PLATFORM_3DS
+    if (graphicsId == OBJ_EVENT_GFX_FOLLOWER)
+        return FollowerMon_GraphicsInfo();
+#endif
+
     if (graphicsId >= NUM_OBJ_EVENT_GFX)
         graphicsId = OBJ_EVENT_GFX_NINJA_BOY;
 
     return gObjectEventGraphicsInfoPointers[graphicsId];
 }
+
+#ifdef PLATFORM_3DS
+// The follower's 32x32 or 64x64 sprite (follower_mon.c), split as any object's.
+const struct SubspriteTable *ObjectEventSubspriteTables(u32 dimension)
+{
+    return dimension == 64 ? sOamTables_64x64 : sOamTables_32x32;
+}
+#endif
 
 static void SetObjectEventDynamicGraphicsId(struct ObjectEvent *objectEvent)
 {
@@ -2186,6 +2450,10 @@ void UpdateObjectEventCoordsForCameraUpdate(void)
                 gObjectEvents[i].previousCoords.y -= dy;
             }
         }
+#ifdef PLATFORM_3DS
+        FollowerMon_CameraShift(dx, dy);
+        VisibleWild_CameraShift(dx, dy);
+#endif
     }
 }
 
@@ -2217,8 +2485,14 @@ static bool8 ObjectEventDoesElevationMatch(struct ObjectEvent *objectEvent, u8 e
 void UpdateObjectEventsForCameraUpdate(s16 x, s16 y)
 {
     UpdateObjectEventCoordsForCameraUpdate();
+#if defined(PLATFORM_3DS)
+    // Those the step leaves behind first: their room goes to those it brings.
+    RemoveObjectEventsOutsideView();
+    TrySpawnObjectEvents(x, y);
+#else
     TrySpawnObjectEvents(x, y);
     RemoveObjectEventsOutsideView();
+#endif
 }
 
 // The "CameraObject" functions below are responsible for an invisible sprite
@@ -4729,6 +5003,13 @@ static bool8 DoesObjectCollideWithObjectAt(struct ObjectEvent *objectEvent, s16 
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
         curObject = &gObjectEvents[i];
+#ifdef PLATFORM_3DS
+        // The player walks into the follower (they swap tiles), and trainers
+        // see and walk through it.
+        if (FollowerMon_IsFollower(curObject)
+         && (objectEvent->isPlayer || objectEvent->trainerType != TRAINER_TYPE_NONE))
+            continue;
+#endif
         if (curObject->active && curObject != objectEvent)
         {
             if ((curObject->currentCoords.x == x && curObject->currentCoords.y == y) || (curObject->previousCoords.x == x && curObject->previousCoords.y == y))
@@ -5024,6 +5305,13 @@ static u32 GetCopyDirection(u8 copyInitDir, u32 playerInitDir, u32 playerMoveDir
 
 static void ObjectEventExecHeldMovementAction(struct ObjectEvent *objectEvent, struct Sprite *sprite)
 {
+#ifdef PORT_BRIDGE
+    Port_SetBirchDebugEx(0x0424,
+                        objectEvent->localId,
+                        objectEvent->movementActionId,
+                        sprite->sActionFuncId,
+                        objectEvent->heldMovementFinished | (objectEvent->heldMovementActive << 8));
+#endif
     if (gMovementActionFuncs[objectEvent->movementActionId][sprite->sActionFuncId](objectEvent, sprite))
         objectEvent->heldMovementFinished = TRUE;
 }
@@ -7372,10 +7660,14 @@ static void UpdateObjectEventOffscreen(struct ObjectEvent *objectEvent, struct S
     y2 = y;
     y2 += graphicsInfo->height;
 
-    if ((s16)x >= DISPLAY_WIDTH + 16 || (s16)x2 < -16)
+    // The field of view is the GBA screen on GBA and the whole top screen
+    // on 3DS, where the backend centres that screen in a wider viewport.
+    if ((s16)x >= DISPLAY_WIDTH + FIELD_VIEW_OFFSET_X + 16
+     || (s16)x2 < -FIELD_VIEW_OFFSET_X - 16)
         objectEvent->offScreen = TRUE;
 
-    if ((s16)y >= DISPLAY_HEIGHT + 16 || (s16)y2 < -16)
+    if ((s16)y >= DISPLAY_HEIGHT + FIELD_VIEW_OFFSET_Y + 16
+     || (s16)y2 < -FIELD_VIEW_OFFSET_Y - 16)
         objectEvent->offScreen = TRUE;
 }
 
@@ -8580,9 +8872,11 @@ void UpdateObjectEventSpriteInvisibility(struct Sprite *sprite, bool8 invisible)
     x2 = x - (sprite->centerToCornerVecX >> 1);
     y2 = y - (sprite->centerToCornerVecY >> 1);
 
-    if ((s16)x >= DISPLAY_WIDTH + 16 || x2 < -16)
+    if ((s16)x >= DISPLAY_WIDTH + FIELD_VIEW_OFFSET_X + 16
+     || x2 < -FIELD_VIEW_OFFSET_X - 16)
         sprite->invisible = TRUE;
-    if ((s16)y >= DISPLAY_HEIGHT + 16 || y2 < -16)
+    if ((s16)y >= DISPLAY_HEIGHT + FIELD_VIEW_OFFSET_Y + 16
+     || y2 < -FIELD_VIEW_OFFSET_Y - 16)
         sprite->invisible = TRUE;
 }
 
@@ -8771,6 +9065,13 @@ static void DoShadowFieldEffect(struct ObjectEvent *objectEvent)
 {
     if (!objectEvent->hasShadow)
     {
+#ifdef PORT_BRIDGE
+        Port_SetBirchDebugEx(0x0425,
+                            objectEvent->localId,
+                            objectEvent->currentCoords.x,
+                            objectEvent->currentCoords.y,
+                            objectEvent->currentElevation | (objectEvent->previousElevation << 8));
+#endif
         objectEvent->hasShadow = TRUE;
         StartFieldEffectForObjectEvent(FLDEFF_SHADOW, objectEvent);
     }
