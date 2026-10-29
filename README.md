@@ -4,6 +4,9 @@ Tradução em Português do Brasil **completa** aplicada ao port nativo para
 Nintendo 3DS **[Emerald 3DS / Pokémon Emerald 3Ds Dual Screen](https://github.com/ZallaxDev/emerald-3ds)**
 (tela dupla, interface de toque na tela de baixo e mundo voxel 3D opcional).
 
+**Download pronto:** [Releases](https://github.com/RODXWEB/esmeralda-ptbr-3DS_3D/releases/latest)
+(`Emerald3DS-PTBR-v0.4.0-ptbr-02.zip`).
+
 Esta árvore já está localizada para PT-BR e pronta para compilar. Não contém
 ROM nem save.
 
