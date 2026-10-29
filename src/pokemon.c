@@ -1,4 +1,5 @@
 #include "global.h"
+#include "international_string_util.h"
 #ifdef PLATFORM_3DS
 #include "3ds_extras.h" // optional settings (OPTIONS pages)
 #endif
@@ -3851,7 +3852,12 @@ u32 GetBoxMonData3(struct BoxPokemon *boxMon, s32 field, u8 *data)
             StringCopy(data, gText_EggNickname);
             retVal = StringLength(data);
         }
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+        // Japanese is the game's own language: its names are not marked.
+        else if (FALSE)
+#else
         else if (boxMon->language == LANGUAGE_JAPANESE)
+#endif
         {
             data[0] = EXT_CTRL_CODE_BEGIN;
             data[1] = EXT_CTRL_CODE_JPN;
@@ -7065,7 +7071,11 @@ const u8 *GetTrainerClassNameFromId(u16 trainerId)
 {
     if (trainerId >= TRAINERS_COUNT)
         trainerId = TRAINER_NONE;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    return GetTrainerClassNameGenderSpecific(gTrainers[trainerId].trainerClass, gTrainers[trainerId].encounterMusic_gender, gTrainers[trainerId].trainerName);
+#else
     return gTrainerClassNames[gTrainers[trainerId].trainerClass];
+#endif
 }
 
 const u8 *GetTrainerNameFromId(u16 trainerId)

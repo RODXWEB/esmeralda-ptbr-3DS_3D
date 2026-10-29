@@ -1309,6 +1309,36 @@ bool8 FieldEffect_IsMachineSprite(const struct Sprite *sprite)
         || sprite->template == &sSpriteTemplate_HofMonitorBig
         || sprite->template == &sSpriteTemplate_HofMonitorSmall;
 }
+
+
+// Fly's bird and whoever rides it fly on the 240x160 picture around the
+// player too, as the GBA placed them by hand: the bird, the player while Fly
+// carries them off or brings them in, and the trainer NPCFlyOut carries away.
+// The port draws them around the player (3ds_video.c, PlaceScreenObject).
+bool8 FieldEffect_IsFlySprite(const struct Sprite *sprite)
+{
+    u32 i;
+
+    if (sprite->template == gFieldEffectObjectTemplatePointers[FLDEFFOBJ_BIRD])
+        return TRUE;
+    if ((FieldEffectActiveListContains(FLDEFF_USE_FLY) || FieldEffectActiveListContains(FLDEFF_FLY_IN))
+     && sprite == &gSprites[gPlayerAvatar.spriteId])
+        return TRUE;
+    for (i = 0; i < MAX_SPRITES; i++)
+    {
+        if (gSprites[i].inUse && gSprites[i].callback == SpriteCB_NPCFlyOut && gSprites[i].data[0]
+         && sprite == &gSprites[gSprites[i].data[1]])
+            return TRUE;
+    }
+    return FALSE;
+}
+
+// The swoop starts and ends off the GBA screen, 140 pixels either side of
+// the player: on the wider one the bird came into sight there. Widened by
+// cos^3, which leaves the path round the player as it was.
+#define FlySwoopX(angle) (Cos(angle, 0x8c) + Cos(angle, Cos(angle, Cos(angle, FIELD_VIEW_OFFSET_X + 32))))
+#else
+#define FlySwoopX(angle) Cos(angle, 0x8c)
 #endif
 
 static u8 CreatePokecenterMonitorSprite(s16 x, s16 y)
@@ -3234,7 +3264,7 @@ static void SpriteCB_NPCFlyOut(struct Sprite *sprite)
 {
     struct Sprite *npcSprite;
 
-    sprite->x2 = Cos(sprite->data[2], 0x8c);
+    sprite->x2 = FlySwoopX(sprite->data[2]);
     sprite->y2 = Sin(sprite->data[2], 0x48);
     sprite->data[2] = (sprite->data[2] + 4) & 0xff;
     if (sprite->data[0])
@@ -3420,7 +3450,11 @@ static void StartFlyBirdSwoopDown(u8 spriteId)
     struct Sprite *sprite;
     sprite = &gSprites[spriteId];
     sprite->callback = SpriteCB_FlyBirdSwoopDown;
+#if defined(PLATFORM_3DS)
+    sprite->x = 240 / 2; // on the GBA picture (FieldEffect_IsFlySprite)
+#else
     sprite->x = DISPLAY_WIDTH / 2;
+#endif
     sprite->y = 0;
     sprite->x2 = 0;
     sprite->y2 = 0;
@@ -3485,7 +3519,7 @@ static void SpriteCB_FlyBirdLeaveBall(struct Sprite *sprite)
 
 static void SpriteCB_FlyBirdSwoopDown(struct Sprite *sprite)
 {
-    sprite->x2 = Cos(sprite->data[2], 0x8c);
+    sprite->x2 = FlySwoopX(sprite->data[2]);
     sprite->y2 = Sin(sprite->data[2], 0x48);
     sprite->data[2] = (sprite->data[2] + 4) & 0xff;
     if (sprite->sPlayerSpriteId != MAX_SPRITES)
@@ -4018,3 +4052,17 @@ static void Task_MoveDeoxysRock(u8 taskId)
 #undef tVelocityY
 #undef tMoveSteps
 #undef tObjEventId
+
+#ifdef PORT_BRIDGE
+// FieldCallback_UseFly from the field as it is (the bottom screen's Fly map,
+// party_menu.c's CtrParty_Fly): no fade to come in from, the player perhaps
+// walking.
+void CtrFly_Start(void)
+{
+    CreateTask(Task_UseFly, 0);
+    LockPlayerFieldControls();
+    // The player may be mid-step: it ends it (FlyOutFieldEffect_FieldMovePose
+    // waits for that), held from taking another.
+    FreezeObjectEventsExceptOne(gPlayerAvatar.objectEventId);
+}
+#endif

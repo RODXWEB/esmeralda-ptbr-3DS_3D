@@ -8,6 +8,9 @@
 #include "sound.h"
 #include "trig.h"
 #include "window.h"
+#ifdef PLATFORM_3DS
+#include "sound_mixer.h"
+#endif
 
 // Cry meter needle positions
 //
@@ -66,6 +69,18 @@ COMMON_DATA u8 gDexCryScreenState = 0;
 static EWRAM_DATA struct PokedexCryScreen *sDexCryScreen = NULL;
 static EWRAM_DATA u8 *sCryWaveformWindowTiledata = NULL;
 static EWRAM_DATA struct PokedexCryMeterNeedle *sCryMeterNeedle = NULL;
+#ifdef PLATFORM_3DS
+// The waveform as it is drawn, two points a frame, oldest first, for the
+// bottom screen's own view of the cry page (CtrDexCry_GetView).
+#define CTR_WAVE 64
+static s8 sCtrWave[CTR_WAVE];
+
+static void CtrDexCry_Push(float amplitude)
+{
+    memmove(sCtrWave, sCtrWave + 1, CTR_WAVE - 1);
+    sCtrWave[CTR_WAVE - 1] = amplitude > 127 ? 127 : amplitude < -127 ? -127 : (s8)amplitude;
+}
+#endif
 
 static const u16 sCryMeterNeedle_Pal[] = INCBIN_U16("graphics/pokedex/cry_meter_needle.gbapal");
 static const u8 sCryMeterNeedle_Gfx[] = INCBIN_U8("graphics/pokedex/cry_meter_needle.4bpp");
@@ -272,6 +287,7 @@ void UpdateCryWaveformWindow(u8 windowId)
 {
     u8 waveformIdx;
 
+
     DrawWaveformWindow(windowId);
     AdvancePlayhead(windowId);
 
@@ -319,6 +335,10 @@ void UpdateCryWaveformWindow(u8 windowId)
 
     // Draw cry
     waveformIdx = 2 * (sDexCryScreen->cryState - 1);
+#ifdef PLATFORM_3DS
+    CtrDexCry_Push(sDexCryScreen->cryWaveformBuffer[waveformIdx]);
+    CtrDexCry_Push(sDexCryScreen->cryWaveformBuffer[waveformIdx + 1]);
+#endif
     DrawWaveformSegment(sDexCryScreen->playStartPos * 8 + sDexCryScreen->playhead - 2, sDexCryScreen->cryWaveformBuffer[waveformIdx]);
     DrawWaveformSegment(sDexCryScreen->playStartPos * 8 + sDexCryScreen->playhead - 1, sDexCryScreen->cryWaveformBuffer[waveformIdx + 1]);
     sDexCryScreen->cryState++;
@@ -357,6 +377,23 @@ static void BufferCryWaveformSegment(void)
     float *baseBuffer;
     float *buffer;
 
+#ifdef PLATFORM_3DS
+    // The port's mixer (music_player.c) leaves pcmBuffer silent: it mixes
+    // into outBuffer, stereo with 1 << 23 to full scale. The frame
+    // m4aSoundVSync hands over next, every other sample of its left channel
+    // as the GBA's 8-bit ones.
+    {
+        struct SoundMixerState *mixer = (struct SoundMixerState *)SOUND_INFO_PTR;
+        s32 *frame = mixer->outBuffer;
+
+        if (mixer->dmaCounter > 1)
+            frame += mixer->samplesPerFrame * 2 * (mixer->framesPerDmaCycle - (mixer->dmaCounter - 1));
+        for (i = 0; i < ARRAY_COUNT(sDexCryScreen->cryWaveformBuffer); i++)
+            sDexCryScreen->cryWaveformBuffer[i] = (frame[i * 4] >> 16) * 2;
+        return;
+    }
+#endif
+
     if (gPcmDmaCounter < 2)
         baseBuffer = gSoundInfo.pcmBuffer;
     else
@@ -369,6 +406,10 @@ static void BufferCryWaveformSegment(void)
 
 static void DrawWaveformFlatline(void)
 {
+#ifdef PLATFORM_3DS
+    CtrDexCry_Push(0);
+    CtrDexCry_Push(0);
+#endif
     DrawWaveformSegment(sDexCryScreen->playStartPos * 8 + sDexCryScreen->playhead - 2, 0);
     DrawWaveformSegment(sDexCryScreen->playStartPos * 8 + sDexCryScreen->playhead - 1, 0);
 }
@@ -578,3 +619,18 @@ static void SetCryMeterNeedleTarget(s8 offset)
     sCryMeterNeedle->moveIncrement = NEEDLE_MOVE_INCREMENT;
 }
 
+#ifdef PLATFORM_3DS
+// The cry page as the bottom screen draws it: the waveform and the meter's
+// needle, 0 (still) to 10 (its furthest).
+void CtrDexCry_GetView(s8 *wave, u8 *volume)
+{
+    s16 level;
+
+    memcpy(wave, sCtrWave, CTR_WAVE);
+    *volume = 0;
+    if (sCryMeterNeedle == NULL)
+        return;
+    level = (MIN_NEEDLE_POS - sCryMeterNeedle->rotation) * 10 / (MIN_NEEDLE_POS - MAX_NEEDLE_POS);
+    *volume = level < 0 ? 0 : level > 10 ? 10 : level;
+}
+#endif

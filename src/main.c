@@ -30,6 +30,9 @@
 #ifdef PORT_BRIDGE
 #include "port_platform.h"
 #include "port_log.h"
+#ifdef PLATFORM_3DS
+u16 Port_RngSeed(u16 fallback);
+#endif
 #endif
 
 static void VBlankIntr(void);
@@ -140,7 +143,9 @@ void AgbMain(void)
     PORT_BOOT_STEP(0xA009);
     InitMapMusic();
     PORT_BOOT_STEP(0xA00A);
-#ifdef BUGFIX
+#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
+    SeedRng(Port_RngSeed(0));
+#elif defined(BUGFIX)
     SeedRngWithRtc(); // see comment at SeedRngWithRtc definition below
 #endif
     PORT_BOOT_STEP(0xA00B);
@@ -180,9 +185,15 @@ void AgbMain(void)
         ReadKeys();
         sMainCallback2JustChanged = FALSE;
 
+#ifdef PLATFORM_3DS
+        // L+R+START+SELECT, as in the 3DS games (port_platform.h).
+        if (gSoftResetDisabled == FALSE
+         && JOY_HELD_RAW(CTR_SOFT_RESET_KEYS) == CTR_SOFT_RESET_KEYS)
+#else
         if (gSoftResetDisabled == FALSE
          && JOY_HELD_RAW(A_BUTTON)
          && JOY_HELD_RAW(B_START_SELECT) == B_START_SELECT)
+#endif
         {
 #if !defined(PORTABLE) || defined(PLATFORM_3DS)
             rfu_REQ_stopMode();

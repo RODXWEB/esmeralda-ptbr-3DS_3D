@@ -3,6 +3,9 @@
 #include "3ds_extras.h" // optional settings (OPTIONS pages)
 #include "3ds_encounters.h"
 #endif
+#ifdef PORT_BRIDGE
+#include "3ds_randomizer.h" // seeded species randomizer (off by default)
+#endif
 #include "wild_encounter.h"
 #include "pokemon.h"
 #include "metatile_behavior.h"
@@ -76,6 +79,24 @@ static bool8 IsAbilityAllowingEncounter(u8 level);
 
 EWRAM_DATA static u8 sWildEncountersDisabled = 0;
 EWRAM_DATA static u32 sFeebasRngValue = 0;
+
+#ifdef PORT_BRIDGE
+// The species a wild Pokemon of the map's tables is met as (3ds_randomizer.h):
+// itself unless the randomizer's wild setting is on. The Battle Pike and the
+// Battle Pyramid look their own tables up by the species they find, so theirs
+// stay as they are.
+static u16 WildSpecies(u16 species)
+{
+    if (gMapHeader.mapLayoutId == LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_WILD_MONS
+     || gMapHeader.mapLayoutId == LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR
+     || InBattlePike() || CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
+        return species;
+    return CtrRandomizer_Species(CTR_RANDOMIZE_WILD, species);
+}
+#define WILD_SPECIES(species) WildSpecies(species)
+#else
+#define WILD_SPECIES(species) (species)
+#endif
 
 #include "data/wild_encounters.h"
 
@@ -466,7 +487,7 @@ static bool8 TryGenerateWildMon(const struct WildPokemonInfo *wildMonInfo, u8 ar
     if (gMapHeader.mapLayoutId != LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_WILD_MONS && flags & WILD_CHECK_KEEN_EYE && !IsAbilityAllowingEncounter(level))
         return FALSE;
 
-    CreateWildMon(wildMonInfo->wildPokemon[wildMonIndex].species, level);
+    CreateWildMon(WILD_SPECIES(wildMonInfo->wildPokemon[wildMonIndex].species), level);
     return TRUE;
 }
 
@@ -474,9 +495,10 @@ static u16 GenerateFishingWildMon(const struct WildPokemonInfo *wildMonInfo, u8 
 {
     u8 wildMonIndex = ChooseWildMonIndex_Fishing(rod);
     u8 level = ChooseWildMonLevel(&wildMonInfo->wildPokemon[wildMonIndex]);
+    u16 species = WILD_SPECIES(wildMonInfo->wildPokemon[wildMonIndex].species);
 
-    CreateWildMon(wildMonInfo->wildPokemon[wildMonIndex].species, level);
-    return wildMonInfo->wildPokemon[wildMonIndex].species;
+    CreateWildMon(species, level);
+    return species;
 }
 
 static bool8 SetUpMassOutbreakEncounter(u8 flags)
@@ -822,6 +844,15 @@ static bool8 VisibleTileFits(s16 x, s16 y, bool8 water)
     return VisibleTileKind(x, y, water) && GetObjectEventIdByXY(x, y) == OBJECT_EVENTS_COUNT;
 }
 
+/* Where the water ones are met: surfing, or diving (3ds_encounters.h). Under
+ * the sea the player is not surfing, and the ones on the seaweed were never
+ * met: with MANY, nothing was, as they replace the random encounters. */
+static bool8 VisiblePlayerInWater(void)
+{
+    return CtrEncounters_PlayerInWater(TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_SURFING) != 0,
+                                       TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_UNDERWATER) != 0);
+}
+
 u32 ShinyOdds_WildPersonality(void); // pokemon.c
 
 static u32 VisibleRollPersonality(void)
@@ -1061,7 +1092,8 @@ static void VisibleTrySpawn(u16 headerId)
             VisibleLogFail("kept away by a repel", wild->species);
             return;
         }
-        v->species = wild->species;
+        // The species it is shown as is the one met when touched (VisibleStartBattle).
+        v->species = WILD_SPECIES(wild->species);
         v->personality = VisibleRollPersonality();
         v->shiny = GET_SHINY_VALUE(VisibleOtId(), v->personality) < SHINY_ODDS;
         v->faceX = 0;
@@ -1093,6 +1125,44 @@ static void VisibleTrySpawn(u16 headerId)
     VisibleLogFail("no free encounter tile near the player", 0);
 }
 
+/*
+ * The sprites of the species the map's tables may show, read ahead on a
+ * worker (follower_mon.c): read as one appears, its file was 15 ms of that
+ * frame on an Old 3DS, every two seconds. Looked at again each second, as
+ * the tables change with the time of day.
+ */
+static void VisiblePrefetch(u16 headerId)
+{
+    static u16 sHeader = HEADER_NONE;
+    static u32 sSignature, sLastLook;
+    const struct WildPokemonInfo *land, *water;
+    u16 species[LAND_WILD_COUNT + WATER_WILD_COUNT];
+    u32 i, j, count = 0, signature = 0;
+
+    if (headerId == sHeader && sVisibleFrames - sLastLook < 60)
+        return;
+    sLastLook = sVisibleFrames;
+    land = headerId != HEADER_NONE ? GetLandMonsInfo(headerId) : NULL;
+    water = headerId != HEADER_NONE ? gWildMonHeaders[headerId].waterMonsInfo : NULL;
+    for (i = 0; land != NULL && i < LAND_WILD_COUNT; i++)
+        species[count++] = WILD_SPECIES(land->wildPokemon[i].species);
+    for (i = 0; water != NULL && i < WATER_WILD_COUNT; i++)
+        species[count++] = WILD_SPECIES(water->wildPokemon[i].species);
+    for (i = 0; i < count; i++)
+        signature = signature * 31 + species[i];
+    if (headerId == sHeader && signature == sSignature)
+        return;
+    sHeader = headerId;
+    sSignature = signature;
+    for (i = 0; i < count; i++)
+    {
+        for (j = 0; j < i && species[j] != species[i]; j++)
+            ;
+        if (j == i)
+            FollowerMon_WildPrefetch(species[i]);
+    }
+}
+
 /* Touched: the battle with this Pokemon, as a random encounter starts one. */
 static void VisibleStartBattle(struct VisibleWild *v)
 {
@@ -1103,7 +1173,7 @@ static void VisibleStartBattle(struct VisibleWild *v)
     BattleSetup_StartWildBattle();
 }
 
-static void VisibleMove(struct VisibleWild *v, s16 px, s16 py, bool8 surfing)
+static void VisibleMove(struct VisibleWild *v, s16 px, s16 py, bool8 inWater)
 {
     static const s8 sSteps[4][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
     u32 dir;
@@ -1130,7 +1200,7 @@ static void VisibleMove(struct VisibleWild *v, s16 px, s16 py, bool8 surfing)
     if (tx == px && ty == py)
     {
         /* Into the player: a battle, if the player stands where it lives. */
-        if (v->water == surfing)
+        if (v->water == inWater)
             v->idle = 0xFFFF;    /* asks for the battle (VisibleWild_Update) */
         else
             v->idle = 60;
@@ -1173,7 +1243,7 @@ void VisibleWild_CameraShift(s16 dx, s16 dy)
 bool8 VisibleWild_StepOnto(void)
 {
     struct ObjectEvent *player = &gObjectEvents[gPlayerAvatar.objectEventId];
-    bool8 surfing = TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_SURFING) != 0;
+    bool8 inWater = VisiblePlayerInWater();
     s16 px = player->currentCoords.x, py = player->currentCoords.y;
     u32 i;
 
@@ -1183,7 +1253,7 @@ bool8 VisibleWild_StepOnto(void)
     {
         struct VisibleWild *v = &sVisible[i];
 
-        if (!v->active || v->vanishing || v->spriteId == VW_NONE || v->water != surfing)
+        if (!v->active || v->vanishing || v->spriteId == VW_NONE || v->water != inWater)
             continue;
         if ((v->x == px && v->y == py) || (v->progress && v->x + v->dx == px && v->y + v->dy == py))
         {
@@ -1226,13 +1296,13 @@ static void WildLogMap(void)
     sNum = gSaveBlock1Ptr->location.mapNum;
     headerId = GetCurrentMapWildMonHeaderId();
     CtrLog_Write(CTR_LOG_GAME, "wild: map %d/%d header %d (land %d water %d) rate %lu%% disabled %d "
-                 "repel %u lead lv %d visible %lu (replaces random %d)",
+                 "repel %u lead lv %d visible %lu (replaces random %d) in water %d",
                  sGroup, sNum, headerId == HEADER_NONE ? -1 : headerId,
                  headerId != HEADER_NONE && GetLandMonsInfo(headerId) != NULL,
                  headerId != HEADER_NONE && gWildMonHeaders[headerId].waterMonsInfo != NULL,
                  (unsigned long)EncounterRatePercent(), sWildEncountersDisabled, VarGet(VAR_REPEL_STEP_COUNT),
                  (int)GetMonData(&gPlayerParty[0], MON_DATA_LEVEL), (unsigned long)VISIBLE_MOST(),
-                 VISIBLE_REPLACES_RANDOM());
+                 VISIBLE_REPLACES_RANDOM(), VisiblePlayerInWater());
 }
 
 void VisibleWild_Update(void)
@@ -1240,7 +1310,7 @@ void VisibleWild_Update(void)
     struct ObjectEvent *player;
     u16 headerId;
     u32 i, percent, most;
-    bool8 surfing, idle, settled;
+    bool8 inWater, idle, settled;
 
     if (gMain.callback2 == CB2_Overworld)
         WildLogMap();
@@ -1320,8 +1390,9 @@ void VisibleWild_Update(void)
     sVisibleShifted = FALSE;
 
     headerId = GetCurrentMapWildMonHeaderId();
+    VisiblePrefetch(headerId);
     player = &gObjectEvents[gPlayerAvatar.objectEventId];
-    surfing = TestPlayerAvatarFlags(PLAYER_AVATAR_FLAG_SURFING) != 0;
+    inWater = VisiblePlayerInWater();
     idle = !ArePlayerFieldControlsLocked() && !ScriptContext_IsEnabled()
         && gPlayerAvatar.tileTransitionState == T_NOT_MOVING;
     settled = FollowerMon_PalettesSettled();
@@ -1374,14 +1445,14 @@ void VisibleWild_Update(void)
                 || (v->x == player->currentCoords.x && v->y == player->currentCoords.y && !v->progress);
 
             // It walked into the player: a repel keeps it off, as it keeps random ones.
-            if (touched && v->water == surfing && (v->idle != 0xFFFF || IsWildLevelAllowedByRepel(v->level)))
+            if (touched && v->water == inWater && (v->idle != 0xFFFF || IsWildLevelAllowedByRepel(v->level)))
             {
                 VisibleStartBattle(v);
                 return;
             }
             if (v->idle == 0xFFFF)
                 v->idle = 60;
-            VisibleMove(v, player->currentCoords.x, player->currentCoords.y, surfing);
+            VisibleMove(v, player->currentCoords.x, player->currentCoords.y, inWater);
             // Often enough to be told from the others at a glance: a shiny
             // one's icon is drawn in the same colours as any other's.
             if (v->shiny && ++v->sparkle >= 40)
@@ -1670,7 +1741,7 @@ void FishingWildEncounter(u8 rod)
     {
         u8 level = ChooseWildMonLevel(&sWildFeebas);
 
-        species = sWildFeebas.species;
+        species = WILD_SPECIES(sWildFeebas.species);
         CreateWildMon(species, level);
     }
     else

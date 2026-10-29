@@ -1427,6 +1427,36 @@ static void HideLinkResultsTextBox(void)
 #define CONTEST_TITLE_SPANISH 0
 #endif
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+// German: the rank title is one 12-tile piece, the category follows at a
+// fixed column and the separate "contest" piece is not drawn.
+static void LoadContestResultsTitleBarTilemaps(void)
+{
+    static const u32 *const sCategoryTilemaps[] = {
+        [CONTEST_CATEGORY_COOL] = gContestResultsTitle_Cool_Tilemap,
+        [CONTEST_CATEGORY_BEAUTY] = gContestResultsTitle_Beauty_Tilemap,
+        [CONTEST_CATEGORY_CUTE] = gContestResultsTitle_Cute_Tilemap,
+        [CONTEST_CATEGORY_SMART] = gContestResultsTitle_Smart_Tilemap,
+        [CONTEST_CATEGORY_TOUGH] = gContestResultsTitle_Tough_Tilemap,
+    };
+    const u32 *rank;
+    u8 palette = gSpecialVar_ContestCategory < CONTEST_CATEGORIES_COUNT ? gSpecialVar_ContestCategory : CONTEST_CATEGORY_TOUGH;
+
+    if (gLinkContestFlags & LINK_CONTEST_FLAG_IS_LINK)
+        rank = gContestResultsTitle_Link_Tilemap;
+    else if (gSpecialVar_ContestRank == CONTEST_RANK_NORMAL)
+        rank = gContestResultsTitle_Normal_Tilemap;
+    else if (gSpecialVar_ContestRank == CONTEST_RANK_SUPER)
+        rank = gContestResultsTitle_Super_Tilemap;
+    else if (gSpecialVar_ContestRank == CONTEST_RANK_HYPER)
+        rank = gContestResultsTitle_Hyper_Tilemap;
+    else
+        rank = gContestResultsTitle_Master_Tilemap;
+    CopyToBgTilemapBufferRect(2, rank, 5, 1, 12, 2);
+    CopyToBgTilemapBufferRect(2, sCategoryTilemaps[palette], 17, 1, 7, 2);
+    CopyToBgTilemapBufferRect_ChangePalette(2, sContestResults->tilemapBuffers[2], 0, 0, 32, 4, palette);
+}
+#else
 static void LoadContestResultsTitleBarTilemaps(void)
 {
     u8 palette;
@@ -1490,6 +1520,7 @@ static void LoadContestResultsTitleBarTilemaps(void)
     CopyToBgTilemapBufferRect(2, gContestResultsTitle_Tilemap, CONTEST_TITLE_SPANISH ? 15 : x, y, CONTEST_TITLE_SPANISH ? 5 : 6, 2);
     CopyToBgTilemapBufferRect_ChangePalette(2, sContestResults->tilemapBuffers[2], 0, 0, 32, 4, palette);
 }
+#endif
 
 // Represented on results board as stars
 static u8 GetNumPreliminaryPoints(u8 monIndex, bool8 capPoints)

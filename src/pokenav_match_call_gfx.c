@@ -879,8 +879,13 @@ static void CreateMatchCallList(void)
     template.count = GetNumberRegistered();
     template.itemSize = sizeof(struct PokenavListItem);
     template.startIndex = 0;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    template.item_X = 12;
+    template.windowWidth = 17;
+#else
     template.item_X = 13;
     template.windowWidth = 16;
+#endif
     template.listTop = 1;
     template.maxShowed = 8;
     template.fillValue = 3;

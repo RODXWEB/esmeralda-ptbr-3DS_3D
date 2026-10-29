@@ -48,6 +48,10 @@
 #define CHAR_SUPER_ER          0x2C
 #define CHAR_AMPERSAND         0x2D
 #define CHAR_PLUS              0x2E
+#define CHAR_A_TILDE           0x2F
+#define CHAR_O_TILDE           0x30
+#define CHAR_a_TILDE           0x31
+#define CHAR_o_TILDE           0x32
 //
 #define CHAR_LV                0x34
 #define CHAR_EQUALS            0x35
@@ -71,7 +75,13 @@
 //
 #define CHAR_i_ACUTE           0x6F
 //
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+// 0x77 is a kana in the Japanese charmap: the Japanese game pads its numbers
+// with the space (ConvertIntToDecimalStringN).
+#define CHAR_SPACER            CHAR_SPACE
+#else
 #define CHAR_SPACER            0x77 // Empty space
+#endif
 //
 #define CHAR_UP_ARROW          0x79
 #define CHAR_DOWN_ARROW        0x7A

@@ -807,7 +807,14 @@ s32 StringCompareWithoutExtCtrlCodes(const u8 *str1, const u8 *str2)
 
 void ConvertInternationalString(u8 *s, u8 language)
 {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+    // Japanese is the game's own language: its names need no marking.
     if (language == LANGUAGE_JAPANESE)
+        StripExtCtrlCodes(s);
+    if (FALSE)
+#else
+    if (language == LANGUAGE_JAPANESE)
+#endif
     {
         u8 i;
 

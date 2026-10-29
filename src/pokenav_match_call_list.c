@@ -405,7 +405,12 @@ void BufferMatchCallNameAndDesc(struct PokenavMatchCallEntry *matchCallEntry, u8
         int index = GetTrainerIdxByRematchIdx(matchCallEntry->headerId);
         const struct Trainer *trainer = &gTrainers[index];
         int class = trainer->trainerClass;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        int gender = trainer->encounterMusic_gender;
+        className = GetTrainerClassNameGenderSpecific(class, gender, trainer->trainerName);
+#else
         className = gTrainerClassNames[class];
+#endif
         trainerName = trainer->trainerName;
     }
     else
@@ -416,11 +421,29 @@ void BufferMatchCallNameAndDesc(struct PokenavMatchCallEntry *matchCallEntry, u8
     if (className && trainerName)
     {
         u8 *str2 = GetStringClearToWidth(str, FONT_NARROW, className, 69);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        GetStringClearToWidth(
+            str2,
+            FONT_NARROW,
+            trainerName,
+            57
+        );
+#else
         GetStringClearToWidth(str2, FONT_NARROW, trainerName, 51);
+#endif
     }
     else
     {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        GetStringClearToWidth(
+            str,
+            FONT_NARROW,
+            NULL,
+            126
+        );
+#else
         GetStringClearToWidth(str, FONT_NARROW, NULL, 120);
+#endif
     }
 }
 
@@ -538,7 +561,7 @@ u8 CtrPokenavMatchCall_Input(u16 *cursor, u16 *count)
     return 0xFF;
 }
 
-// Puts the options' cursor on an option (CtrPokenavMenu_SetCursor).
+// Puts the options' cursor on an option (NavNext, 3ds_bottom_ui.c).
 void CtrPokenavMatchCall_SetOption(u16 cursor)
 {
     struct Pokenav_MatchCallMenu *state = GetSubstructPtr(POKENAV_SUBSTRUCT_MATCH_CALL_MAIN);

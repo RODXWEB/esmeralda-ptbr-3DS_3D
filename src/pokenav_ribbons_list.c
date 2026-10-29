@@ -430,7 +430,11 @@ static u32 LoopedTask_OpenRibbonsMonList(s32 state)
         DecompressAndCopyTileDataToVram(1, sMonRibbonListFrameTiles, 0, 0, 0);
         SetBgTilemapBuffer(1, menu->buff);
         CopyToBgTilemapBuffer(1, sMonRibbonListFrameTilemap, 0, 0);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        CopyPaletteIntoBufferUnfaded(sMonRibbonListFramePal, BG_PLTT_ID(1), 0x20);
+#else
         CopyPaletteIntoBufferUnfaded(sMonRibbonListFramePal, BG_PLTT_ID(1), sizeof(sMonRibbonListFramePal));
+#endif
         CopyBgTilemapBufferToVram(1);
         return LT_INC_AND_PAUSE;
     case 1:
@@ -683,8 +687,13 @@ static void CreateRibbonMonsList(void)
     template.count = GetRibbonsMonListCount();
     template.itemSize = sizeof(struct PokenavListItem);
     template.startIndex = GetRibbonListMenuCurrIndex();
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    template.item_X = 12;
+    template.windowWidth = 18;
+#else
     template.item_X = 13;
     template.windowWidth = 17;
+#endif
     template.listTop = 1;
     template.maxShowed = 8;
     template.fillValue = 2;

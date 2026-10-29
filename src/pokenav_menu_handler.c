@@ -31,18 +31,48 @@ static u32 HandleMainMenuInput(struct Pokenav_Menu *);
 static u32 (*GetMainMenuInputHandler(void))(struct Pokenav_Menu *);
 static void SetMenuInputHandler(struct Pokenav_Menu *);
 
+#ifdef PLATFORM_3DS
+// No HOENN MAP in the main menu: the bottom screen's MAP is that map, zoom
+// and all (3ds_bottom_ui.c), so every main menu option is one place higher.
+#define MAIN_MENU_POS(item) ((item) - 1)
+#define MAIN_MENU_MAP_ITEMS 0
+#else
+#define MAIN_MENU_POS(item) (item)
+#define MAIN_MENU_MAP_ITEMS 1
+#endif
+
 // Number of entries - 1 for that menu type
 static const u8 sLastCursorPositions[] =
 {
-    [POKENAV_MENU_TYPE_DEFAULT]           = 2,
-    [POKENAV_MENU_TYPE_UNLOCK_MC]         = 3,
-    [POKENAV_MENU_TYPE_UNLOCK_MC_RIBBONS] = 4,
+    [POKENAV_MENU_TYPE_DEFAULT]           = 1 + MAIN_MENU_MAP_ITEMS,
+    [POKENAV_MENU_TYPE_UNLOCK_MC]         = 2 + MAIN_MENU_MAP_ITEMS,
+    [POKENAV_MENU_TYPE_UNLOCK_MC_RIBBONS] = 3 + MAIN_MENU_MAP_ITEMS,
     [POKENAV_MENU_TYPE_CONDITION]         = 2,
     [POKENAV_MENU_TYPE_CONDITION_SEARCH]  = 5
 };
 
 static const u8 sMenuItems[][MAX_POKENAV_MENUITEMS] =
 {
+#ifdef PLATFORM_3DS
+    [POKENAV_MENU_TYPE_DEFAULT] =
+    {
+        POKENAV_MENUITEM_CONDITION,
+        [1 ... MAX_POKENAV_MENUITEMS - 1] = POKENAV_MENUITEM_SWITCH_OFF
+    },
+    [POKENAV_MENU_TYPE_UNLOCK_MC] =
+    {
+        POKENAV_MENUITEM_CONDITION,
+        POKENAV_MENUITEM_MATCH_CALL,
+        [2 ... MAX_POKENAV_MENUITEMS - 1] = POKENAV_MENUITEM_SWITCH_OFF
+    },
+    [POKENAV_MENU_TYPE_UNLOCK_MC_RIBBONS] =
+    {
+        POKENAV_MENUITEM_CONDITION,
+        POKENAV_MENUITEM_MATCH_CALL,
+        POKENAV_MENUITEM_RIBBONS,
+        [3 ... MAX_POKENAV_MENUITEMS - 1] = POKENAV_MENUITEM_SWITCH_OFF
+    },
+#else
     [POKENAV_MENU_TYPE_DEFAULT] =
     {
         POKENAV_MENUITEM_MAP,
@@ -64,6 +94,7 @@ static const u8 sMenuItems[][MAX_POKENAV_MENUITEMS] =
         POKENAV_MENUITEM_RIBBONS,
         [4 ... MAX_POKENAV_MENUITEMS - 1] = POKENAV_MENUITEM_SWITCH_OFF
     },
+#endif
     [POKENAV_MENU_TYPE_CONDITION] =
     {
         POKENAV_MENUITEM_CONDITION_PARTY,
@@ -104,8 +135,8 @@ bool32 PokenavCallback_Init_MainMenuCursorOnMap(void)
         return FALSE;
 
     menu->menuType = GetPokenavMainMenuType();
-    menu->cursorPos = POKENAV_MENUITEM_MAP;
-    menu->currMenuItem = POKENAV_MENUITEM_MAP;
+    menu->cursorPos = 0;
+    menu->currMenuItem = sMenuItems[menu->menuType][0];
     menu->helpBarIndex = HELPBAR_NONE;
     SetMenuInputHandler(menu);
     return TRUE;
@@ -118,7 +149,7 @@ bool32 PokenavCallback_Init_MainMenuCursorOnMatchCall(void)
         return FALSE;
 
     menu->menuType = GetPokenavMainMenuType();
-    menu->cursorPos = POKENAV_MENUITEM_MATCH_CALL;
+    menu->cursorPos = MAIN_MENU_POS(POKENAV_MENUITEM_MATCH_CALL);
     menu->currMenuItem = POKENAV_MENUITEM_MATCH_CALL;
     menu->helpBarIndex = HELPBAR_NONE;
     SetMenuInputHandler(menu);
@@ -132,7 +163,7 @@ bool32 PokenavCallback_Init_MainMenuCursorOnRibbons(void)
         return FALSE;
 
     menu->menuType = GetPokenavMainMenuType();
-    menu->cursorPos = POKENAV_MENUITEM_RIBBONS;
+    menu->cursorPos = MAIN_MENU_POS(POKENAV_MENUITEM_RIBBONS);
     menu->currMenuItem = POKENAV_MENUITEM_RIBBONS;
     SetMenuInputHandler(menu);
     return TRUE;
@@ -448,7 +479,7 @@ static u32 GetMenuId(struct Pokenav_Menu *menu)
 static void ReturnToMainMenu(struct Pokenav_Menu *menu)
 {
     menu->menuType = GetPokenavMainMenuType();
-    menu->cursorPos = 1;
+    menu->cursorPos = MAIN_MENU_POS(POKENAV_MENUITEM_CONDITION);
     menu->currMenuItem = sMenuItems[menu->menuType][menu->cursorPos];
     menu->callback = HandleMainMenuInput;
 }
@@ -525,13 +556,18 @@ int CtrPokenavMenu_Options(int *cursor)
     return sLastCursorPositions[menu->menuType] + 1;
 }
 
-// Puts the cursor on an option without moving the options: the D-pad press
-// that follows moves it on to the one tapped, as the game does, in one step.
-void CtrPokenavMenu_SetCursor(int cursor)
+// Puts the cursor straight on the option tapped, drawn there at once
+// (CtrPokenavMenuGfx_SnapCursor): the A that follows opens it.
+void CtrPokenavMenuGfx_SnapCursor(void);
+
+void CtrPokenavMenu_Select(int cursor)
 {
     struct Pokenav_Menu *menu = GetSubstructPtr(POKENAV_SUBSTRUCT_MAIN_MENU_HANDLER);
 
-    if (menu != NULL && cursor >= 0 && cursor <= sLastCursorPositions[menu->menuType])
-        menu->cursorPos = cursor;
+    if (menu == NULL || cursor < 0 || cursor > sLastCursorPositions[menu->menuType] || cursor == menu->cursorPos)
+        return;
+    menu->cursorPos = cursor;
+    menu->currMenuItem = sMenuItems[menu->menuType][cursor];
+    CtrPokenavMenuGfx_SnapCursor();
 }
 #endif

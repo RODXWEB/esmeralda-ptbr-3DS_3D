@@ -44,10 +44,19 @@ enum {
 };
 
 #define KBROW_COUNT 4
-#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_FRENCH
+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_GERMAN)
 #define KBCOL_COUNT 9
 #else
 #define KBCOL_COUNT 8
+#endif
+
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+// The Japanese keyboard pages are the rows the Japanese game shows (groups of
+// kana with a space between them): one column per 8-pixel character cell, and
+// a key inserts the character its row shows there.
+#define JAPANESE_KEYBOARD
+// The Japanese game's player and Pokémon names (its ROM header's lengths).
+#define JAPANESE_NAME_LENGTH 5
 #endif
 
 enum {
@@ -1142,8 +1151,13 @@ static void SetCursorPos(s16 x, s16 y)
 {
     struct Sprite *cursorSprite = &gSprites[sNamingScreen->cursorSpriteId];
 
+#ifdef JAPANESE_KEYBOARD
+    if (x < GetCurrentPageColumnCount())
+        cursorSprite->x = x * 8 + 30;
+#else
     if (x < sPageColumnCounts[CurrentPageToKeyboardId()])
         cursorSprite->x = sPageColumnXPos[CurrentPageToKeyboardId()][x] + 38;
+#endif
     else
         cursorSprite->x = 0;
 
@@ -1207,7 +1221,16 @@ static u8 GetKeyRoleAtCursorPos(void)
 // If the cursor's x is equal to the column count, cursor is in the button column
 static u8 GetCurrentPageColumnCount(void)
 {
+#ifdef JAPANESE_KEYBOARD
+    u8 i, count = 0;
+
+    for (i = 0; i < KBROW_COUNT; i++)
+        if (StringLength(sNamingScreenKeyboardText[CurrentPageToKeyboardId()][i]) > count)
+            count = StringLength(sNamingScreenKeyboardText[CurrentPageToKeyboardId()][i]);
+    return count;
+#else
     return sPageColumnCounts[CurrentPageToKeyboardId()];
+#endif
 }
 
 #undef sX
@@ -1721,10 +1744,19 @@ static void DrawNormalTextEntryBox(void)
 
 static void DrawMonTextEntryBox(void)
 {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    u8 buffer[48];
+#else
     u8 buffer[32];
+#endif
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    StringCopy(gStringVar1, gSpeciesNames[sNamingScreen->monSpecies]);
+    StringExpandPlaceholders(buffer, sNamingScreen->template->title);
+#else
     StringCopy(buffer, gSpeciesNames[sNamingScreen->monSpecies]);
     StringAppendN(buffer, sNamingScreen->template->title, 15);
+#endif
     FillWindowPixelBuffer(sNamingScreen->windows[WIN_TEXT_ENTRY_BOX], PIXEL_FILL(1));
     AddTextPrinterParameterized(sNamingScreen->windows[WIN_TEXT_ENTRY_BOX], FONT_NORMAL, buffer, 8, 1, 0, 0);
     PutWindowTilemap(sNamingScreen->windows[WIN_TEXT_ENTRY_BOX]);
@@ -1788,7 +1820,13 @@ static void DrawGenderIcon(void)
 
 static u8 GetCharAtKeyboardPos(s16 x, s16 y)
 {
+#ifdef JAPANESE_KEYBOARD
+    const u8 *row = sNamingScreenKeyboardText[CurrentPageToKeyboardId()][y];
+
+    return x < StringLength(row) ? row[x] : CHAR_SPACE;
+#else
     return sKeyboardChars[CurrentPageToKeyboardId()][y][x];
+#endif
 }
 
 
@@ -2098,7 +2136,11 @@ static void UNUSED Debug_NamingScreenNickname(void)
 static const struct NamingScreenTemplate sPlayerNamingScreenTemplate =
 {
     .copyExistingString = FALSE,
+#ifdef JAPANESE_NAME_LENGTH
+    .maxChars = JAPANESE_NAME_LENGTH,
+#else
     .maxChars = PLAYER_NAME_LENGTH,
+#endif
     .iconFunction = 1,
     .addGenderIcon = FALSE,
     .initialPage = KBPAGE_LETTERS_UPPER,
@@ -2120,7 +2162,11 @@ static const struct NamingScreenTemplate sPCBoxNamingTemplate =
 static const struct NamingScreenTemplate sMonNamingScreenTemplate =
 {
     .copyExistingString = FALSE,
+#ifdef JAPANESE_NAME_LENGTH
+    .maxChars = JAPANESE_NAME_LENGTH,
+#else
     .maxChars = POKEMON_NAME_LENGTH,
+#endif
     .iconFunction = 3,
     .addGenderIcon = TRUE,
     .initialPage = KBPAGE_LETTERS_UPPER,

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "international_string_util.h"
 #include "battle_setup.h"
 #include "data.h"
 #include "event_data.h"
@@ -1092,7 +1093,11 @@ static void MatchCall_GetNameAndDesc_Birch(match_call_t matchCall, const u8 **de
 static void MatchCall_GetNameAndDescByRematchIdx(u32 idx, const u8 **desc, const u8 **name)
 {
     const struct Trainer *trainer = gTrainers + GetTrainerIdxByRematchIdx(idx);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    *desc = GetTrainerClassNameGenderSpecific(trainer->trainerClass, trainer->encounterMusic_gender, trainer->trainerName);
+#else
     *desc = gTrainerClassNames[trainer->trainerClass];
+#endif
     *name = trainer->trainerName;
 }
 

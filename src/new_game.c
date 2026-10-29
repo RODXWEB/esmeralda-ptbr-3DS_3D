@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef PLATFORM_3DS
+#include "3ds_clock_store.h"
+#endif
 #include "new_game.h"
 #include "random.h"
 #include "pokemon.h"
@@ -45,6 +48,9 @@
 #include "mystery_gift.h"
 #include "union_room_chat.h"
 #include "constants/items.h"
+#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
+#include "3ds_nuzlocke.h"
+#endif
 
 extern const u8 EventScript_ResetAllMapFlags[];
 
@@ -88,8 +94,15 @@ void CopyTrainerId(u8 *dst, u8 *src)
     }
 }
 
+#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE) && defined(PORTABLE)
+void Port_ReseedForNewGame(void);
+#endif
+
 static void InitPlayerTrainerId(void)
 {
+#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE) && defined(PORTABLE)
+    Port_ReseedForNewGame();
+#endif
 #ifndef PORTABLE
     u32 trainerId = (Random() << 16) | GetGeneratedTrainerIdLower();
 #else // Since Emerald generates the TID FRLG-style, based on a hardware timer, it won't work on other platforms
@@ -159,6 +172,9 @@ void ResetMenuAndMonGlobals(void)
 
 void NewGameInitData(void)
 {
+#ifdef PLATFORM_3DS
+    CtrClockStore_Load(NULL, 0);
+#endif
     if (gSaveFileStatus == SAVE_STATUS_EMPTY || gSaveFileStatus == SAVE_STATUS_CORRUPT)
         RtcReset();
 
@@ -215,6 +231,10 @@ void NewGameInitData(void)
     WipeTrainerNameRecords();
     ResetTrainerHillResults();
     ResetContestLinkResults();
+#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
+    // The Nuzlocke tracker starts empty with the new game.
+    CtrNuzlocke_NewGame();
+#endif
 }
 
 static void ResetMiniGamesRecords(void)

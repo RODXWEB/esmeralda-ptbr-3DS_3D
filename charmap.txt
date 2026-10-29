@@ -42,6 +42,11 @@
 SUPER_ER    = 2C
 '&'         = 2D
 '+'         = 2E
+@ Portuguese letters the fonts lack; the port draws them at load time.
+'Ã'         = 2F
+'Õ'         = 30
+'ã'         = 31
+'õ'         = 32
 LV          = 34
 '='         = 35
 ';'         = 36
@@ -330,8 +335,7 @@ TALL_PLUS   = FC 0C FB
 STRING = FD
 
 @ string placeholders
-JOGADOR         = FD 01
-PLAYER          = FD 01
+PLAYER         = FD 01
 STR_VAR_1      = FD 02
 STR_VAR_2      = FD 03
 STR_VAR_3      = FD 04

@@ -262,15 +262,15 @@ static const u8 sUnusedText_Space[] = _(" ");
 static const u8 sUnusedText_Terminating[] = _("Terminating.");
 static const u8 sUnusedText_LinkPartnerNotFound[] = _("Link partner(s) not found.\nPlease try again.\p");
 
-static const u8 sText_BerryBlenderStart[] = _("Starting up the BERRY BLENDER.\pPlease select a BERRY from your BAG\nto put in the BERRY BLENDER.\p");
+static const u8 sText_BerryBlenderStart[] = _("Ligando o LIQUIDIFICADOR.\pEscolha uma FRUTA da BOLSA pra\ncolocar no LIQUIDIFICADOR.\p");
 static const u8 sText_NewParagraph[] = _("\p");
-static const u8 sText_WasMade[] = _(" was made!");
-static const u8 sText_Mister[] = _("MISTER");
-static const u8 sText_Laddie[] = _("LADDIE");
-static const u8 sText_Lassie[] = _("LASSIE");
-static const u8 sText_Master[] = _("MASTER");
-static const u8 sText_Dude[] = _("DUDE");
-static const u8 sText_Miss[] = _("MISS");
+static const u8 sText_WasMade[] = _(" ficou pronto!");
+static const u8 sText_Mister[] = _("SENHOR");
+static const u8 sText_Laddie[] = _("GAROTO");
+static const u8 sText_Lassie[] = _("GAROTA");
+static const u8 sText_Master[] = _("MESTRE");
+static const u8 sText_Dude[] = _("CARA");
+static const u8 sText_Miss[] = _("MOÇA");
 
 static const u8 *const sBlenderOpponentsNames[] =
 {
@@ -282,28 +282,28 @@ static const u8 *const sBlenderOpponentsNames[] =
     [BLENDER_MISS]   = sText_Miss
 };
 
-static const u8 sText_PressAToStart[] = _("Press the A Button to start.");
-static const u8 sText_PleaseWaitAWhile[] = _("Please wait a while.");
-static const u8 sText_CommunicationStandby[] = _("Communication standby…");
-static const u8 sText_WouldLikeToBlendAnotherBerry[] = _("Would you like to blend another BERRY?");
-static const u8 sText_RunOutOfBerriesForBlending[] = _("You've run out of BERRIES for\nblending in the BERRY BLENDER.\p");
-static const u8 sText_YourPokeblockCaseIsFull[] = _("Your {POKEBLOCK} CASE is full.\p");
-static const u8 sText_HasNoBerriesToPut[] = _(" has no BERRIES to put in\nthe BERRY BLENDER.");
-static const u8 sText_ApostropheSPokeblockCaseIsFull[] = _("'s {POKEBLOCK} CASE is full.\p");
-static const u8 sText_BlendingResults[] = _("RESULTS OF BLENDING");
-static const u8 sText_BerryUsed[] = _("BERRY USED");
-static const u8 sText_SpaceBerry[] = _(" BERRY");
-static const u8 sText_Time[] = _("Time:");
+static const u8 sText_PressAToStart[] = _("Aperte o botão A pra começar.");
+static const u8 sText_PleaseWaitAWhile[] = _("Espere um pouco.");
+static const u8 sText_CommunicationStandby[] = _("Aguardando comunicação…");
+static const u8 sText_WouldLikeToBlendAnotherBerry[] = _("Quer bater outra FRUTA?");
+static const u8 sText_RunOutOfBerriesForBlending[] = _("Acabaram as suas FRUTAS pra\nbater no LIQUIDIFICADOR.\p");
+static const u8 sText_YourPokeblockCaseIsFull[] = _("O seu ESTOJO {POKEBLOCK} está cheio.\p");
+static const u8 sText_HasNoBerriesToPut[] = _(" não tem FRUTAS pra\ncolocar no LIQUIDIFICADOR.");
+static const u8 sText_ApostropheSPokeblockCaseIsFull[] = _(": o ESTOJO {POKEBLOCK} está cheio.\p");
+static const u8 sText_BlendingResults[] = _("RESULTADO");
+static const u8 sText_BerryUsed[] = _("FRUTA USADA");
+static const u8 sText_SpaceBerry[] = _("");
+static const u8 sText_Time[] = _("Tempo:");
 static const u8 sText_Min[] = _(" min. ");
-static const u8 sText_Sec[] = _(" sec.");
-static const u8 sText_MaximumSpeed[] = _("MAXIMUM SPEED");
+static const u8 sText_Sec[] = _(" s");
+static const u8 sText_MaximumSpeed[] = _("VELOC. MÁXIMA");
 static const u8 sText_RPM[] = _(" RPM");
 static const u8 sText_Dot[] = _(".");
 static const u8 sText_NewLine[] = _("\n");
 static const u8 sText_Space[] = _(" ");
-static const u8 sText_Ranking[] = _("RANKING");
-static const u8 sText_TheLevelIs[] = _("The level is ");
-static const u8 sText_TheFeelIs[] = _(", and the feel is ");
+static const u8 sText_Ranking[] = _("CLASSIFICAÇÃO");
+static const u8 sText_TheLevelIs[] = _("O nível é ");
+static const u8 sText_TheFeelIs[] = _(" e a maciez é ");
 static const u8 sText_Dot2[] = _(".");
 
 static const struct BgTemplate sBgTemplates[3] =
@@ -916,6 +916,16 @@ static const u8 sBlackPokeblockFlavorFlags[] = {
     (1 << FLAVOR_SOUR)   | (1 << FLAVOR_SWEET)  | (1 << FLAVOR_SPICY),
 };
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+static const u8 sUnused[] = {
+    0xfe, 0x02, 0x02, 0xce, 0xd0, 0x37, 0x44, 0x07, 0x1f, 0x0c, 0x10,
+    0x00, 0xff, 0xfe, 0x91, 0x72, 0xce, 0xd0, 0x37, 0x44, 0x07, 0x1f,
+    0x0c, 0x10, 0x00, 0xff, 0x06, 0x27, 0x02, 0xff, 0x00, 0x0c, 0x48,
+    0x02, 0xff, 0x00, 0x01, 0x1f, 0x02, 0xff, 0x00, 0x16, 0x37, 0x02,
+    0xff, 0x00, 0x0d, 0x50, 0x4b, 0x02, 0xff, 0x06, 0x06, 0x06, 0x06,
+    0x05, 0x03, 0x03, 0x03, 0x02, 0x02
+};
+#else
 static const u8 sJPText_GoodTvReady[] = _("\nいいTVができました "); // Unused
 static const u8 sJPText_BadTvReady[] = _("\nダメTVができました "); // Unused
 static const u8 sJPText_Flavors[][5] = {_("からい"), _("しぶい"), _("あまい"), _("にがい"), _("すっぱい")}; // Unused
@@ -936,6 +946,7 @@ static const struct WindowTemplate sBlenderRecordWindowTemplate =
     .paletteNum = 15,
     .baseBlock = 8
 };
+#endif
 
 static void UpdateHitPitch(void)
 {
@@ -2850,12 +2861,20 @@ static void CB2_CheckPlayAgainLink(void)
     case 1:
         sBerryBlender->gameEndState = 3;
         StringCopy(gStringVar4, gLinkPlayers[sBerryBlender->canceledPlayerId].name);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        StringAppendWithPlaceholder(gStringVar4, sText_ApostropheSPokeblockCaseIsFull, gStringVar4);
+#else
         StringAppend(gStringVar4, sText_ApostropheSPokeblockCaseIsFull);
+#endif
         break;
     case 2:
         sBerryBlender->gameEndState++;
         StringCopy(gStringVar4, gLinkPlayers[sBerryBlender->canceledPlayerId].name);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        StringAppendWithPlaceholder(gStringVar4, sText_HasNoBerriesToPut, gStringVar4);
+#else
         StringAppend(gStringVar4, sText_HasNoBerriesToPut);
+#endif
         break;
     case 3:
         if (PrintMessage(&sBerryBlender->textState, gStringVar4, GetPlayerTextSpeedDelay()))
@@ -3526,7 +3545,11 @@ static bool8 PrintBlendingResults(void)
 
                 StringCopy(sBerryBlender->stringVar, sBerryBlender->blendedBerries[place].name);
                 ConvertInternationalString(sBerryBlender->stringVar, gLinkPlayers[place].language);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+                StringAppendWithPlaceholder(sBerryBlender->stringVar, sText_SpaceBerry, sBerryBlender->stringVar);
+#else
                 StringAppend(sBerryBlender->stringVar, sText_SpaceBerry);
+#endif
                 Blender_AddTextPrinter(WIN_RESULTS, sBerryBlender->stringVar, 0x54, yPos, TEXT_SKIP_DRAW, 3);
             }
 
@@ -3603,6 +3626,9 @@ static bool8 PrintBlendingResults(void)
 
     return FALSE;
 }
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+static const u8 sUnused2[] = {0x03, 0x03, 0x03, 0x03, 0x02};
+#endif
 
 static void PrintMadePokeblockString(struct Pokeblock *pokeblock, u8 *dst)
 {
@@ -3611,7 +3637,11 @@ static void PrintMadePokeblockString(struct Pokeblock *pokeblock, u8 *dst)
 
     dst[0] = EOS;
     StringCopy(dst, gPokeblockNames[pokeblock->color]);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    StringAppendWithPlaceholder(dst, sText_WasMade, dst);
+#else
     StringAppend(dst, sText_WasMade);
+#endif
     StringAppend(dst, sText_NewLine);
 
     flavorLvl = GetHighestPokeblocksFlavorLevel(pokeblock);
@@ -3771,10 +3801,25 @@ void ShowBerryBlenderRecordWindow(void)
 {
     s32 i;
     s32 xPos, yPos;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    struct WindowTemplate winTemplate =
+    {
+        .bg = 0,
+        .tilemapLeft = 6,
+        .tilemapTop = 4,
+        .width = 18,
+        .height = 11,
+        .paletteNum = 15,
+        .baseBlock = 8
+    };
+#else
     struct WindowTemplate winTemplate;
+#endif
     u8 text[32];
 
+#if !(defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN)
     winTemplate = sBlenderRecordWindowTemplate;
+#endif
     gRecordsWindowId = AddWindow(&winTemplate);
     DrawStdWindowFrame(gRecordsWindowId, FALSE);
     FillWindowPixelBuffer(gRecordsWindowId, PIXEL_FILL(1));
@@ -3791,7 +3836,12 @@ void ShowBerryBlenderRecordWindow(void)
         record = gSaveBlock1Ptr->berryBlenderRecords[i];
 
         txtPtr = ConvertIntToDecimalStringN(text, record / 100, STR_CONV_MODE_RIGHT_ALIGN, 3);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        *txtPtr++ = CHAR_COMMA;
+        *txtPtr = EOS;
+#else
         txtPtr = StringAppend(txtPtr, sText_Dot);
+#endif
         txtPtr = ConvertIntToDecimalStringN(txtPtr, record % 100, STR_CONV_MODE_LEADING_ZEROS, 2);
         txtPtr = StringAppend(txtPtr, sText_RPM);
 

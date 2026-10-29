@@ -204,6 +204,16 @@ static const u16 sEReader_Pal[] = INCBIN_U16("graphics/trainer_hill/ereader.gbap
 static const u8 sRecordWinColors[] = {TEXT_COLOR_TRANSPARENT, TEXT_COLOR_DARK_GRAY, TEXT_COLOR_LIGHT_GRAY};
 
 #ifdef PORT_BRIDGE
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+// The Japanese game's only challenge, in every mode.
+static const struct TrainerHillFloor *const sFloorData[NUM_TRAINER_HILL_MODES] =
+{
+    [HILL_MODE_NORMAL]  = sFloors_JPDefault,
+    [HILL_MODE_VARIETY] = sFloors_JPDefault,
+    [HILL_MODE_UNIQUE]  = sFloors_JPDefault,
+    [HILL_MODE_EXPERT]  = sFloors_JPDefault,
+};
+#else
 static const struct TrainerHillFloor *const sFloorData[NUM_TRAINER_HILL_MODES] =
 {
     [HILL_MODE_NORMAL]  = sFloors_Normal,
@@ -211,11 +221,35 @@ static const struct TrainerHillFloor *const sFloorData[NUM_TRAINER_HILL_MODES] =
     [HILL_MODE_UNIQUE]  = sFloors_Unique,
     [HILL_MODE_EXPERT]  = sFloors_Expert,
 };
+#endif
 
-#if GAME_LANGUAGE == LANGUAGE_ENGLISH // Spanish: tools/localize_spanish.py puts in the ROM's own floors, mazes included
+#if GAME_LANGUAGE == LANGUAGE_ENGLISH || GAME_LANGUAGE == LANGUAGE_JAPANESE // the others: tools/localize_*.py put in the ROM's own floors, mazes included
 // A floor's maze is an INCBIN in a field of its struct, which the port's asset
 // table cannot map (it maps whole arrays): the field stayed zeros, a floor of
 // one metatile with no walls. The same files again as arrays of their own.
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+static const u8 sFloorMetatiles_JP0[] = INCBIN_U8("graphics/trainer_hill/maps_jp/floor_0/metatiles.bin");
+static const u16 sFloorCollision_JP0[] = INCBIN_U16("graphics/trainer_hill/maps_jp/floor_0/collision.bin");
+static const u8 sFloorMetatiles_JP1[] = INCBIN_U8("graphics/trainer_hill/maps_jp/floor_1/metatiles.bin");
+static const u16 sFloorCollision_JP1[] = INCBIN_U16("graphics/trainer_hill/maps_jp/floor_1/collision.bin");
+
+// Floors 2 and 3 are never reached (the challenge has two floors).
+static const u8 *const sFloorMetatilesData[NUM_TRAINER_HILL_MODES][NUM_TRAINER_HILL_FLOORS] =
+{
+    [HILL_MODE_NORMAL] = {sFloorMetatiles_JP0, sFloorMetatiles_JP1, sFloorMetatiles_JP0, sFloorMetatiles_JP1},
+    [HILL_MODE_VARIETY] = {sFloorMetatiles_JP0, sFloorMetatiles_JP1, sFloorMetatiles_JP0, sFloorMetatiles_JP1},
+    [HILL_MODE_UNIQUE] = {sFloorMetatiles_JP0, sFloorMetatiles_JP1, sFloorMetatiles_JP0, sFloorMetatiles_JP1},
+    [HILL_MODE_EXPERT] = {sFloorMetatiles_JP0, sFloorMetatiles_JP1, sFloorMetatiles_JP0, sFloorMetatiles_JP1},
+};
+
+static const u16 *const sFloorCollisionData[NUM_TRAINER_HILL_MODES][NUM_TRAINER_HILL_FLOORS] =
+{
+    [HILL_MODE_NORMAL] = {sFloorCollision_JP0, sFloorCollision_JP1, sFloorCollision_JP0, sFloorCollision_JP1},
+    [HILL_MODE_VARIETY] = {sFloorCollision_JP0, sFloorCollision_JP1, sFloorCollision_JP0, sFloorCollision_JP1},
+    [HILL_MODE_UNIQUE] = {sFloorCollision_JP0, sFloorCollision_JP1, sFloorCollision_JP0, sFloorCollision_JP1},
+    [HILL_MODE_EXPERT] = {sFloorCollision_JP0, sFloorCollision_JP1, sFloorCollision_JP0, sFloorCollision_JP1},
+};
+#else
 static const u8 sFloorMetatiles_Normal0[] = INCBIN_U8("graphics/trainer_hill/maps_normal/floor_0/metatiles.bin");
 static const u16 sFloorCollision_Normal0[] = INCBIN_U16("graphics/trainer_hill/maps_normal/floor_0/collision.bin");
 static const u8 sFloorMetatiles_Normal1[] = INCBIN_U8("graphics/trainer_hill/maps_normal/floor_1/metatiles.bin");
@@ -264,10 +298,20 @@ static const u16 *const sFloorCollisionData[NUM_TRAINER_HILL_MODES][NUM_TRAINER_
     [HILL_MODE_UNIQUE] = {sFloorCollision_Unique0, sFloorCollision_Unique1, sFloorCollision_Unique2, sFloorCollision_Unique3},
     [HILL_MODE_EXPERT] = {sFloorCollision_Expert0, sFloorCollision_Expert1, sFloorCollision_Expert2, sFloorCollision_Expert3},
 };
+#endif // the Japanese game
 #endif
 
 #endif
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+static const struct TrainerHillChallenge *const sChallengeData[NUM_TRAINER_HILL_MODES] =
+{
+    [HILL_MODE_NORMAL]  = &sChallenge_JPDefault,
+    [HILL_MODE_VARIETY] = &sChallenge_JPDefault,
+    [HILL_MODE_UNIQUE]  = &sChallenge_JPDefault,
+    [HILL_MODE_EXPERT]  = &sChallenge_JPDefault,
+};
+#else
 static const struct TrainerHillChallenge *const sChallengeData[NUM_TRAINER_HILL_MODES] =
 {
     [HILL_MODE_NORMAL]  = &sChallenge_Normal,
@@ -275,6 +319,7 @@ static const struct TrainerHillChallenge *const sChallengeData[NUM_TRAINER_HILL_
     [HILL_MODE_UNIQUE]  = &sChallenge_Unique,
     [HILL_MODE_EXPERT]  = &sChallenge_Expert,
 };
+#endif
 
 // Unused.
 static const u8 *const sFloorStrings[] =
@@ -424,7 +469,7 @@ static void SetUpDataStruct(void)
         // Copy each named object instead of relying on their linker order.
         CpuCopy32(sChallengeData[gSaveBlock1Ptr->trainerHill.mode], &sHillData->challenge, sizeof(sHillData->challenge));
         CpuCopy32(sFloorData[gSaveBlock1Ptr->trainerHill.mode], sHillData->floors, sizeof(sHillData->floors));
-#if GAME_LANGUAGE == LANGUAGE_ENGLISH
+#if GAME_LANGUAGE == LANGUAGE_ENGLISH || GAME_LANGUAGE == LANGUAGE_JAPANESE
         {
             u32 mode = gSaveBlock1Ptr->trainerHill.mode, i;
 

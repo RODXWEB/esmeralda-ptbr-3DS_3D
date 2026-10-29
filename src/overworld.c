@@ -1541,6 +1541,9 @@ static void InitOverworldBgs(void)
     SetBgTilemapBuffer(1, gOverworldTilemapBuffer_Bg1);
     SetBgTilemapBuffer(2, gOverworldTilemapBuffer_Bg2);
     SetBgTilemapBuffer(3, gOverworldTilemapBuffer_Bg3);
+#ifdef PLATFORM_3DS
+    FieldCamera_RegisterTileBanks();
+#endif
     InitStandardTextBoxWindows();
 }
 
@@ -1548,6 +1551,9 @@ void CleanupOverworldWindowsAndTilemaps(void)
 {
     ClearMirageTowerPulseBlendEffect();
     FreeAllOverworldWindowBuffers();
+#ifdef PLATFORM_3DS
+    FieldCamera_UnregisterTileBanks();
+#endif
     TRY_FREE_AND_SET_NULL(gOverworldTilemapBuffer_Bg3);
     TRY_FREE_AND_SET_NULL(gOverworldTilemapBuffer_Bg2);
     TRY_FREE_AND_SET_NULL(gOverworldTilemapBuffer_Bg1);

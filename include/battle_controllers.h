@@ -349,7 +349,7 @@ void CtrBattleMenu_MoveInput(u8 *cursor, const u16 *moves);
 void CtrBattleMenu_TargetInput(void);
 void CtrBattleMenu_ShowPrompt(void);
 bool8 CtrBattleMenu_TakeQuickBall(void);
-// The ball R or the bottom screen's ball button would throw now, or ITEM_NONE.
+// The ball X or the bottom screen's ball button would throw now, or ITEM_NONE.
 u16 CtrBattle_QuickBallItem(void);
 bool8 CtrBattle_QuickBallCycle(s8 direction);
 #endif

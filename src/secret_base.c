@@ -182,9 +182,17 @@ static const struct WindowTemplate sRegistryWindowTemplates[] =
 {
     {
         .bg = 0,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .tilemapLeft = 17,
+#else
         .tilemapLeft = 18,
+#endif
         .tilemapTop = 1,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .width = 12,
+#else
         .width = 11,
+#endif
         .height = 18,
         .paletteNum = 15,
         .baseBlock = 0x01,
@@ -196,7 +204,11 @@ static const struct WindowTemplate sRegistryWindowTemplates[] =
         .width = 28,
         .height = 4,
         .paletteNum = 15,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .baseBlock = 0xd9,
+#else
         .baseBlock = 0xc7,
+#endif
     }
 };
 
@@ -737,7 +749,11 @@ static u8 *GetSecretBaseName(u8 *dest, u8 secretBaseIdx)
 {
     *StringCopyN(dest, gSaveBlock1Ptr->secretBases[secretBaseIdx].trainerName, GetNameLength(gSaveBlock1Ptr->secretBases[secretBaseIdx].trainerName)) = EOS;
     ConvertInternationalString(dest, gSaveBlock1Ptr->secretBases[secretBaseIdx].language);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    return StringAppendWithPlaceholder(dest, gText_ApostropheSBase, dest);
+#else
     return StringAppend(dest, gText_ApostropheSBase);
+#endif
 }
 
 u8 *GetSecretBaseMapName(u8 *dest)

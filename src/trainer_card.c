@@ -101,6 +101,13 @@ static void HblankCb_TrainerCard(void);
 static void BlinkTimeColon(void);
 static void CB2_TrainerCard(void);
 static void CloseTrainerCard(u8 task);
+#ifdef PLATFORM_3DS
+// The bottom screen's dock may have chosen another screen to open instead.
+#define CTR_LEAVE_TO(cb) CtrBottom_LeaveTo(cb)
+MainCallback CtrBottom_LeaveTo(MainCallback field);
+#else
+#define CTR_LEAVE_TO(cb) (cb)
+#endif
 static bool8 PrintAllOnCardFront(void);
 static void DrawTrainerCardWindow(u8);
 static void CreateTrainerCardTrainerPic(void);
@@ -359,7 +366,7 @@ static void CB2_TrainerCard(void)
 
 static void CloseTrainerCard(u8 taskId)
 {
-    SetMainCallback2(sData->callback2);
+    SetMainCallback2(CTR_LEAVE_TO(sData->callback2));
     FreeAllWindowBuffers();
     FREE_AND_SET_NULL(sData);
     DestroyTask(taskId);
@@ -1104,6 +1111,9 @@ static void PrintTimeOnCard(void)
     u16 minutes;
     s32 width;
     u32 x, y, totalWidth;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+    u32 hoursWidth, minutesWidth;
+#endif
 
     if (!sData->isHoenn)
         AddTextPrinterParameterized3(WIN_CARD_TEXT, FONT_NORMAL, 20, 88, sTrainerCardTextColors, TEXT_SKIP_DRAW, gText_TrainerCardTime);
@@ -1137,6 +1147,23 @@ static void PrintTimeOnCard(void)
         x = 128;
         y = 89;
     }
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+    /* Japanese digits are fixed 8px; the Latin 18+12 slot puts the colon inside
+     * the hours (e.g. "16  17" with a gap instead of "16:17"). */
+    ConvertIntToDecimalStringN(gStringVar1, hours, STR_CONV_MODE_RIGHT_ALIGN, 3);
+    ConvertIntToDecimalStringN(gStringVar2, minutes, STR_CONV_MODE_LEADING_ZEROS, 2);
+    hoursWidth = GetStringWidth(FONT_NORMAL, gStringVar1, 0);
+    minutesWidth = GetStringWidth(FONT_NORMAL, gStringVar2, 0);
+    totalWidth = hoursWidth + width + minutesWidth;
+    x -= totalWidth;
+
+    FillWindowPixelRect(WIN_CARD_TEXT, PIXEL_FILL(0), x, y, totalWidth, 15);
+    AddTextPrinterParameterized3(WIN_CARD_TEXT, FONT_NORMAL, x, y, sTrainerCardTextColors, TEXT_SKIP_DRAW, gStringVar1);
+    x += hoursWidth;
+    AddTextPrinterParameterized3(WIN_CARD_TEXT, FONT_NORMAL, x, y, sTimeColonTextColors[sData->timeColonInvisible], TEXT_SKIP_DRAW, gText_Colon2);
+    x += width;
+    AddTextPrinterParameterized3(WIN_CARD_TEXT, FONT_NORMAL, x, y, sTrainerCardTextColors, TEXT_SKIP_DRAW, gStringVar2);
+#else
     totalWidth = width + 30;
     x -= totalWidth;
 
@@ -1148,6 +1175,7 @@ static void PrintTimeOnCard(void)
     x += width;
     ConvertIntToDecimalStringN(gStringVar4, minutes, STR_CONV_MODE_LEADING_ZEROS, 2);
     AddTextPrinterParameterized3(WIN_CARD_TEXT, FONT_NORMAL, x, y, sTrainerCardTextColors, TEXT_SKIP_DRAW, gStringVar4);
+#endif
 }
 
 static void PrintProfilePhraseOnCard(void)
@@ -1527,6 +1555,8 @@ static void DrawStarsAndBadgesOnCard(void)
 
 static void DrawCardBackStats(void)
 {
+    // The German card back has no space for these marks next to its longer labels.
+#if !(defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN)
     if (sData->cardType == CARD_TYPE_FRLG)
     {
         if (sData->hasTrades)
@@ -1565,6 +1595,7 @@ static void DrawCardBackStats(void)
             FillBgTilemapBufferRect(3, 156, 27, 16, 1, 1, 0);
         }
     }
+#endif
     CopyBgTilemapBufferToVram(3);
 }
 
@@ -1903,3 +1934,26 @@ static void CreateTrainerCardTrainerPic(void)
                     WIN_TRAINER_PIC);
     }
 }
+
+#ifdef PLATFORM_3DS
+// The card opened from the field (the start menu's PLAYER, with the classic
+// menus), not one seen in a link: the bottom screen shows it in its window
+// and works it by touch.
+bool8 CtrTrainerCard_FieldOpen(void)
+{
+    return sData != NULL && !sData->isLink;
+}
+
+// Which side of that card waits for a key: 0 its front, 1 its back, 2 none
+// (it opens, flips or closes).
+u8 CtrTrainerCard_Side(void)
+{
+    if (!CtrTrainerCard_FieldOpen())
+        return 2;
+    if (sData->mainState == STATE_HANDLE_INPUT_FRONT)
+        return 0;
+    if (sData->mainState == STATE_HANDLE_INPUT_BACK)
+        return 1;
+    return 2;
+}
+#endif

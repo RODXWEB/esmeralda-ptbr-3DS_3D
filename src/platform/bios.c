@@ -257,6 +257,9 @@ void CpuFastSet(const void *src, void *dst, u32 cnt)
 void LZ77UnCompVram(const u32 *src_, void *dest_)
 {
     int destSize = 0;
+#if CTR_LANG_PT_BR
+    const void *compressed = src_;
+#endif
 #ifdef PORT_BRIDGE
     u8 *assetBuf = NULL;
     u32 assetSize = 0;
@@ -312,6 +315,10 @@ void LZ77UnCompVram(const u32 *src_, void *dest_)
                     *out++ = *src++;
                 }
                 if (out == end) {
+#if CTR_LANG_PT_BR
+                    /* The graphics with English words, redrawn in Portuguese. */
+                    Port_TransformDecompressed(compressed, dest_, destSize);
+#endif
 #ifdef PORT_BRIDGE
                     if (assetBuf != NULL)
                         free(assetBuf);
@@ -336,6 +343,9 @@ fail:
 
 void LZ77UnCompWram(const u32 *src, void *dst)
 {
+#if CTR_LANG_PT_BR
+    const void *compressed = src;
+#endif
 #ifdef PORT_BRIDGE
     u8 *assetBuf = NULL;
     u32 assetSize = 0;
@@ -382,6 +392,10 @@ void LZ77UnCompWram(const u32 *src, void *dst)
         }
     }
 
+#if CTR_LANG_PT_BR
+    /* The graphics with English words, redrawn in Portuguese. */
+    Port_TransformDecompressed(compressed, dst, header >> 8);
+#endif
 #ifdef PORT_BRIDGE
     if (assetBuf != NULL)
         free(assetBuf);

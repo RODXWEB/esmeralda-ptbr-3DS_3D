@@ -28,5 +28,13 @@ void SetCameraPanning(s16 horizontal, s16 vertical);
 void InstallCameraPanAheadCallback(void);
 void UpdateCameraPanning(void);
 void FieldUpdateBgTilemapScroll(void);
+#ifdef PLATFORM_3DS
+// The current map's edges where the camera stops (3ds_field_view.h).
+u32 GetMapClosedEdges(void);
+// The banks of the field's tilemap entries (3ds_tile_banks.h) go with the
+// tilemap buffers while they exist.
+void FieldCamera_RegisterTileBanks(void);
+void FieldCamera_UnregisterTileBanks(void);
+#endif
 
 #endif //GUARD_FIELD_CAMERA_H

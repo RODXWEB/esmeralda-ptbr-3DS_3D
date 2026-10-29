@@ -413,9 +413,16 @@ void AnimTask_LoadSandstormBackground(u8 taskId)
     SetGpuReg(REG_OFFSET_BG1VOFS, gBattle_BG1_Y);
 
     GetBattleAnimBg1Data(&animBg);
-    AnimLoadCompressedBgGfx(animBg.bgId, gBattleAnimBgImage_Sandstorm, animBg.tilesOffset);
-    AnimLoadCompressedBgTilemapHandleContest(&animBg, gBattleAnimBgTilemap_Sandstorm, FALSE);
-    LoadCompressedPalette(gBattleAnimSpritePal_FlyingDirt, BG_PLTT_ID(animBg.paletteId), PLTT_SIZE_4BPP);
+#ifdef PLATFORM_3DS
+    // Over a voxel world blowing its own sandstorm: no picture, the sprites
+    // alone (3ds_video.c)
+    if (CtrBattle_Sandstorm() != CTR_SANDSTORM_NONE)
+#endif
+    {
+        AnimLoadCompressedBgGfx(animBg.bgId, gBattleAnimBgImage_Sandstorm, animBg.tilesOffset);
+        AnimLoadCompressedBgTilemapHandleContest(&animBg, gBattleAnimBgTilemap_Sandstorm, FALSE);
+        LoadCompressedPalette(gBattleAnimSpritePal_FlyingDirt, BG_PLTT_ID(animBg.paletteId), PLTT_SIZE_4BPP);
+    }
 
     if (gBattleAnimArgs[0] && GetBattlerSide(gBattleAnimAttacker) != B_SIDE_PLAYER)
         var0 = 1;
@@ -428,12 +435,18 @@ static void AnimTask_LoadSandstormBackground_Step(u8 taskId)
 {
     struct BattleAnimBgData animBg;
 
-    if (gTasks[taskId].data[0] == 0)
-        gBattle_BG1_X += -6;
-    else
-        gBattle_BG1_X += 6;
+#ifdef PLATFORM_3DS
+    // Old 3DS: the sand held still, the scene composed once (3ds_video.c)
+    if (CtrBattle_Sandstorm() == CTR_SANDSTORM_BLOWN)
+#endif
+    {
+        if (gTasks[taskId].data[0] == 0)
+            gBattle_BG1_X += -6;
+        else
+            gBattle_BG1_X += 6;
 
-    gBattle_BG1_Y += -1;
+        gBattle_BG1_Y += -1;
+    }
 
     switch (gTasks[taskId].tState)
     {

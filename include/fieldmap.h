@@ -40,6 +40,13 @@ u32 MapGridGetMetatileIdAt(int x, int y);
 // Port only: what the wide camera draws past the GBA's map padding.
 u32 MapGridGetMetatileIdForCameraAt(int x, int y);
 const u16 *MapGridGetCameraBorderAt(int x, int y, u8 *index);
+#ifdef PLATFORM_3DS
+// The bank (3ds_tile_banks.h) of the tileset the camera draws x, y with
+// (backup-layout coordinates), and that map's layout: 0 for the current
+// tilesets. The attributes of a metatile of that layout's tilesets.
+u8 MapGridGetCameraBankAt(int x, int y, const struct MapLayout **layout);
+u16 GetMetatileAttributesFromLayout(const struct MapLayout *layout, u16 metatile);
+#endif
 u32 MapGridGetMetatileBehaviorAt(int x, int y);
 void MapGridSetMetatileIdAt(int x, int y, u16 metatile);
 void MapGridSetMetatileEntryAt(int x, int y, u16 metatile);

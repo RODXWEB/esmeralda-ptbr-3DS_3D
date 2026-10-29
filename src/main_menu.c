@@ -2401,13 +2401,25 @@ static void MainMenu_FormatSavegameText(void)
 
 static void MainMenu_FormatSavegamePlayer(void)
 {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+    StringCopy(gStringVar1, gSaveBlock2Ptr->playerName);
+    StringExpandPlaceholders(gStringVar4, gText_ContinueMenuPlayer);
+    AddTextPrinterParameterized3(2, FONT_NORMAL, 0, 17, sTextColor_MenuInfo, TEXT_SKIP_DRAW, gStringVar4);
+#else
     StringExpandPlaceholders(gStringVar4, gText_ContinueMenuPlayer);
     AddTextPrinterParameterized3(2, FONT_NORMAL, 0, 17, sTextColor_MenuInfo, TEXT_SKIP_DRAW, gStringVar4);
     AddTextPrinterParameterized3(2, FONT_NORMAL, GetStringRightAlignXOffset(FONT_NORMAL, gSaveBlock2Ptr->playerName, 100), 17, sTextColor_MenuInfo, TEXT_SKIP_DRAW, gSaveBlock2Ptr->playerName);
+#endif
 }
 
 static void MainMenu_FormatSavegameTime(void)
 {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+    ConvertIntToDecimalStringN(gStringVar1, gSaveBlock2Ptr->playTimeHours, STR_CONV_MODE_LEFT_ALIGN, 3);
+    ConvertIntToDecimalStringN(gStringVar2, gSaveBlock2Ptr->playTimeMinutes, STR_CONV_MODE_LEADING_ZEROS, 2);
+    StringExpandPlaceholders(gStringVar4, gText_ContinueMenuTime);
+    AddTextPrinterParameterized3(2, FONT_NORMAL, 0x67, 17, sTextColor_MenuInfo, TEXT_SKIP_DRAW, gStringVar4);
+#else
     u8 str[0x20];
     u8 *ptr;
 
@@ -2417,10 +2429,25 @@ static void MainMenu_FormatSavegameTime(void)
     *ptr = 0xF0;
     ConvertIntToDecimalStringN(ptr + 1, gSaveBlock2Ptr->playTimeMinutes, STR_CONV_MODE_LEADING_ZEROS, 2);
     AddTextPrinterParameterized3(2, FONT_NORMAL, GetStringRightAlignXOffset(FONT_NORMAL, str, 0xD0), 17, sTextColor_MenuInfo, TEXT_SKIP_DRAW, str);
+#endif
 }
 
 static void MainMenu_FormatSavegamePokedex(void)
 {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+    u16 dexCount;
+
+    if (FlagGet(FLAG_SYS_POKEDEX_GET) == TRUE)
+    {
+        if (IsNationalPokedexEnabled())
+            dexCount = GetNationalPokedexCount(FLAG_GET_CAUGHT);
+        else
+            dexCount = GetHoennPokedexCount(FLAG_GET_CAUGHT);
+        ConvertIntToDecimalStringN(gStringVar1, dexCount, STR_CONV_MODE_LEFT_ALIGN, 3);
+        StringExpandPlaceholders(gStringVar4, gText_ContinueMenuPokedex);
+        AddTextPrinterParameterized3(2, FONT_NORMAL, 0, 33, sTextColor_MenuInfo, TEXT_SKIP_DRAW, gStringVar4);
+    }
+#else
     u8 str[0x20];
     u16 dexCount;
 
@@ -2435,10 +2462,24 @@ static void MainMenu_FormatSavegamePokedex(void)
         ConvertIntToDecimalStringN(str, dexCount, STR_CONV_MODE_LEFT_ALIGN, 3);
         AddTextPrinterParameterized3(2, FONT_NORMAL, GetStringRightAlignXOffset(FONT_NORMAL, str, 100), 33, sTextColor_MenuInfo, TEXT_SKIP_DRAW, str);
     }
+#endif
 }
 
 static void MainMenu_FormatSavegameBadges(void)
 {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+    u8 badgeCount = 0;
+    u32 i;
+
+    for (i = FLAG_BADGE01_GET; i < FLAG_BADGE01_GET + NUM_BADGES; i++)
+    {
+        if (FlagGet(i))
+            badgeCount++;
+    }
+    ConvertIntToDecimalStringN(gStringVar1, badgeCount, STR_CONV_MODE_LEADING_ZEROS, 1);
+    StringExpandPlaceholders(gStringVar4, gText_ContinueMenuBadges);
+    AddTextPrinterParameterized3(2, FONT_NORMAL, 0x6F, 33, sTextColor_MenuInfo, TEXT_SKIP_DRAW, gStringVar4);
+#else
     u8 str[0x20];
     u8 badgeCount = 0;
     u32 i;
@@ -2452,6 +2493,7 @@ static void MainMenu_FormatSavegameBadges(void)
     AddTextPrinterParameterized3(2, FONT_NORMAL, 0x6C, 33, sTextColor_MenuInfo, TEXT_SKIP_DRAW, gStringVar4);
     ConvertIntToDecimalStringN(str, badgeCount, STR_CONV_MODE_LEADING_ZEROS, 1);
     AddTextPrinterParameterized3(2, FONT_NORMAL, GetStringRightAlignXOffset(FONT_NORMAL, str, 0xD0), 33, sTextColor_MenuInfo, TEXT_SKIP_DRAW, str);
+#endif
 }
 
 static void LoadMainMenuWindowFrameTiles(u8 bgId, u16 tileOffset)

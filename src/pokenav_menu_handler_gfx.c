@@ -210,7 +210,9 @@ struct
         .yStart = 42,
         .deltaY = 20,
         .gfx = {
+#ifndef PLATFORM_3DS
             sOptionsLabelGfx_RegionMap,
+#endif
             sOptionsLabelGfx_Condition,
             sOptionsLabelGfx_SwitchOff
         }
@@ -220,7 +222,9 @@ struct
         .yStart = 42,
         .deltaY = 20,
         .gfx = {
+#ifndef PLATFORM_3DS
             sOptionsLabelGfx_RegionMap,
+#endif
             sOptionsLabelGfx_Condition,
             sOptionsLabelGfx_MatchCall,
             sOptionsLabelGfx_SwitchOff
@@ -231,7 +235,9 @@ struct
         .yStart = 42,
         .deltaY = 20,
         .gfx = {
+#ifndef PLATFORM_3DS
             sOptionsLabelGfx_RegionMap,
+#endif
             sOptionsLabelGfx_Condition,
             sOptionsLabelGfx_MatchCall,
             sOptionsLabelGfx_Ribbons,
@@ -1399,6 +1405,43 @@ void ResetBldCnt_(void)
 }
 
 #ifdef PLATFORM_3DS
+// An option chosen by touch (CtrPokenavMenu_Select): the cursor is on it at
+// once - that option out and glowing, the one before back in place, its
+// description shown - with no slide on the way, ready for A to open it.
+void CtrPokenavMenuGfx_SnapCursor(void)
+{
+    s32 i, j, newPos;
+    s32 cursor = GetPokenavCursorPos();
+    struct Pokenav_MenuGfx *gfx = GetSubstructPtr(POKENAV_SUBSTRUCT_MENU_GFX);
+
+    if (gfx == NULL)
+        return;
+    for (i = 0, newPos = 0; i < MAX_POKENAV_MENUITEMS; i++)
+    {
+        if (gfx->iconVisible[i])
+        {
+            if (newPos == cursor)
+            {
+                newPos = i;
+                break;
+            }
+            newPos++;
+        }
+    }
+    if (i == MAX_POKENAV_MENUITEMS)
+        return;
+    for (j = 0; j < NUM_OPTION_SUBSPRITES; j++)
+    {
+        gfx->iconSprites[gfx->cursorPos][j]->x = OPTION_DEFAULT_X;
+        gfx->iconSprites[gfx->cursorPos][j]->callback = SpriteCallbackDummy;
+        gfx->iconSprites[newPos][j]->x = OPTION_SELECTED_X;
+        gfx->iconSprites[newPos][j]->callback = SpriteCallbackDummy;
+    }
+    gfx->cursorPos = newPos;
+    SetMenuOptionGlow();
+    PrintCurrentOptionDescription();
+}
+
 // Where the options of the menu on show are: option i is centred on line
 // yStart + deltaY * i, as the glow behind the chosen one is (SetMenuOptionGlow).
 void CtrPokenavMenu_Rows(int *yStart, int *deltaY)

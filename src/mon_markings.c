@@ -647,7 +647,7 @@ bool8 CtrMonMarkings_Menu(s8 *cursor, s16 *x, s16 *y)
     return TRUE;
 }
 
-// Puts the cursor on a row (CtrPokenavMenu_SetCursor).
+// Puts the cursor on a row (NavNext, 3ds_bottom_ui.c).
 void CtrMonMarkings_SetCursor(s8 cursor)
 {
     if (sMenu != NULL && cursor >= 0 && cursor <= SELECTION_CANCEL)

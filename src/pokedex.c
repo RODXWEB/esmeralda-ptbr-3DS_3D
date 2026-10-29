@@ -31,6 +31,9 @@
 #ifdef PORT_BRIDGE
 #include "port_platform.h"
 #endif
+#ifdef PLATFORM_3DS
+#include "3ds_game_views.h"
+#endif
 
 enum
 {
@@ -216,6 +219,13 @@ static void Task_OpenInfoScreenAfterMonMovement(u8);
 static void Task_WaitForExitInfoScreen(u8);
 static void Task_WaitForExitSearch(u8);
 static void Task_ClosePokedex(u8);
+#ifdef PLATFORM_3DS
+// The bottom screen's dock may have chosen another screen to open instead.
+#define CTR_LEAVE_TO(cb) CtrBottom_LeaveTo(cb)
+MainCallback CtrBottom_LeaveTo(MainCallback field);
+#else
+#define CTR_LEAVE_TO(cb) (cb)
+#endif
 static void Task_OpenSearchResults(u8);
 static void Task_HandleSearchResultsInput(u8);
 static void Task_WaitForSearchResultsScroll(u8);
@@ -276,7 +286,7 @@ static void Task_HandleCaughtMonPageInput(u8);
 static void Task_ExitCaughtMonPage(u8);
 static void SpriteCB_SlideCaughtMonToCenter(struct Sprite *sprite);
 static void PrintMonInfo(u32 num, u32, u32 owned, u32 newEntry);
-#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN)
+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN)
 #define NATIVE_DEX_MEASUREMENT_X 0x90
 #else
 #define NATIVE_DEX_MEASUREMENT_X 0x81
@@ -331,6 +341,24 @@ enum {
     CTR_DEX_TO_SIZE,
 };
 static void CtrDex_Reset(void);
+// Drawn by the bottom screen itself (no classic menus), the Pokédex's own
+// picture is never shown and the top screen draws its device: its fades
+// only make the player wait, so they are done in one frame.
+bool8 CtrBottom_NativeMenus(void);
+bool8 CtrDex_FadeInstant(void)
+{
+    return CtrBottom_NativeMenus() && sPokedexView != NULL && gMain.callback2 == CB2_Pokedex;
+}
+static bool8 CtrDex_BeginFade(u32 palettes, s8 delay, u8 startY, u8 targetY, u16 colour)
+{
+    if (CtrDex_FadeInstant())
+    {
+        delay = 0;
+        startY = targetY;
+    }
+    return BeginNormalPaletteFade(palettes, delay, startY, targetY, colour);
+}
+#define BeginNormalPaletteFade CtrDex_BeginFade
 static u8 CtrDex_ListAction(void);
 static u8 CtrDex_MenuAction(u8 count);
 static bool8 CtrDex_DragStep(s8 dir);
@@ -341,6 +369,12 @@ static u8 CtrDex_SearchTopBarAction(u8 taskId);
 static u8 CtrDex_SearchMenuAction(u8 taskId);
 static u8 CtrDex_SearchParamAction(u8 taskId);
 static u8 CtrDex_AnyTapAction(void);
+static bool8 CtrDex_Leaving(void);
+static void Task_CtrLeaveInfoScreen(u8 taskId);
+static void Task_CtrCloseFromInfoScreen(u8 taskId);
+// Where PrintInfoScreenText puts its text instead of printing it, once
+// (CtrPokedex_GetView's height and weight, as the entry prints them).
+static u8 *sCtrCapture;
 #define CTR_DEX_IS(act, what) ((act) == (what))
 #else
 #define CTR_DEX_IS(act, what) FALSE
@@ -1859,6 +1893,11 @@ static void Task_WaitForExitInfoScreen(u8 taskId)
         sLastSelectedPokemon = sPokedexView->selectedPokemon;
         sPokeBallRotation = sPokedexView->pokeBallRotation;
         gTasks[taskId].func = Task_OpenPokedexMainPage;
+#ifdef PLATFORM_3DS
+        // Left for another screen: closed from here, the list never shown.
+        if (CtrDex_Leaving())
+            gTasks[taskId].func = Task_CtrCloseFromInfoScreen;
+#endif
     }
 }
 
@@ -1900,7 +1939,7 @@ static void Task_ClosePokedex(u8 taskId)
         ClearMonSprites();
         FreeWindowAndBgBuffers();
         DestroyTask(taskId);
-        SetMainCallback2(CB2_ReturnToFieldWithOpenMenu);
+        SetMainCallback2(CTR_LEAVE_TO(CB2_ReturnToFieldWithOpenMenu));
         m4aMPlayVolumeControl(&gMPlayInfo_BGM, TRACKS_ALL, 0x100);
         Free(sPokedexView);
     }
@@ -2069,6 +2108,10 @@ static void Task_WaitForExitSearchResultsInfoScreen(u8 taskId)
     {
         // Exiting, back to search results
         gTasks[taskId].func = Task_OpenSearchResults;
+#ifdef PLATFORM_3DS
+        if (CtrDex_Leaving())
+            gTasks[taskId].func = Task_CtrCloseFromInfoScreen;
+#endif
     }
 }
 
@@ -2076,6 +2119,14 @@ static void Task_ReturnToPokedexFromSearchResults(u8 taskId)
 {
     if (!gPaletteFade.active)
     {
+#ifdef PLATFORM_3DS
+        // Left for another screen: closed from the results, not the list.
+        if (CtrDex_Leaving())
+        {
+            gTasks[taskId].func = Task_ClosePokedexFromSearchResultsStartMenu;
+            return;
+        }
+#endif
         sPokedexView->pokeBallRotation = sPokedexView->pokeBallRotationBackup;
         sPokedexView->selectedPokemon = sPokedexView->selectedPokemonBackup;
         sPokedexView->dexMode = sPokedexView->dexModeBackup;
@@ -3064,12 +3115,20 @@ static void CreateInterfaceSprites(u8 page)
             digitNum = (sPokedexView->ownCount % 100) % 10;
             StartSpriteAnim(&gSprites[spriteId], digitNum);
         }
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        spriteId = CreateSprite(&sDexListStartMenuCursorSpriteTemplate, 144, 96, 1);
+#else
         spriteId = CreateSprite(&sDexListStartMenuCursorSpriteTemplate, 136, 96, 1);
+#endif
         gSprites[spriteId].invisible = TRUE;
     }
     else // PAGE_SEARCH_RESULTS
     {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        spriteId = CreateSprite(&sDexListStartMenuCursorSpriteTemplate, 144, 80, 1);
+#else
         spriteId = CreateSprite(&sDexListStartMenuCursorSpriteTemplate, 136, 80, 1);
+#endif
         gSprites[spriteId].invisible = TRUE;
     }
 }
@@ -3251,6 +3310,18 @@ static void PrintInfoScreenText(const u8 *str, u8 left, u8 top)
     color[1] = TEXT_DYNAMIC_COLOR_6;
     color[2] = TEXT_COLOR_LIGHT_GRAY;
 
+#ifdef PLATFORM_3DS
+    if (sCtrCapture != NULL)
+    {
+        u8 i;
+
+        for (i = 0; i < 15 && str[i] != EOS; i++)
+            sCtrCapture[i] = str[i];
+        sCtrCapture[i] = EOS;
+        sCtrCapture = NULL;
+        return;
+    }
+#endif
     AddTextPrinterParameterized4(0, FONT_NORMAL, left, top, 0, 0, color, TEXT_SKIP_DRAW, str);
 }
 
@@ -3552,6 +3623,45 @@ static void Task_ExitInfoScreen(u8 taskId)
     }
 }
 
+#ifdef PLATFORM_3DS
+// The bottom screen's dock left the Pokédex for another screen while one of
+// the entry's pages was up (CtrPokedex_Close): AREA, CRY or SIZE, having
+// freed its own, ends the info screen as INFO's B does, not going back to
+// INFO first.
+static void Task_CtrLeaveInfoScreen(u8 taskId)
+{
+    FreeInfoScreenWindowAndBgBuffers();
+    DestroyTask(taskId);
+}
+
+// Then the Pokédex closes as from the list (Task_ClosePokedex), the list not
+// loaded again: its buffers went with the info screen's (FreeWindowAndBgBuffers
+// would free them twice), and its mon sprites freed themselves as the page
+// changed - the one chosen went with the entry, so ClearMonSprites, which
+// still has its id, is not called either.
+static void Task_CtrCloseFromInfoScreen(u8 taskId)
+{
+    if (!gPaletteFade.active)
+    {
+        // From the search results, the list's own order, as
+        // Task_ClosePokedexFromSearchResultsStartMenu keeps it.
+        if (sPokedexView->isSearchResults)
+        {
+            sPokedexView->dexMode = sPokedexView->dexModeBackup;
+            sPokedexView->dexOrder = sPokedexView->dexOrderBackup;
+        }
+        gSaveBlock2Ptr->pokedex.mode = sPokedexView->dexMode;
+        if (!IsNationalPokedexEnabled())
+            gSaveBlock2Ptr->pokedex.mode = DEX_MODE_HOENN;
+        gSaveBlock2Ptr->pokedex.order = sPokedexView->dexOrder;
+        DestroyTask(taskId);
+        SetMainCallback2(CTR_LEAVE_TO(CB2_ReturnToFieldWithOpenMenu));
+        m4aMPlayVolumeControl(&gMPlayInfo_BGM, TRACKS_ALL, 0x100);
+        Free(sPokedexView);
+    }
+}
+#endif
+
 static void Task_LoadAreaScreen(u8 taskId)
 {
     switch (gMain.state)
@@ -3596,6 +3706,13 @@ static void Task_SwitchScreensFromAreaScreen(u8 taskId)
 {
     if (!gPaletteFade.active)
     {
+#ifdef PLATFORM_3DS
+        if (sPokedexView->screenSwitchState == 1 && CtrDex_Leaving())
+        {
+            gTasks[taskId].func = Task_CtrLeaveInfoScreen;
+            return;
+        }
+#endif
         switch (sPokedexView->screenSwitchState)
         {
         case 1:
@@ -3783,6 +3900,13 @@ static void Task_SwitchScreensFromCryScreen(u8 taskId)
     {
         FreeCryScreen();
         FreeAndDestroyMonPicSprite(gTasks[taskId].tMonSpriteId);
+#ifdef PLATFORM_3DS
+        if (sPokedexView->screenSwitchState == 1 && CtrDex_Leaving())
+        {
+            gTasks[taskId].func = Task_CtrLeaveInfoScreen;
+            return;
+        }
+#endif
         switch (sPokedexView->screenSwitchState)
         {
         default:
@@ -3945,6 +4069,13 @@ static void Task_SwitchScreensFromSizeScreen(u8 taskId)
     {
         FreeAndDestroyMonPicSprite(gTasks[taskId].tMonSpriteId);
         FreeAndDestroyTrainerPicSprite(gTasks[taskId].tTrainerSpriteId);
+#ifdef PLATFORM_3DS
+        if (sPokedexView->screenSwitchState == 1 && CtrDex_Leaving())
+        {
+            gTasks[taskId].func = Task_CtrLeaveInfoScreen;
+            return;
+        }
+#endif
         switch (sPokedexView->screenSwitchState)
         {
         default:
@@ -4282,11 +4413,11 @@ static void PrintMonInfo(u32 num, u32 value, u32 owned, u32 newEntry)
 
 static void PrintMonHeight(u16 height, u8 left, u8 top)
 {
-#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN)
+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN || CTR_LANG_PT_BR || GAME_LANGUAGE == LANGUAGE_JAPANESE)
     u8 buffer[16];
     u8 *end = ConvertIntToDecimalStringN(buffer, height / 10, STR_CONV_MODE_LEFT_ALIGN, 4);
 
-#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN
+#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN || CTR_LANG_PT_BR
     *end++ = CHAR_COMMA;
 #else
     *end++ = CHAR_PERIOD;
@@ -4331,11 +4462,11 @@ static void PrintMonHeight(u16 height, u8 left, u8 top)
 
 static void PrintMonWeight(u16 weight, u8 left, u8 top)
 {
-#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN)
+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN || CTR_LANG_PT_BR || GAME_LANGUAGE == LANGUAGE_JAPANESE)
     u8 buffer[16];
     u8 *end = ConvertIntToDecimalStringN(buffer, weight / 10, STR_CONV_MODE_LEFT_ALIGN, 4);
 
-#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN
+#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN || CTR_LANG_PT_BR
     *end++ = CHAR_COMMA;
 #else
     *end++ = CHAR_PERIOD;
@@ -4974,6 +5105,19 @@ static void PrintSearchText(const u8 *str, u32 x, u32 y)
     AddTextPrinterParameterized4(0, FONT_NORMAL, x, y, 0, 0, color, TEXT_SKIP_DRAW, str);
 }
 
+// The two type boxes are 48 pixels apart: a longer name (TERRESTRE) takes
+// the narrow font.
+static void PrintSearchTypeText(const u8 *str, u32 x, u32 y)
+{
+    u8 color[3];
+    u8 fontId = GetStringWidth(FONT_NORMAL, str, 0) > 46 ? FONT_NARROW : FONT_NORMAL;
+
+    color[0] = TEXT_COLOR_TRANSPARENT;
+    color[1] = TEXT_DYNAMIC_COLOR_6;
+    color[2] = TEXT_COLOR_DARK_GRAY;
+    AddTextPrinterParameterized4(0, fontId, x, y, 0, 0, color, TEXT_SKIP_DRAW, str);
+}
+
 static void ClearSearchMenuRect(u32 x, u32 y, u32 width, u32 height)
 {
     FillWindowPixelRect(0, PIXEL_FILL(0), x, y, width, height);
@@ -5602,10 +5746,10 @@ static void PrintSelectedSearchParameters(u8 taskId)
     PrintSearchText(sDexSearchColorOptions[searchParamId].title, 0x2D, 0x21);
 
     searchParamId = gTasks[taskId].tCursorPos_TypeLeft + gTasks[taskId].tScrollOffset_TypeLeft;
-    PrintSearchText(sDexSearchTypeOptions[searchParamId].title, 0x2D, 0x31);
+    PrintSearchTypeText(sDexSearchTypeOptions[searchParamId].title, 0x2D, 0x31);
 
     searchParamId = gTasks[taskId].tCursorPos_TypeRight + gTasks[taskId].tScrollOffset_TypeRight;
-    PrintSearchText(sDexSearchTypeOptions[searchParamId].title, 0x5D, 0x31);
+    PrintSearchTypeText(sDexSearchTypeOptions[searchParamId].title, 0x5D, 0x31);
 
     searchParamId = gTasks[taskId].tCursorPos_Order + gTasks[taskId].tScrollOffset_Order;
     PrintSearchText(sDexOrderOptions[searchParamId].title, 0x2D, 0x41);
@@ -5842,8 +5986,8 @@ static void ClearSearchParameterBoxText(void)
 
 #ifdef PLATFORM_3DS
 //------------------------------------------------------------------------------
-//  3DS: the Pokédex is shown on the bottom screen, left of the button column
-//  (CTR_CENTRED_POKEDEX, full.mk). 3ds_bottom_ui.c hands it its touches in
+//  3DS: the Pokédex is shown on the bottom screen, in the game screen's window
+//  (CTR_CENTRED_POKEDEX, full.mk), or drawn there natively (see the end). 3ds_bottom_ui.c hands it its touches in
 //  pixels of its own picture; what a tap does is what the Pokédex does for
 //  its button, done here directly.
 //------------------------------------------------------------------------------
@@ -5867,6 +6011,38 @@ bool8 CtrPokedex_IsCaughtMonPage(void)
 bool8 CtrPokedex_IsOpen(void)
 {
     return sPokedexView != NULL && (gMain.callback2 == CB2_Pokedex || gMain.callback2 == CB2_OpenPokedex);
+}
+
+// The Pokemon the top screen shows in the device's window (3ds_dex_top_game.c),
+// as a national dex number: the one on the info page (and its area, cry and
+// size pages; the list's task waits in Task_WaitForExitInfoScreen for as long
+// as any of those is up), else the one the list or the search results have
+// under the cursor, when it has been seen; 0 otherwise.
+u16 CtrPokedex_InfoDexNum(void)
+{
+    if (!CtrPokedex_IsOpen() || gMain.callback2 != CB2_Pokedex)
+        return 0;
+    if (sPokedexListItem != NULL
+        && (FuncIsActiveTask(Task_WaitForExitInfoScreen) || FuncIsActiveTask(Task_HandleInfoScreenInput)
+            || FuncIsActiveTask(Task_WaitForExitSearchResultsInfoScreen)))
+        return sPokedexListItem->dexNum;
+    if (FuncIsActiveTask(Task_HandlePokedexInput) || FuncIsActiveTask(Task_HandleSearchResultsInput)
+     || FuncIsActiveTask(Task_HandlePokedexStartMenuInput) || FuncIsActiveTask(Task_HandleSearchResultsStartMenuInput))
+    {
+        const struct PokedexListItem *item;
+
+        if (sPokedexView->selectedPokemon >= sPokedexView->pokemonListCount)
+            return 0;
+        item = &sPokedexView->pokedexList[sPokedexView->selectedPokemon];
+        return item->seen ? item->dexNum : 0;
+    }
+    return 0;
+}
+
+// Whether the list is scrolling: the top screen waits for it to settle.
+bool8 CtrPokedex_ListScrolling(void)
+{
+    return sPokedexView != NULL && sPokedexView->scrollTimer != 0;
 }
 
 
@@ -5925,18 +6101,34 @@ static struct {
     bool8 held, dragged, tapped;
     bool8 leave;     // B on every screen until the Pokédex closes
     u8 queued;       // an action the next input task takes
+    u8 nativeOp;     // the bottom screen's own search buttons (CTR_DEX_OP_*)
+    u8 nativeArg;
     u8 drag;         // CTR_DRAG_*
     s8 swipe;
     s16 x0, y0, x, y, tapX, tapY;
     s16 steps;       // rows of the drag not yet taken
     s16 applied;     // rows of the drag counted so far
     u32 tapTime;
+    // The list drawn by the bottom screen (no classic menus): dragged, the
+    // selection follows the finger row for row with none of the game's
+    // scrolling, coasts on when let go moving, and the game's sprites of
+    // the list are made again once it stops (CtrDex_NativeList).
+    s16 dragFrom;    // the selection when the finger came down
+    s16 dragRows;    // rows the finger has gone up since
+    s16 lastY, speed; // the finger's last row, its speed up (1/16 pixel a frame)
+    s32 fling;       // how far the list has coasted, 1/16 pixels
+    bool8 coasting, rebuild;
 } sCtrDex;
 
 static void CtrDex_Reset(void)
 {
     memset(&sCtrDex, 0, sizeof(sCtrDex));
 }
+
+// The search's buttons on the bottom screen's own view: a parameter one
+// back or on, SEARCH or SHIFT at once, leaving. Taken by the search's input
+// task, as its own buttons are.
+enum { CTR_DEX_OP_NONE, CTR_DEX_OP_STEP, CTR_DEX_OP_GO, CTR_DEX_OP_EXIT };
 
 void CtrPokedex_Touch(u8 phase, s16 x, s16 y)
 {
@@ -5954,6 +6146,10 @@ void CtrPokedex_Touch(u8 phase, s16 x, s16 y)
         sCtrDex.steps = sCtrDex.applied = 0;
         sCtrDex.swipe = 0;
         sCtrDex.drag = CTR_DRAG_NONE;
+        sCtrDex.dragFrom = sPokedexView->selectedPokemon;
+        sCtrDex.dragRows = sCtrDex.speed = 0;
+        sCtrDex.lastY = y;
+        sCtrDex.coasting = FALSE;
         if ((sPokedexView->currentPage == PAGE_MAIN || sPokedexView->currentPage == PAGE_SEARCH_RESULTS)
          && x >= CTR_LIST_LEFT && x < CTR_LIST_RIGHT && y >= CTR_LIST_TOP && y < CTR_LIST_BOTTOM)
             sCtrDex.drag = CTR_DRAG_LIST;
@@ -5968,7 +6164,16 @@ void CtrPokedex_Touch(u8 phase, s16 x, s16 y)
         sCtrDex.y = y;
         if (x - sCtrDex.x0 > 8 || sCtrDex.x0 - x > 8 || y - sCtrDex.y0 > 8 || sCtrDex.y0 - y > 8)
             sCtrDex.dragged = TRUE;
-        if (sCtrDex.dragged && sCtrDex.drag != CTR_DRAG_NONE)
+        sCtrDex.speed = (sCtrDex.speed + (sCtrDex.lastY - y) * 16) / 2;
+        sCtrDex.lastY = y;
+        if (sCtrDex.dragged && sCtrDex.drag == CTR_DRAG_LIST && CtrBottom_NativeMenus())
+        {
+            // Rounded: a row moves once the finger is half way over it.
+            s16 up = sCtrDex.y0 - y;
+
+            sCtrDex.dragRows = (up + (up < 0 ? -CTR_ROW_HEIGHT : CTR_ROW_HEIGHT) / 2) / CTR_ROW_HEIGHT;
+        }
+        else if (sCtrDex.dragged && sCtrDex.drag != CTR_DRAG_NONE)
         {
             // Up is on down the list. Few rows are kept waiting, so that the
             // list stops soon after the finger does.
@@ -5994,6 +6199,15 @@ void CtrPokedex_Touch(u8 phase, s16 x, s16 y)
             sCtrDex.tapY = sCtrDex.y;
             sCtrDex.tapTime = gMain.vblankCounter1;
         }
+        else if (sCtrDex.drag == CTR_DRAG_LIST && CtrBottom_NativeMenus())
+        {
+            sCtrDex.rebuild = TRUE;
+            if (sCtrDex.speed >= 24 || sCtrDex.speed <= -24)
+            {
+                sCtrDex.coasting = TRUE;
+                sCtrDex.fling = 0;
+            }
+        }
         else if (sPokedexView->currentPage == PAGE_INFO && (dy >= CTR_SWIPE || dy <= -CTR_SWIPE)
               && (dy < 0 ? -dy : dy) > (dx < 0 ? -dx : dx))
         {
@@ -6007,7 +6221,7 @@ void CtrPokedex_Touch(u8 phase, s16 x, s16 y)
     }
 }
 
-// The column's POKéDEX button is B; any other button of it leaves the
+// The dock's POKéDEX button is B; any other button of it leaves the
 // Pokédex, B after B until it closes (leave). TRUE when it will close.
 bool8 CtrPokedex_Close(bool8 leave)
 {
@@ -6034,6 +6248,11 @@ static bool8 CtrDex_TakeTap(s16 *x, s16 *y)
 
 // What comes before a tap: leaving, the POKéDEX button, or what the screen
 // before left for this one.
+static bool8 CtrDex_Leaving(void)
+{
+    return sCtrDex.leave;
+}
+
 static u8 CtrDex_Pending(void)
 {
     u8 act;
@@ -6079,11 +6298,58 @@ static void CtrDex_ListJump(s16 delta, u16 sound)
     PlaySE(sound);
 }
 
+// The list drawn by the bottom screen, dragged or coasting: the selection
+// moved to target at once, the game's sprites of the list left as they are
+// until it stops.
+static void CtrDex_NativeSelect(s16 target)
+{
+    if (target > sPokedexView->pokemonListCount - 1)
+        target = sPokedexView->pokemonListCount - 1;
+    if (target < 0)
+        target = 0;
+    if (target == sPokedexView->selectedPokemon)
+        return;
+    sPokedexView->pokeBallRotation += 16 * (target - sPokedexView->selectedPokemon);
+    sPokedexView->selectedPokemon = target;
+    PlaySE(SE_DEX_SCROLL);
+}
+
+static void CtrDex_NativeList(void)
+{
+    if (!CtrBottom_NativeMenus())
+        return;
+    if (sCtrDex.held && sCtrDex.dragged && sCtrDex.drag == CTR_DRAG_LIST)
+        CtrDex_NativeSelect(sCtrDex.dragFrom + sCtrDex.dragRows);
+    else if (sCtrDex.coasting && !sCtrDex.held)
+    {
+        s16 rows;
+
+        sCtrDex.fling += sCtrDex.speed;
+        sCtrDex.speed = sCtrDex.speed * 7 / 8;
+        rows = sCtrDex.fling / (CTR_ROW_HEIGHT * 16);
+        sCtrDex.fling -= rows * CTR_ROW_HEIGHT * 16;
+        CtrDex_NativeSelect(sPokedexView->selectedPokemon + rows);
+        if ((sCtrDex.speed < 12 && sCtrDex.speed > -12) || sPokedexView->selectedPokemon == 0
+         || sPokedexView->selectedPokemon == sPokedexView->pokemonListCount - 1)
+            sCtrDex.coasting = FALSE;
+    }
+    // Stopped (or a new touch came down on it): the list's sprites again.
+    if (sCtrDex.rebuild && !sCtrDex.coasting && !(sCtrDex.held && sCtrDex.dragged))
+    {
+        sCtrDex.rebuild = FALSE;
+        ClearMonSprites();
+        CreateMonSpritesAtPos(sPokedexView->selectedPokemon, 0xE);
+    }
+}
+
 // The list, main or search results.
 static u8 CtrDex_ListAction(void)
 {
-    u8 act = CtrDex_Pending();
+    u8 act;
     s16 x, y, row;
+
+    CtrDex_NativeList();
+    act = CtrDex_Pending();
 
     if (act != CTR_DEX_NONE || !CtrDex_TakeTap(&x, &y))
         return act;
@@ -6264,12 +6530,16 @@ static bool8 CtrDex_SearchHasItem(u8 topBarItem, u8 item)
     return FALSE;
 }
 
+static u8 CtrDex_SearchNativeOp(u8 taskId);
+
 static u8 CtrDex_SearchTopBarAction(u8 taskId)
 {
     u8 act = CtrDex_Pending();
     s16 x, y;
     s8 bar, item;
 
+    if (act == CTR_DEX_NONE && sCtrDex.nativeOp != CTR_DEX_OP_NONE)
+        return CtrDex_SearchNativeOp(taskId);
     if (act != CTR_DEX_NONE || !CtrDex_TakeTap(&x, &y))
         return act;
     bar = CtrDex_SearchBarAt(x, y);
@@ -6306,6 +6576,8 @@ static u8 CtrDex_SearchMenuAction(u8 taskId)
     s16 x, y;
     s8 item;
 
+    if (act == CTR_DEX_NONE && sCtrDex.nativeOp != CTR_DEX_OP_NONE)
+        return CtrDex_SearchNativeOp(taskId);
     if (act != CTR_DEX_NONE || !CtrDex_TakeTap(&x, &y))
         return act;
     // The top bar: back to it, as B.
@@ -6368,6 +6640,10 @@ static u8 CtrDex_SearchParamAction(u8 taskId)
 
     if (act != CTR_DEX_NONE)
         return act;
+    // A button of the bottom screen's own view: the list closes as with A,
+    // the button is taken by the menu then.
+    if (sCtrDex.nativeOp != CTR_DEX_OP_NONE)
+        return CTR_DEX_CHOOSE;
     if (sCtrDex.drag == CTR_DRAG_PARAM && sCtrDex.steps != 0)
     {
         CtrDex_SearchParamScroll(taskId, sCtrDex.steps);
@@ -6411,5 +6687,377 @@ static u8 CtrDex_AnyTapAction(void)
     if (CtrDex_Pending() != CTR_DEX_NONE || CtrDex_TakeTap(&x, &y))
         return CTR_DEX_CHOOSE;
     return CTR_DEX_NONE;
+}
+
+//------------------------------------------------------------------------------
+//  The bottom screen's own view of the Pokédex (3ds_game_views.h): the list
+//  round the chosen mon and a mon's entry, read from the Pokédex as it is.
+//  Its other screens (the menu, the search, the area, cry and size pages)
+//  are not drawn there: their picture is shown. Its taps are the Pokédex's
+//  own, at the place of its picture they would be.
+//------------------------------------------------------------------------------
+
+static void CtrDex_Number(u8 *dst, u16 dexNum)
+{
+    if (sPokedexView->dexMode == DEX_MODE_HOENN)
+        dexNum = NationalToHoennOrder(dexNum);
+    memcpy(dst, sText_No000, 6);
+    dst[2] = CHAR_0 + dexNum / 100;
+    dst[3] = CHAR_0 + (dexNum % 100) / 10;
+    dst[4] = CHAR_0 + dexNum % 10;
+}
+
+// The chosen mon's entry: its texts as the entry prints them, made once for
+// each mon (and again once it is caught).
+static void CtrDex_Entry(struct CtrDexView *view, u16 dexNum, bool8 owned)
+{
+    static struct CtrDexView sMade;
+    static u16 sMadeNum;
+    static bool8 sMadeOwned;
+    const u8 *footprint;
+
+    if (dexNum != sMadeNum || owned != sMadeOwned)
+    {
+        sMadeNum = dexNum;
+        sMadeOwned = owned;
+        memset(&sMade, 0, sizeof(sMade));
+        if (owned)
+        {
+            CopyMonCategoryText(dexNum, sMade.category);
+            sCtrCapture = sMade.height;
+            PrintMonHeight(gPokedexEntries[dexNum].height, 0, 0);
+            sCtrCapture = sMade.weight;
+            PrintMonWeight(gPokedexEntries[dexNum].weight, 0, 0);
+            sCtrCapture = NULL;
+            sMade.description = gPokedexEntries[dexNum].description;
+            footprint = Port_ResolveAssetPointerSized(gMonFootprintTable[NationalPokedexNumToSpecies(dexNum)],
+                                                      sizeof(sMade.footprint));
+            if (footprint != NULL)
+                memcpy(sMade.footprint, footprint, sizeof(sMade.footprint));
+        }
+        else
+        {
+            StringCopy(sMade.category, gText_5MarksPokemon);
+            StringCopy(sMade.height, gText_UnkHeight);
+            StringCopy(sMade.weight, gText_UnkWeight);
+            sMade.description = sExpandedPlaceholder_PokedexDescription;
+        }
+    }
+    view->owned = owned;
+    memcpy(view->category, sMade.category, sizeof(view->category));
+    memcpy(view->height, sMade.height, sizeof(view->height));
+    memcpy(view->weight, sMade.weight, sizeof(view->weight));
+    memcpy(view->footprint, sMade.footprint, sizeof(view->footprint));
+    view->description = sMade.description;
+}
+
+bool8 CtrPokedexArea_GetView(struct CtrDexView *view);
+void CtrDexCry_GetView(s8 *wave, u8 *volume);
+
+// The search task, whichever of its input states it is in; TASK_NONE while
+// it loads or leaves.
+static u8 CtrDex_SearchTask(u8 *state, bool8 *menu)
+{
+    static const TaskFunc choose[] = {Task_HandleSearchTopBarInput, Task_SwitchToSearchMenuTopBar};
+    static const TaskFunc inMenu[] = {Task_HandleSearchMenuInput, Task_SwitchToSearchMenu,
+                                      Task_SelectSearchMenuItem, Task_HandleSearchParameterInput};
+    u8 i, taskId;
+
+    *menu = FALSE;
+    *state = CTR_DEX_SEARCH_CHOOSE;
+    for (i = 0; i < ARRAY_COUNT(choose); i++)
+        if ((taskId = FindTaskIdByFunc(choose[i])) != TASK_NONE)
+            return taskId;
+    *menu = TRUE;
+    for (i = 0; i < ARRAY_COUNT(inMenu); i++)
+        if ((taskId = FindTaskIdByFunc(inMenu[i])) != TASK_NONE)
+            return taskId;
+    *state = CTR_DEX_SEARCH_BUSY;
+    if ((taskId = FindTaskIdByFunc(Task_StartPokedexSearch)) != TASK_NONE
+     || (taskId = FindTaskIdByFunc(Task_WaitAndCompleteSearch)) != TASK_NONE)
+        return taskId;
+    if ((taskId = FindTaskIdByFunc(Task_SearchCompleteWaitForInput)) != TASK_NONE)
+    {
+        *state = sPokedexView->pokemonListCount != 0 ? CTR_DEX_SEARCH_FOUND : CTR_DEX_SEARCH_NONE_FOUND;
+        return taskId;
+    }
+    return TASK_NONE;
+}
+
+// A parameter's value, as the index of its options (its cursor and scroll).
+static u16 CtrDex_ParamValue(u8 taskId, u8 param)
+{
+    return gTasks[taskId].data[sSearchOptions[param].taskDataCursorPos]
+         + gTasks[taskId].data[sSearchOptions[param].taskDataScrollOffset];
+}
+
+static bool8 CtrDex_SearchView(struct CtrDexView *view)
+{
+    u8 state, p, taskId;
+    bool8 menu;
+
+    taskId = CtrDex_SearchTask(&state, &menu);
+    if (taskId == TASK_NONE)
+        return FALSE;
+    view->state = CTR_DEX_VIEW_SEARCH;
+    view->searchState = state;
+    view->searchMenu = menu;
+    view->topBarItem = gTasks[taskId].tTopBarItem;
+    view->menuItem = gTasks[taskId].tMenuItem;
+    for (p = 0; p < CTR_DEX_PARAMS; p++)
+    {
+        u16 value = CtrDex_ParamValue(taskId, p);
+
+        // The mode is only there with the national dex.
+        if (p == SEARCH_MODE && !IsNationalPokedexEnabled())
+            continue;
+        if (value >= sSearchOptions[p].numOptions)
+            value = 0;
+        view->param[p] = value;
+        view->paramCount[p] = sSearchOptions[p].numOptions;
+        view->paramText[p] = sSearchOptions[p].texts[value].title;
+    }
+    return TRUE;
+}
+
+// A button of the bottom screen's own search, in the search's input task.
+static u8 CtrDex_SearchNativeOp(u8 taskId)
+{
+    u8 op = sCtrDex.nativeOp, arg = sCtrDex.nativeArg;
+
+    sCtrDex.nativeOp = CTR_DEX_OP_NONE;
+    switch (op)
+    {
+    case CTR_DEX_OP_STEP:
+    {
+        u8 p = arg / 2;
+        u16 count, value, scroll;
+
+        if (p >= SEARCH_OK || (p == SEARCH_MODE && !IsNationalPokedexEnabled()))
+            return CTR_DEX_NONE;
+        count = sSearchOptions[p].numOptions;
+        value = CtrDex_ParamValue(taskId, p);
+        if (value >= count)
+            value = 0;
+        value = (value + ((arg & 1) ? 1 : count - 1)) % count;
+        scroll = value > MAX_SEARCH_PARAM_CURSOR_POS ? value - MAX_SEARCH_PARAM_CURSOR_POS : 0;
+        gTasks[taskId].data[sSearchOptions[p].taskDataScrollOffset] = scroll;
+        gTasks[taskId].data[sSearchOptions[p].taskDataCursorPos] = value - scroll;
+        PlaySE(SE_SELECT);
+        PrintSelectedSearchParameters(taskId);
+        CopyWindowToVram(0, COPYWIN_GFX);
+        return CTR_DEX_NONE;
+    }
+    case CTR_DEX_OP_GO:
+        // SEARCH or SHIFT, then its OK, as the menu takes A on it.
+        gTasks[taskId].tTopBarItem = arg ? SEARCH_TOPBAR_SHIFT : SEARCH_TOPBAR_SEARCH;
+        gTasks[taskId].tMenuItem = SEARCH_OK;
+        gTasks[taskId].func = Task_HandleSearchMenuInput;
+        sCtrDex.queued = CTR_DEX_CHOOSE;
+        return CTR_DEX_NONE;
+    case CTR_DEX_OP_EXIT:
+        PlaySE(SE_PC_OFF);
+        gTasks[taskId].func = Task_ExitSearch;
+        return CTR_DEX_NONE;
+    }
+    return CTR_DEX_NONE;
+}
+
+// Where the Pokédex is, for the bottom screen to draw it itself. FALSE while
+// there is nothing to read (a page coming in or going out): the bottom
+// screen keeps what it showed.
+bool8 CtrPokedex_GetView(struct CtrDexView *view)
+{
+    u8 page;
+    s16 i, top;
+
+    memset(view, 0, sizeof(*view));
+    if (!CtrPokedex_IsOpen() || gMain.callback2 != CB2_Pokedex)
+        return FALSE;
+    page = sPokedexView->currentPage;
+    view->national = sPokedexView->dexMode != DEX_MODE_HOENN;
+    view->order = sPokedexView->dexOrder;
+    view->seen = sPokedexView->seenCount;
+    view->own = sPokedexView->ownCount;
+    if (page == PAGE_INFO && sPokedexListItem != NULL)
+    {
+        if (!FuncIsActiveTask(Task_HandleInfoScreenInput))
+            return FALSE;
+        view->state = CTR_DEX_VIEW_INFO;
+        view->tabCursor = sPokedexView->selectedScreen + 1; // its bar has no INFO
+        view->owned = sPokedexListItem->owned;
+        view->dexNum = sPokedexListItem->dexNum;
+        view->species = NationalPokedexNumToSpecies(view->dexNum);
+        CtrDex_Number(view->number, view->dexNum);
+        CtrDex_Entry(view, view->dexNum, sPokedexListItem->owned);
+        return TRUE;
+    }
+    if (page == PAGE_SEARCH)
+        return CtrDex_SearchView(view);
+    if ((page == PAGE_AREA || page == PAGE_CRY || page == PAGE_SIZE) && sPokedexListItem != NULL)
+    {
+        view->dexNum = sPokedexListItem->dexNum;
+        view->species = NationalPokedexNumToSpecies(view->dexNum);
+        view->owned = sPokedexListItem->owned;
+        CtrDex_Number(view->number, view->dexNum);
+        if (page == PAGE_AREA)
+        {
+            view->state = CTR_DEX_VIEW_AREA;
+            return CtrPokedexArea_GetView(view);
+        }
+        if (page == PAGE_CRY)
+        {
+            if (!FuncIsActiveTask(Task_HandleCryScreenInput))
+                return FALSE;
+            view->state = CTR_DEX_VIEW_CRY;
+            CtrDexCry_GetView(view->wave, &view->volume);
+            return TRUE;
+        }
+        if (!FuncIsActiveTask(Task_HandleSizeScreenInput))
+            return FALSE;
+        view->state = CTR_DEX_VIEW_SIZE;
+        // Its height, as the entry prints it.
+        CtrDex_Entry(view, view->dexNum, view->owned);
+        view->trainerScale = gPokedexEntries[view->dexNum].trainerScale;
+        view->monScale = gPokedexEntries[view->dexNum].pokemonScale;
+        view->trainerOffset = gPokedexEntries[view->dexNum].trainerOffset;
+        view->monOffset = gPokedexEntries[view->dexNum].pokemonOffset;
+        view->gender = gSaveBlock2Ptr->playerGender;
+        return TRUE;
+    }
+    if (page != PAGE_MAIN && page != PAGE_SEARCH_RESULTS)
+        return FALSE;
+    if (sPokedexView->menuIsOpen)
+    {
+        // The START menu over the list: the list as it is under it.
+        if (!FuncIsActiveTask(Task_HandlePokedexStartMenuInput)
+         && !FuncIsActiveTask(Task_HandleSearchResultsStartMenuInput))
+            return FALSE;
+        view->state = CTR_DEX_VIEW_MENU;
+        view->menuCursor = sPokedexView->menuCursorPos;
+        view->menuCount = page == PAGE_SEARCH_RESULTS ? 5 : 4;
+    }
+    else if (!FuncIsActiveTask(Task_HandlePokedexInput) && !FuncIsActiveTask(Task_WaitForScroll)
+     && !FuncIsActiveTask(Task_HandleSearchResultsInput) && !FuncIsActiveTask(Task_WaitForSearchResultsScroll))
+        return FALSE;
+    else
+        view->state = CTR_DEX_VIEW_LIST;
+    view->searchResults = page == PAGE_SEARCH_RESULTS;
+    view->selected = sPokedexView->selectedPokemon;
+    view->count = sPokedexView->pokemonListCount;
+    // The chosen one in the middle, but for the list's ends: no empty rows
+    // over its first entry or under its last.
+    top = view->selected - CTR_DEX_ROWS / 2;
+    if (top > view->count - CTR_DEX_ROWS)
+        top = view->count - CTR_DEX_ROWS;
+    if (top < 0)
+        top = 0;
+    view->chosenRow = view->selected - top;
+    for (i = 0; i < CTR_DEX_ROWS; i++)
+    {
+        s16 entry = top + i;
+        const struct PokedexListItem *item;
+
+        if (entry < 0 || entry >= view->count)
+            continue;
+        item = &sPokedexView->pokedexList[entry];
+        if (item->dexNum == 0xFFFF || item->dexNum == 0)
+            continue;
+        view->rows[i].dexNum = item->dexNum;
+        view->rows[i].species = item->seen ? NationalPokedexNumToSpecies(item->dexNum) : SPECIES_NONE;
+        view->rows[i].owned = item->owned;
+        CtrDex_Number(view->rows[i].number, item->dexNum);
+    }
+    view->dexNum = view->rows[view->chosenRow].dexNum;
+    view->species = view->rows[view->chosenRow].species;
+    return TRUE;
+}
+
+static void CtrDex_PostTap(s16 x, s16 y)
+{
+    sCtrDex.tapped = TRUE;
+    sCtrDex.tapX = x;
+    sCtrDex.tapY = y;
+    sCtrDex.tapTime = gMain.vblankCounter1;
+}
+
+void CtrPokedex_NativeTap(u8 kind, u8 index)
+{
+    if (!CtrPokedex_IsOpen())
+        return;
+    switch (kind)
+    {
+    case CTR_DEX_TAP_CHOOSE:
+        // The chosen mon's picture, left of the list.
+        CtrDex_PostTap(96, 80);
+        break;
+    case CTR_DEX_TAP_SEARCH:
+        CtrDex_PostTap(8, 144);
+        break;
+    case CTR_DEX_TAP_TAB:
+        // The bottom screen's tabs are INFO AREA CRY SIZE; the game's bar is
+        // AREA CRY SIZE CANCEL, its CANCEL going back to the entry's INFO.
+        index = index == 0 ? CANCEL_SCREEN : index - 1;
+        CtrDex_PostTap(CTR_TAB_LEFT + index * CTR_TAB_WIDTH + CTR_TAB_WIDTH / 2, CTR_TAB_BOTTOM / 2);
+        break;
+    case CTR_DEX_TAP_BACK:
+        // On the search, leaving it whole, as its CANCEL.
+        if (sPokedexView->currentPage == PAGE_SEARCH)
+        {
+            sCtrDex.nativeOp = CTR_DEX_OP_EXIT;
+            break;
+        }
+        CtrPokedex_Close(FALSE);
+        break;
+    case CTR_DEX_TAP_MENU:
+        if (!sPokedexView->menuIsOpen)
+            break;
+        if (index == 0xFF)
+        {
+            sCtrDex.queued = CTR_DEX_BACK;
+            break;
+        }
+        sPokedexView->menuCursorPos = index;
+        sCtrDex.queued = CTR_DEX_CHOOSE;
+        break;
+    case CTR_DEX_TAP_PARAM:
+        sCtrDex.nativeOp = CTR_DEX_OP_STEP;
+        sCtrDex.nativeArg = index;
+        break;
+    case CTR_DEX_TAP_SEARCH_GO:
+        sCtrDex.nativeOp = CTR_DEX_OP_GO;
+        sCtrDex.nativeArg = index;
+        break;
+    case CTR_DEX_TAP_ANY:
+        CtrDex_PostTap(0, 0);
+        break;
+    case CTR_DEX_TAP_PLAY:
+        // The cry page's play button (CtrDex_SubmenuAction).
+        CtrDex_PostTap(112, 80);
+        break;
+    }
+}
+
+void CtrPokedex_ListTouch(u8 phase, s32 rows256)
+{
+    CtrPokedex_Touch(phase, (CTR_LIST_LEFT + CTR_LIST_RIGHT) / 2,
+                     CTR_LIST_MIDDLE + CTR_ROW_HEIGHT / 2 + rows256 * CTR_ROW_HEIGHT / 256);
+}
+
+void CtrPokedex_TapBar(s32 at256)
+{
+    // The bar's places as CtrDex_ListAction reads them: 20 to 140.
+    CtrDex_PostTap(CTR_LIST_RIGHT + 4, 20 + at256 * 120 / 256);
+}
+
+void CtrPokedex_EntryTouch(u8 phase, s16 dy)
+{
+    CtrPokedex_Touch(phase, DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2 + dy);
+}
+
+// An INCBIN is a stub in this unit: the asset itself, by its address.
+const u8 *CtrPokedex_CaughtBallGfx(void)
+{
+    return Port_ResolveAssetPointerSized(sCaughtBall_Gfx, 64);
 }
 #endif

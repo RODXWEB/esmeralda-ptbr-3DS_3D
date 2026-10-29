@@ -90,4 +90,11 @@ void BufferMoveDeleterNicknameAndMove(void);
 void GetNumMovesSelectedMonHas(void);
 void MoveDeleterChooseMoveToForget(void);
 
+#ifdef PORT_BRIDGE
+void CtrParty_Fly(u8 slot, u16 mapSecId, u8 posWithinMapSec);
+#endif
+#ifdef PLATFORM_3DS
+void CtrBottom_OpenFlyMap(u8 slot, bool8 fromBag);
+#endif
+
 #endif // GUARD_PARTY_MENU_H

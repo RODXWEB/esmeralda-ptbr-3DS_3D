@@ -64,6 +64,15 @@
 #include "constants/trainers.h"
 #include "cable_club.h"
 
+#ifdef PORT_BRIDGE
+// Seeded species randomizer (3ds_randomizer.h, off by default): the species
+// an ordinary trainer's Pokemon is created as.
+#include "3ds_randomizer.h"
+#define TRAINER_MON_SPECIES(species) CtrRandomizer_Species(CTR_RANDOMIZE_TRAINERS, species)
+#else
+#define TRAINER_MON_SPECIES(species) (species)
+#endif
+
 extern const struct BgTemplate gBattleBgTemplates[];
 extern const struct WindowTemplate *const gBattleWindowTemplates[];
 
@@ -454,23 +463,23 @@ const u8 gTypeEffectiveness[336] =
 const u8 gTypeNames[NUMBER_OF_MON_TYPES][TYPE_NAME_LENGTH + 1] =
 {
     [TYPE_NORMAL] = _("NORMAL"),
-    [TYPE_FIGHTING] = _("FIGHT"),
-    [TYPE_FLYING] = _("FLYING"),
-    [TYPE_POISON] = _("POISON"),
-    [TYPE_GROUND] = _("GROUND"),
-    [TYPE_ROCK] = _("ROCK"),
-    [TYPE_BUG] = _("BUG"),
-    [TYPE_GHOST] = _("GHOST"),
-    [TYPE_STEEL] = _("STEEL"),
+    [TYPE_FIGHTING] = _("LUTADOR"),
+    [TYPE_FLYING] = _("VOADOR"),
+    [TYPE_POISON] = _("VENENOSO"),
+    [TYPE_GROUND] = _("TERRESTRE"),
+    [TYPE_ROCK] = _("PEDRA"),
+    [TYPE_BUG] = _("INSETO"),
+    [TYPE_GHOST] = _("FANTASMA"),
+    [TYPE_STEEL] = _("AÇO"),
     [TYPE_MYSTERY] = _("???"),
-    [TYPE_FIRE] = _("FIRE"),
-    [TYPE_WATER] = _("WATER"),
-    [TYPE_GRASS] = _("GRASS"),
-    [TYPE_ELECTRIC] = _("ELECTR"),
-    [TYPE_PSYCHIC] = _("PSYCHC"),
-    [TYPE_ICE] = _("ICE"),
-    [TYPE_DRAGON] = _("DRAGON"),
-    [TYPE_DARK] = _("DARK"),
+    [TYPE_FIRE] = _("FOGO"),
+    [TYPE_WATER] = _("ÁGUA"),
+    [TYPE_GRASS] = _("PLANTA"),
+    [TYPE_ELECTRIC] = _("ELÉTRICO"),
+    [TYPE_PSYCHIC] = _("PSÍQUICO"),
+    [TYPE_ICE] = _("GELO"),
+    [TYPE_DRAGON] = _("DRAGÃO"),
+    [TYPE_DARK] = _("SOMBRIO"),
 };
 
 // This is a factor in how much money you get for beating a trainer.
@@ -2014,7 +2023,7 @@ static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum, bool8 fir
 
                 personalityValue += nameHash << 8;
                 fixedIV = partyData[i].iv * MAX_PER_STAT_IVS / 255;
-                CreateMon(&party[i], partyData[i].species, partyData[i].lvl, fixedIV, TRUE, personalityValue, OT_ID_RANDOM_NO_SHINY, 0);
+                CreateMon(&party[i], TRAINER_MON_SPECIES(partyData[i].species), partyData[i].lvl, fixedIV, TRUE, personalityValue, OT_ID_RANDOM_NO_SHINY, 0);
                 break;
             }
             case F_TRAINER_PARTY_CUSTOM_MOVESET:
@@ -2026,8 +2035,13 @@ static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum, bool8 fir
 
                 personalityValue += nameHash << 8;
                 fixedIV = partyData[i].iv * MAX_PER_STAT_IVS / 255;
-                CreateMon(&party[i], partyData[i].species, partyData[i].lvl, fixedIV, TRUE, personalityValue, OT_ID_RANDOM_NO_SHINY, 0);
+                CreateMon(&party[i], TRAINER_MON_SPECIES(partyData[i].species), partyData[i].lvl, fixedIV, TRUE, personalityValue, OT_ID_RANDOM_NO_SHINY, 0);
 
+#ifdef PORT_BRIDGE
+                // A randomized species keeps the moves it learns by level:
+                // the custom moves were chosen for the original one.
+                if (GetMonData(&party[i], MON_DATA_SPECIES) == partyData[i].species)
+#endif
                 for (j = 0; j < MAX_MON_MOVES; j++)
                 {
                     SetMonData(&party[i], MON_DATA_MOVE1 + j, &partyData[i].moves[j]);
@@ -2044,7 +2058,7 @@ static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum, bool8 fir
 
                 personalityValue += nameHash << 8;
                 fixedIV = partyData[i].iv * MAX_PER_STAT_IVS / 255;
-                CreateMon(&party[i], partyData[i].species, partyData[i].lvl, fixedIV, TRUE, personalityValue, OT_ID_RANDOM_NO_SHINY, 0);
+                CreateMon(&party[i], TRAINER_MON_SPECIES(partyData[i].species), partyData[i].lvl, fixedIV, TRUE, personalityValue, OT_ID_RANDOM_NO_SHINY, 0);
 
                 SetMonData(&party[i], MON_DATA_HELD_ITEM, &partyData[i].heldItem);
                 break;
@@ -2058,10 +2072,14 @@ static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum, bool8 fir
 
                 personalityValue += nameHash << 8;
                 fixedIV = partyData[i].iv * MAX_PER_STAT_IVS / 255;
-                CreateMon(&party[i], partyData[i].species, partyData[i].lvl, fixedIV, TRUE, personalityValue, OT_ID_RANDOM_NO_SHINY, 0);
+                CreateMon(&party[i], TRAINER_MON_SPECIES(partyData[i].species), partyData[i].lvl, fixedIV, TRUE, personalityValue, OT_ID_RANDOM_NO_SHINY, 0);
 
                 SetMonData(&party[i], MON_DATA_HELD_ITEM, &partyData[i].heldItem);
 
+#ifdef PORT_BRIDGE
+                // As above: a randomized species keeps its level-up moves.
+                if (GetMonData(&party[i], MON_DATA_SPECIES) == partyData[i].species)
+#endif
                 for (j = 0; j < MAX_MON_MOVES; j++)
                 {
                     SetMonData(&party[i], MON_DATA_MOVE1 + j, &partyData[i].moves[j]);

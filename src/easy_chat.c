@@ -828,9 +828,17 @@ static const struct BgTemplate sEasyChatBgTemplates[] = {
 static const struct WindowTemplate sEasyChatWindowTemplates[] = {
     [WIN_TITLE] = {
         .bg = 1,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .tilemapLeft = 0,
+#else
         .tilemapLeft = 6,
+#endif
         .tilemapTop = 0,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .width = 30,
+#else
         .width = 18,
+#endif
         .height = 2,
         .paletteNum = 10,
         .baseBlock = 0x10,
@@ -1199,8 +1207,13 @@ static const struct SpriteTemplate sSpriteTemplate_ScrollIndicator =
 
 static const u8 sFooterOptionXOffsets[NUM_FOOTER_TYPES][4] = {
     [FOOTER_NORMAL] = {16, 111, 196,   0},
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    [FOOTER_QUIZ]   = {16,  80, 144, 184},
+    [FOOTER_ANSWER] = {16,  74, 132, 166},
+#else
     [FOOTER_QUIZ]   = {16,  78, 130, 160},
     [FOOTER_ANSWER] = {16,  80, 134, 170},
+#endif
 };
 
 static const u8 *const sFooterTextOptions[NUM_FOOTER_TYPES][4] = {
@@ -3945,7 +3958,15 @@ static void PrintTitle(void)
     if (!titleText)
         return;
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    xOffset = GetStringCenterAlignXOffset(
+        FONT_NORMAL,
+        titleText,
+        240
+    );
+#else
     xOffset = GetStringCenterAlignXOffset(FONT_NORMAL, titleText, 144);
+#endif
     FillWindowPixelBuffer(WIN_TITLE, PIXEL_FILL(0));
     PrintEasyChatTextWithColors(WIN_TITLE, FONT_NORMAL, titleText, xOffset, 1, TEXT_SKIP_DRAW, TEXT_COLOR_TRANSPARENT, TEXT_COLOR_DARK_GRAY, TEXT_COLOR_LIGHT_GRAY);
     PutWindowTilemap(WIN_TITLE);
@@ -4043,7 +4064,11 @@ static void AddPhraseWindow(void)
     template.width = sPhraseFrameDimensions[frameId].width;
     template.height = sPhraseFrameDimensions[frameId].height;
     template.paletteNum = 11;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    template.baseBlock = 0x84;
+#else
     template.baseBlock = 0x6C;
+#endif
     sScreenControl->windowId = AddWindow(&template);
     PutWindowTilemap(sScreenControl->windowId);
 }
@@ -5092,7 +5117,11 @@ static void AddMainScreenButtonWindow(void)
     template.width = 28;
     template.height = 2;
     template.paletteNum = 11;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    template.baseBlock = 0x4C;
+#else
     template.baseBlock = 0x34;
+#endif
     windowId = AddWindow(&template);
     FillWindowPixelBuffer(windowId, PIXEL_FILL(1));
     for (i = 0; i < (int)ARRAY_COUNT(sFooterTextOptions[0]); i++)
@@ -5268,7 +5297,11 @@ u8 *ConvertEasyChatWordsToString(u8 *dest, const u16 *src, u16 columns, u16 rows
     return dest;
 }
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+u8 *UnusedConvertEasyChatWordsToString(u8 *dest, const u16 *src, u16 columns, u16 rows)
+#else
 static u8 UNUSED *UnusedConvertEasyChatWordsToString(u8 *dest, const u16 *src, u16 columns, u16 rows)
+#endif
 {
     u16 i, j, k;
     u16 numColumns;

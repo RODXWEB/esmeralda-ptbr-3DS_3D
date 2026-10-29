@@ -9,6 +9,16 @@
 // Invalid sound, indicates the end of the sounds for the word.
 #define NULL_BARD_SOUND { .songId = PHONEME_ID_NONE }
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+// The Japanese game's bard sings with another engine: its ROM has neither
+// these English sounds per word nor their phonemes (0046). Every word is
+// silent (GetWordSoundTemplates).
+#define SILENT_BARD
+#include "constants/moves.h"
+#include "constants/species.h"
+const u16 gNumBardWords_Species = NUM_SPECIES;
+const u16 gNumBardWords_Moves = MOVES_COUNT;
+#else
 #include "data/bard_music/pokemon.h"
 #include "data/bard_music/moves.h"
 #include "data/bard_music/trainer.h"
@@ -54,6 +64,7 @@ static const struct BardSoundTemplate (*const sBardSoundTemplatesTable[EC_NUM_GR
     [EC_GROUP_TRENDY_SAYING]    = sBardSoundTemplates_TrendySaying,
     [EC_GROUP_POKEMON_NATIONAL] = NULL, // Handled by sBardSoundTemplates_Pokemon
 };
+#endif
 
 // The pitch tables below will be indexed using the number of BardSoundTemplates per word, so a table is selected
 // that has at least MAX_BARD_SOUNDS_PER_WORD pitch values. Curiously they select pitch tables whose size is +1
@@ -191,6 +202,10 @@ static s16 GetWordPitch(int tableIndex, int pitchIndex)
 
 const struct BardSoundTemplate *GetWordSoundTemplates(u16 easyChatWord)
 {
+#ifdef SILENT_BARD
+    (void)easyChatWord;
+    return sEmptyPhonemeTemplate;
+#else
     u32 category;
     u32 subword;
     const struct BardSoundTemplate (*ptr)[MAX_BARD_SOUNDS_PER_WORD];
@@ -216,6 +231,7 @@ const struct BardSoundTemplate *GetWordSoundTemplates(u16 easyChatWord)
     }
     ptr += subword;
     return *ptr;
+#endif
 }
 
 // Assumes that 'soundTemplates' has already been loaded with the BardSoundTemplates for the easy chat word to calculate sounds for.

@@ -1509,6 +1509,21 @@ static bool8 CtrSaveStartCallback(void)
     return FALSE;
 }
 
+// The bottom screen's TRAINER CARD button: the card itself, even with the
+// Frontier Pass (which PLAYER would open instead).
+static bool8 CtrTrainerCardCallback(void)
+{
+    if (!gPaletteFade.active)
+    {
+        PlayRainStoppingSoundEffect();
+        RemoveExtraStartMenuWindows();
+        CleanupOverworldWindowsAndTilemaps();
+        ShowPlayerTrainerCard(CB2_ReturnToFieldWithOpenMenu);
+        return TRUE;
+    }
+    return FALSE;
+}
+
 static void Task_CtrStartMenuAction(u8 taskId)
 {
     if (gMenuCallback() == TRUE)
@@ -1539,7 +1554,7 @@ static bool8 CtrStartMenu_Divert(void)
     }
     else
     {
-        gMenuCallback = sStartMenuItems[action].func.u8_void;
+        gMenuCallback = action == MENU_ACTION_PLAYER ? CtrTrainerCardCallback : sStartMenuItems[action].func.u8_void;
         FadeScreen(FADE_TO_BLACK, 0);
     }
     CreateTask(Task_CtrStartMenuAction, 0x50);
@@ -1591,5 +1606,40 @@ bool8 CtrStartMenu_Busy(void)
 bool8 CtrStartMenu_Saving(void)
 {
     return FuncIsActiveTask(Task_CtrStartMenuAction) && gMenuCallback == CtrSaveCallback;
+}
+
+static void CB2_CtrOpenPokedex(void)
+{
+    IncrementGameStat(GAME_STAT_CHECKED_POKEDEX);
+    SetMainCallback2(CB2_OpenPokedex);
+}
+
+static void CB2_CtrOpenTrainerCard(void)
+{
+    ShowPlayerTrainerCard(CB2_ReturnToFieldWithOpenMenu);
+}
+
+// What an entry opens straight from another of the game's screens, the one
+// the bottom screen's dock left for it (CtrBottom_LeaveTo): the entry's own
+// screen, with the field left as that one left it (cleaned up, the player
+// frozen) until this one goes back to it. NULL for an entry that can't open.
+MainCallback CtrStartMenu_DirectCallback(u8 action)
+{
+    if (!CtrStartMenu_IsReplaced())
+        return NULL;
+    switch (action)
+    {
+    case MENU_ACTION_POKEDEX:
+        return GetNationalPokedexCount(FLAG_GET_SEEN) != 0 ? CB2_CtrOpenPokedex : NULL;
+    case MENU_ACTION_POKEMON:
+        return CB2_PartyMenuFromStartMenu;
+    case MENU_ACTION_BAG:
+        return CB2_BagMenuFromStartMenu;
+    case MENU_ACTION_POKENAV:
+        return CB2_InitPokeNav;
+    case MENU_ACTION_PLAYER:
+        return CB2_CtrOpenTrainerCard;
+    }
+    return NULL;
 }
 #endif

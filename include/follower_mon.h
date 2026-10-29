@@ -29,6 +29,8 @@ bool8 FollowerMon_DoorDone(void);
 /* The visible wild Pokemon (wild_encounter.c) on the same sprites, a slot each:
  * MAX_SPRITES when there is none for it (they keep their icons then). */
 u8 FollowerMon_WildSprite(u32 slot, u16 species, u32 personality, bool8 shiny);
+/* A species of the map's tables: its sprite files read ahead, off the frame. */
+void FollowerMon_WildPrefetch(u16 species);
 void FollowerMon_WildFace(struct Sprite *sprite, s8 dx, s8 dy, bool8 walking);
 void FollowerMon_WildFree(u32 slot, struct Sprite *sprite);
 /* No palette fade running: an ext palette loaded now keeps its colours. */

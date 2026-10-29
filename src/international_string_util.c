@@ -1,4 +1,6 @@
 #include "global.h"
+#include "data.h"
+#include "constants/trainers.h"
 #include "international_string_util.h"
 #include "list_menu.h"
 #include "pokedex.h"
@@ -83,11 +85,18 @@ int Intl_GetListMenuWidth(const struct ListMenuTemplate *listMenu)
     return finalWidth;
 }
 
+// Around a POKéMON's category ("SEED POKéMON"), for languages that put
+// "POKéMON" first.
+static const u8 sText_CategoryPrefix[] = _("POKéMON ");
+static const u8 sText_CategorySuffix[] = _("");
+
 void CopyMonCategoryText(int dexNum, u8 *dest)
 {
-    u8 *str = StringCopy(dest, gPokedexEntries[dexNum].categoryName);
-    *str = CHAR_SPACE;
-    StringCopy(str + 1, gText_Pokemon);
+    u8 *str = StringCopy(dest, sText_CategoryPrefix);
+    str = StringCopy(str, gPokedexEntries[dexNum].categoryName);
+#if !(defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN)
+    StringCopy(str, sText_CategorySuffix);
+#endif
 }
 
 u8 *GetStringClearToWidth(u8 *dest, int fontId, const u8 *str, int totalStringWidth)
@@ -231,3 +240,58 @@ void FillWindowTilesByRow(int windowId, int columnStart, int rowStart, int numFi
         }
     }
 }
+
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+// The German ROM builds some phrases around a name instead of appending to
+// it ("{STR_VAR_1}s Basis"), and names some trainer classes by gender.
+u8 *StringAppendWithPlaceholder(u8 *dest, const u8 *src, u8 *placeholderStr)
+{
+    u8 text[32], c;
+
+    StringCopyN(text, placeholderStr, 31);
+    text[31] = EOS;
+    placeholderStr = text;
+    while ((c = *src++) != EOS)
+    {
+        if (c == PLACEHOLDER_BEGIN)
+        {
+            src++;
+            dest = StringCopy(dest, placeholderStr);
+        }
+        else
+        {
+            *dest = c;
+            dest++;
+        }
+    }
+    *dest = EOS;
+    return dest;
+}
+
+// Filled in from the player's German ROM by tools/localize_german.py.
+static const u8 gText_SchoolKid[] = _("");
+static const u8 gText_PkmnTrainer[] = _("");
+static const u8 gText_Leader[] = _("");
+static const u8 gText_BenSvenja[] = _("");
+
+const u8 *GetTrainerClassNameGenderSpecific(s32 trainerClassId, u32 trainerGender, const u8 *trainerName)
+{
+    switch (trainerClassId)
+    {
+    case TRAINER_CLASS_SCHOOL_KID:
+        if (trainerGender != 0)
+            return gText_SchoolKid;
+        return gTrainerClassNames[trainerClassId];
+    case TRAINER_CLASS_RIVAL:
+    case TRAINER_CLASS_RS_PROTAG:
+        if (trainerGender != 0)
+            return gText_PkmnTrainer;
+        break;
+    case TRAINER_CLASS_LEADER:
+        if (trainerName != NULL && StringCompare(trainerName, gText_BenSvenja) == 0)
+            return gText_Leader;
+        break;
+    }
+    return gTrainerClassNames[trainerClassId];
+}
+#endif

@@ -17,7 +17,14 @@ static const struct TrainerHillChallenge sChallenge_JPDefault = {
 };
 
 // Unused
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+// The Japanese game's ROM has only this challenge, two floors, and plays it in
+// every mode (trainer_hill.c). The challenge is copied four floors at a time:
+// the other two are zeros.
+static const struct TrainerHillFloor sFloors_JPDefault[NUM_TRAINER_HILL_FLOORS] = {
+#else
 static const struct TrainerHillFloor sFloors_JPDefault[] = {
+#endif
     [0] = {
         .trainerNum1 = 0,
         .trainerNum2 = 0,
@@ -352,6 +359,7 @@ static const struct TrainerHillFloor sFloors_JPDefault[] = {
     },
 };
 
+#if !(defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE) // not in the Japanese game
 static const struct TrainerHillChallenge sChallenge_Normal =
 {
     .numTrainers = NUM_TRAINER_HILL_TRAINERS,
@@ -4815,6 +4823,7 @@ static const struct TrainerHillFloor sFloors_Expert[] = {
             }
         },
 };
+#endif
 
 #undef COORDS_XY
 #undef TRAINER_DIRS

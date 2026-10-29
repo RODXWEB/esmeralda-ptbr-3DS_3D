@@ -3,31 +3,31 @@ gText_ConfirmSave::
 	.string "Quer salvar o jogo?$"
 
 gText_AlreadySavedFile::
-	.string "Já existe um arquivo salvo.\n"
-	.string "Tudo bem sobrescrevê-lo?$"
+	.string "Já existe um jogo salvo.\n"
+	.string "Tudo bem gravar por cima dele?$"
 
 gText_SavingDontTurnOff::
 	.string "SALVANDO…\n"
-	.string "NäO DESLIGUE O SISTEMA.$"
+	.string "NÃO DESLIGUE O APARELHO.$"
 
 gText_PlayerSavedGame::
-	.string "{JOGADOR} salvou o jogo.$"
+	.string "{PLAYER} salvou o jogo.$"
 
 gText_DifferentSaveFile::
-	.string "AVISO!\p"
-	.string "Já existe um arquivo de jogo\n"
-	.string "diferente salvo.\p"
-	.string "Se você salvar agora, a outra\n"
-	.string "aventura, incluindo itens e\l"
-	.string "POKéMON, será completamente perdida.\p"
+	.string "ATENÇÃO!\p"
+	.string "Já existe um jogo diferente\n"
+	.string "salvo.\p"
+	.string "Se você salvar agora, a aventura do\n"
+	.string "outro jogo, com os itens e os\l"
+	.string "POKéMON, será perdida por completo.\p"
 	.string "Tem certeza de que quer salvar agora\n"
-	.string "e sobrescrever o outro arquivo?$"
+	.string "e gravar por cima do outro jogo?$"
 
 gText_SaveError::
 	.string "Erro ao salvar.\p"
-	.string "Por favor, troque a\n"
-	.string "memória de backup.$"
+	.string "Troque a memória\n"
+	.string "de backup.$"
 
 gText_SavingDontTurnOffPower::
 	.string "SALVANDO…\n"
-	.string "NäO DESLIGUE O SISTEMA.$"
+	.string "NÃO DESLIGUE O APARELHO.$"

@@ -124,6 +124,8 @@ static const u32 sSpanishTheEnd_Tilemap[] = INCBIN_U32("graphics/credits/spanish
 static const u32 sFrenchTheEnd_Tilemap[] = INCBIN_U32("graphics/credits/french_the_end.bin.lz");
 #elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
 static const u32 sItalianTheEnd_Tilemap[] = INCBIN_U32("graphics/credits/italian_the_end.bin.lz");
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+static const u32 sGermanTheEnd_Tilemap[] = INCBIN_U32("graphics/credits/german_the_end.bin.lz");
 #endif
 
 static const u8 sTheEnd_LetterMap_T[] =
@@ -792,7 +794,11 @@ static void Task_UpdatePage(u8 taskId)
     case 3:
         if (!gPaletteFade.active)
         {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+            gTasks[taskId].tDelay = 121;
+#else
             gTasks[taskId].tDelay = 115;
+#endif
             gTasks[taskId].tState++;
         }
         return;
@@ -926,7 +932,11 @@ static void Task_ShowMons(u8 taskId)
         if (sCreditsData->currShownMon < sCreditsData->numMonToShow - 1)
         {
             sCreditsData->currShownMon++;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+            gSprites[spriteId].data[3] = 52;
+#else
             gSprites[spriteId].data[3] = 50;
+#endif
         }
         else
         {
@@ -940,7 +950,11 @@ static void Task_ShowMons(u8 taskId)
         else
             sCreditsData->nextImgPos++;
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        gTasks[taskId].tDelay = 52;
+#else
         gTasks[taskId].tDelay = 50;
+#endif
         gTasks[taskId].tState++;
         break;
     case 3:
@@ -1086,7 +1100,11 @@ static void Task_CycleSceneryPalette(u8 taskId)
         if (gTasks[taskId].tTimer != TIMER_STOP)
         {
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+            if (gTasks[taskId].tTimer == 620)
+#else
             if (gTasks[taskId].tTimer == 584)
+#endif
             {
                 gTasks[gTasks[gTasks[taskId].tMainTaskId].tTaskId_BikeScene].tState = 10;
                 gTasks[taskId].tTimer = TIMER_STOP;
@@ -1304,7 +1322,11 @@ static void LoadTheEndScreen(u16 tileOffsetLoad, u16 tileOffsetWrite, u16 palOff
     baseTile = (palOffset / 16) << 12;
 
     for (i = 0; i < 32 * 32; i++)
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        ((u16 *) (VRAM + tileOffsetWrite))[i] = baseTile;
+#else
         ((u16 *) (VRAM + tileOffsetWrite))[i] = baseTile + 1;
+#endif
 }
 
 static u16 GetLetterMapTile(u8 baseTiles)
@@ -1342,6 +1364,8 @@ static void DrawTheEnd(u16 offset, u16 palette)
     LZ77UnCompVram(sFrenchTheEnd_Tilemap, (void *)(VRAM + offset));
 #elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
     LZ77UnCompVram(sItalianTheEnd_Tilemap, (void *)(VRAM + offset));
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    LZ77UnCompVram(sGermanTheEnd_Tilemap, (void *)(VRAM + offset));
 #else
     u16 pos;
     u16 baseTile = (palette / 16) << 12;

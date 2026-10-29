@@ -2063,3 +2063,78 @@ bool8 CtrRegionMap_Cursor(s16 *x, s16 *y, bool8 *zoomed, bool8 *moving)
     return TRUE;
 }
 #endif
+
+#ifdef PORT_BRIDGE
+// GetMapsecType: a city or town (one to fly to, visited), a route, ...
+u8 CtrRegionMap_MapSecType(u16 mapSecId)
+{
+    return GetMapsecType(mapSecId);
+}
+
+static bool8 CtrMapSecInRow(u16 y, u16 mapSecId)
+{
+    u16 x;
+
+    if (y-- == 0)
+        return FALSE;
+    for (x = MAPCURSOR_X_MIN; x <= MAPCURSOR_X_MAX; x++)
+    {
+        if (GetMapSecIdAt(x, y) == mapSecId)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+// GetPositionOfCursorWithinMapSec, for a cell: how many of the section's
+// cells come before it, row by row.
+u8 CtrRegionMap_PosWithinMapSec(u16 x, u16 y, u16 mapSecId)
+{
+    u8 pos = 0;
+
+    if (mapSecId == MAPSEC_NONE)
+        return 0;
+    while (1)
+    {
+        if (x <= MAPCURSOR_X_MIN)
+        {
+            if (!CtrMapSecInRow(y, mapSecId))
+                break;
+            y--;
+            x = MAPCURSOR_X_MAX + 1;
+        }
+        else
+        {
+            x--;
+            if (GetMapSecIdAt(x, y) == mapSecId)
+                pos++;
+        }
+    }
+    return pos;
+}
+
+// CB_ExitFlyMap's, for a destination chosen.
+void CtrRegionMap_SetFlyDestination(u16 mapSecId, u8 posWithinMapSec)
+{
+    switch (mapSecId)
+    {
+    case MAPSEC_SOUTHERN_ISLAND:
+        SetWarpDestinationToHealLocation(HEAL_LOCATION_SOUTHERN_ISLAND_EXTERIOR);
+        break;
+    case MAPSEC_BATTLE_FRONTIER:
+        SetWarpDestinationToHealLocation(HEAL_LOCATION_BATTLE_FRONTIER_OUTSIDE_EAST);
+        break;
+    case MAPSEC_LITTLEROOT_TOWN:
+        SetWarpDestinationToHealLocation(gSaveBlock2Ptr->playerGender == MALE ? HEAL_LOCATION_LITTLEROOT_TOWN_BRENDANS_HOUSE : HEAL_LOCATION_LITTLEROOT_TOWN_MAYS_HOUSE);
+        break;
+    case MAPSEC_EVER_GRANDE_CITY:
+        SetWarpDestinationToHealLocation(FlagGet(FLAG_LANDMARK_POKEMON_LEAGUE) && posWithinMapSec == 0 ? HEAL_LOCATION_EVER_GRANDE_CITY_POKEMON_LEAGUE : HEAL_LOCATION_EVER_GRANDE_CITY);
+        break;
+    default:
+        if (sMapHealLocations[mapSecId][2] != HEAL_LOCATION_NONE)
+            SetWarpDestinationToHealLocation(sMapHealLocations[mapSecId][2]);
+        else
+            SetWarpDestinationToMapWarp(sMapHealLocations[mapSecId][0], sMapHealLocations[mapSecId][1], WARP_ID_NONE);
+        break;
+    }
+}
+#endif

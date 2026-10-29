@@ -66,8 +66,20 @@ static const u16 sCaveTransitionPalette_Black[] = INCBIN_U16("graphics/cave_tran
 
 static const u16 sCaveTransitionPalette_Enter[] = INCBIN_U16("graphics/cave_transition/enter.gbapal");
 
+#if defined(PLATFORM_3DS)
+// The tunnel is drawn for the 240x160 screen: built wide, it sat in the top
+// left corner of the 400x240 one. The port draws the same tunnel over the
+// whole screen instead (LoadCaveTransitionGfx): fifteen rings, colour 1 at
+// the edges to 15 in the middle, which the palettes below light up as on the
+// GBA. Its 64x32 map ends where background VRAM does.
+#define CAVE_TRANSITION_SCREENBASE 30
+#define CAVE_TRANSITION_SCREENSIZE BGCNT_TXT512x256
+#else
 static const u32 sCaveTransitionTilemap[] = INCBIN_U32("graphics/cave_transition/tilemap.bin.lz");
 static const u32 sCaveTransitionTiles[] = INCBIN_U32("graphics/cave_transition/tiles.4bpp.lz");
+#define CAVE_TRANSITION_SCREENBASE 31
+#define CAVE_TRANSITION_SCREENSIZE BGCNT_TXT256x256
+#endif
 
 bool8 SetUpFieldMove_Flash(void)
 {
@@ -203,6 +215,57 @@ bool8 GetMapPairFadeFromType(u8 _fromType, u8 _toType)
     return FALSE;
 }
 
+#if defined(PLATFORM_3DS)
+// One tile for every cell of the top left quarter of the screen, its rings
+// as far apart as the screen is wide and tall; the other quarters are its
+// mirror images.
+static void LoadCaveTransitionGfx(void)
+{
+    u8 *tiles = (u8 *)(VRAM + 0xC000);
+    u16 *tilemap = (u16 *)BG_SCREEN_ADDR(CAVE_TRANSITION_SCREENBASE);
+    s32 halfWidth = DISPLAY_TILE_WIDTH / 2, halfHeight = DISPLAY_TILE_HEIGHT / 2;
+    s32 tx, ty, x, y;
+
+    for (ty = 0; ty < halfHeight; ty++)
+    {
+        for (tx = 0; tx < halfWidth; tx++)
+        {
+            u8 *pixels = tiles + (ty * halfWidth + tx) * TILE_SIZE_4BPP;
+
+            for (y = 0; y < TILE_HEIGHT; y++)
+            {
+                for (x = 0; x < TILE_WIDTH; x += 2)
+                {
+                    s32 down = (ty * TILE_HEIGHT + y) * 15 / (DISPLAY_HEIGHT / 2);
+                    s32 left = (tx * TILE_WIDTH + x) * 15 / (DISPLAY_WIDTH / 2);
+                    s32 right = (tx * TILE_WIDTH + x + 1) * 15 / (DISPLAY_WIDTH / 2);
+
+                    pixels[y * TILE_WIDTH / 2 + x / 2] = (1 + min(left, down)) | ((1 + min(right, down)) << 4);
+                }
+            }
+        }
+    }
+    // Two 32x32 screens side by side.
+    for (ty = 0; ty < DISPLAY_TILE_HEIGHT; ty++)
+    {
+        for (tx = 0; tx < DISPLAY_TILE_WIDTH; tx++)
+        {
+            bool32 hFlip = tx >= halfWidth, vFlip = ty >= halfHeight;
+            u16 tile = (vFlip ? DISPLAY_TILE_HEIGHT - 1 - ty : ty) * halfWidth
+                     + (hFlip ? DISPLAY_TILE_WIDTH - 1 - tx : tx);
+
+            tilemap[(tx / 32) * 32 * 32 + ty * 32 + tx % 32] = tile | (hFlip << 10) | (vFlip << 11) | (14 << 12);
+        }
+    }
+}
+#else
+static void LoadCaveTransitionGfx(void)
+{
+    LZ77UnCompVram(sCaveTransitionTiles, (void *)(VRAM + 0xC000));
+    LZ77UnCompVram(sCaveTransitionTilemap, (void *)(VRAM + 0xF800));
+}
+#endif
+
 static void DoExitCaveTransition(void)
 {
     CreateTask(Task_ExitCaveTransition1, 0);
@@ -216,8 +279,7 @@ static void Task_ExitCaveTransition1(u8 taskId)
 static void Task_ExitCaveTransition2(u8 taskId)
 {
     SetGpuReg(REG_OFFSET_DISPCNT, 0);
-    LZ77UnCompVram(sCaveTransitionTiles, (void *)(VRAM + 0xC000));
-    LZ77UnCompVram(sCaveTransitionTilemap, (void *)(VRAM + 0xF800));
+    LoadCaveTransitionGfx();
     LoadPalette(sCaveTransitionPalette_White, BG_PLTT_ID(14), PLTT_SIZE_4BPP);
     LoadPaletteWithOffset(sCaveTransitionPalette_Enter, PLTT_SIZEOF(8), BG_PLTT_ID(14), PLTT_SIZEOF(8));
     SetGpuReg(REG_OFFSET_BLDCNT, BLDCNT_TGT1_BG0
@@ -231,9 +293,9 @@ static void Task_ExitCaveTransition2(u8 taskId)
     SetGpuReg(REG_OFFSET_BLDY, 0);
     SetGpuReg(REG_OFFSET_BG0CNT, BGCNT_PRIORITY(0)
                                | BGCNT_CHARBASE(3)
-                               | BGCNT_SCREENBASE(31)
+                               | BGCNT_SCREENBASE(CAVE_TRANSITION_SCREENBASE)
                                | BGCNT_16COLOR
-                               | BGCNT_TXT256x256);
+                               | CAVE_TRANSITION_SCREENSIZE);
     SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_MODE_0
                                 | DISPCNT_OBJ_1D_MAP
                                 | DISPCNT_BG0_ON
@@ -301,16 +363,15 @@ static void Task_EnterCaveTransition1(u8 taskId)
 static void Task_EnterCaveTransition2(u8 taskId)
 {
     SetGpuReg(REG_OFFSET_DISPCNT, 0);
-    LZ77UnCompVram(sCaveTransitionTiles, (void *)(VRAM + 0xC000));
-    LZ77UnCompVram(sCaveTransitionTilemap, (void *)(VRAM + 0xF800));
+    LoadCaveTransitionGfx();
     SetGpuReg(REG_OFFSET_BLDCNT, 0);
     SetGpuReg(REG_OFFSET_BLDALPHA, 0);
     SetGpuReg(REG_OFFSET_BLDY, 0);
     SetGpuReg(REG_OFFSET_BG0CNT, BGCNT_PRIORITY(0)
                                | BGCNT_CHARBASE(3)
-                               | BGCNT_SCREENBASE(31)
+                               | BGCNT_SCREENBASE(CAVE_TRANSITION_SCREENBASE)
                                | BGCNT_16COLOR
-                               | BGCNT_TXT256x256);
+                               | CAVE_TRANSITION_SCREENSIZE);
     SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_MODE_0
                                 | DISPCNT_OBJ_1D_MAP
                                 | DISPCNT_BG0_ON

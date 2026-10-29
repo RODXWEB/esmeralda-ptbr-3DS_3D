@@ -121,4 +121,11 @@ void SetRegionMapDataForZoom(void);
 
 extern const struct RegionMapLocation gRegionMapEntries[];
 
+#ifdef PORT_BRIDGE
+// The bottom screen's map and Fly (3ds_bottom_ui.c), from a cursor cell.
+u8 CtrRegionMap_MapSecType(u16 mapSecId);
+u8 CtrRegionMap_PosWithinMapSec(u16 x, u16 y, u16 mapSecId);
+void CtrRegionMap_SetFlyDestination(u16 mapSecId, u8 posWithinMapSec);
+#endif
+
 #endif //GUARD_REGION_MAP_H

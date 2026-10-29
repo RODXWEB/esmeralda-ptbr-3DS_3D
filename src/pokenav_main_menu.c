@@ -320,6 +320,22 @@ void ShutdownPokenav(void)
     BeginNormalPaletteFade(PALETTES_ALL, -1, 0, 16, RGB_BLACK);
 }
 
+#ifdef PLATFORM_3DS
+// WaitForPokenavShutdownFade for a PokéNav closed from any of its menus
+// (pokenav.c, the bottom screen's dock): the menu on show has freed its own,
+// as switching menus does, so the main menu's gfx may be gone already.
+bool32 CtrPokenav_WaitForLeaveFade(void)
+{
+    if (!gPaletteFade.active)
+    {
+        CleanupPokenavMainMenuResources();
+        FreeAllWindowBuffers();
+        return FALSE;
+    }
+    return TRUE;
+}
+#endif
+
 bool32 WaitForPokenavShutdownFade(void)
 {
     if (!gPaletteFade.active)
@@ -865,21 +881,3 @@ static void SpriteCB_MoveLeftHeader(struct Sprite *sprite)
         sprite->callback = SpriteCallbackDummy;
     }
 }
-
-#ifdef PLATFORM_3DS
-bool8 CtrPokenav_IsOpen(void);
-
-// The sprite tiles of the tabs naming the screen on show (the left headers,
-// both sizes), [*first, *end): the 3DS bottom screen keeps them on its top
-// edge while it moves the rest of the screen down. FALSE while not loaded.
-bool8 CtrPokenav_HeaderTiles(u16 *first, u16 *end)
-{
-    u16 start = GetSpriteTileStartByTag(2);
-
-    if (!CtrPokenav_IsOpen() || start == 0xFFFF)
-        return FALSE;
-    *first = start;
-    *end = start + sMenuLeftHeaderSpriteSheet.size / TILE_SIZE_4BPP;
-    return TRUE;
-}
-#endif

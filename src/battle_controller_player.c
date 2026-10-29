@@ -236,7 +236,7 @@ static void CompleteOnBankSpritePosX_0(void)
 
 #ifdef PLATFORM_3DS
 /*
- * Quick ball: R, or the ball button on the bottom screen, throws the selected
+ * Quick ball: X, or the ball button on the bottom screen, throws the selected
  * ball without opening the bag. The last ball is kept in an unused save var,
  * so it survives a restart. Wild single battles only.
  */
@@ -340,16 +340,13 @@ bool8 CtrBattle_QuickBallCycle(s8 direction)
     return FALSE;
 }
 
-/* R or the bottom-screen button: TRUE if a ball is on its way. */
+/* X or the bottom-screen button (R and L are the battle speed's): TRUE if a
+ * ball is on its way. */
 static bool8 TryQuickBall(void)
 {
-    /* Buttons are u16: R (0x100) would truncate to 0 in a bool8. */
-    bool8 asked = JOY_NEW(R_BUTTON) != 0;
     u16 ball;
 
-    if (CtrBattleMenu_TakeQuickBall())
-        asked = TRUE;
-    if (!asked)
+    if (!CtrBattleMenu_TakeQuickBall())
         return FALSE;
     ball = CtrBattle_QuickBallItem();
     if (ball == ITEM_NONE)

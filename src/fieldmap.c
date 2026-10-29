@@ -22,6 +22,12 @@
 #include "port_log.h"
 #include "port_platform.h"
 #endif
+#ifdef PLATFORM_3DS
+#include "3ds_log.h"
+#include "3ds_platform.h"
+#include "3ds_tile_banks.h"
+#include "3ds_video.h"
+#endif
 #ifdef PORT_BRIDGE
 #define PORT_PROF(label) Port_ProfileMark(label)
 #else
@@ -416,10 +422,17 @@ struct CameraMap
     s16 phaseX, phaseY; // origin its 2x2 border is phased on
     bool8 drawn;     // its ground is drawn here
     bool8 border;    // its border is drawable with the current tilesets
+#ifdef PLATFORM_3DS
+    u8 bank;         // 1 + the bank of its own secondary tileset, 0 for none
+#endif
 };
 
 static struct CameraMap sCameraMaps[CAMERA_MAPS_MAX];
 static u8 sCameraMapCount;
+#ifdef PLATFORM_3DS
+// Bumped whenever the maps are placed again; the banks are given out for it.
+static u32 sCameraMapsGeneration, sCameraBanksGeneration;
+#endif
 static const struct MapLayout *sCameraMapsLayout;
 static const struct MapConnections *sCameraMapsConnections;
 static u16 sCameraMapsId;
@@ -458,6 +471,9 @@ static void PlaceCameraMap(const struct MapHeader *header, u16 id, int x, int y,
     map->y = map->phaseY = y;
     map->drawn = near || CameraTilesetsMatch(header->mapLayout);
     map->border = CameraBorderDrawable(header->mapLayout);
+#ifdef PLATFORM_3DS
+    map->bank = 0;
+#endif
 }
 
 // The maps across the side connections of sCameraMaps[from]. The current map's
@@ -534,6 +550,9 @@ static void UpdateCameraMaps(void)
     sCameraMapsConnections = gMapHeader.connections;
     sCameraMapsId = id;
     sCameraMapCount = 0;
+#ifdef PLATFORM_3DS
+    sCameraMapsGeneration++;
+#endif
     PlaceCameraMap(&gMapHeader, id, 0, 0, TRUE);
     AddCameraConnections(0, FALSE);
     near = sCameraMapCount;
@@ -622,22 +641,231 @@ static u16 GetNearestBorderBlockAt(int x, int y)
     return border[index] | MAPGRID_IMPASSABLE;
 }
 
+#ifdef PLATFORM_3DS
+// The tilesets that hold the banks (3ds_tile_banks.h), as last handed over.
+static const struct Tileset *sBankTilesets[CTR_TILE_BANKS];
+
+// A secondary tileset's own palettes 6-12, unfaded.
+static bool8 ReadTileBankPalettes(const struct Tileset *tileset, u16 *palettes)
+{
+    if (Port_GetAssetSizeExact(tileset->palettes) != 0)
+        return Port_LoadAssetRangeToBuffer(tileset->palettes, CTR_TILE_BANK_FIRST_PALETTE * PLTT_SIZE_4BPP,
+                                           palettes, CTR_TILE_BANK_PALETTES * PLTT_SIZE_4BPP);
+    else
+    {
+        const u16 (*source)[16] = Port_ResolveAssetPointer(tileset->palettes);
+
+        if (source == NULL)
+            return FALSE;
+        memcpy(palettes, source[CTR_TILE_BANK_FIRST_PALETTE], CTR_TILE_BANK_PALETTES * PLTT_SIZE_4BPP);
+        return TRUE;
+    }
+}
+
+// A secondary tileset's tiles and palettes 6-12 into bank `bank`.
+static void LoadCameraTileBank(u8 bank, const struct Tileset *tileset)
+{
+    u16 palettes[CTR_TILE_BANK_PALETTES * 16];
+    const void *tiles = tileset->tiles;
+    void *decompressed = NULL;
+    u32 size;
+    // Timed for the log: loaded in the field's frame, as the camera draws.
+    uint64_t started = CtrPlatform_Ticks();
+
+    if (!ReadTileBankPalettes(tileset, palettes))
+        return;
+    if (tileset->isCompressed)
+    {
+        decompressed = malloc_and_decompress(tiles, &size);
+        tiles = decompressed;
+    }
+    else
+    {
+        size = Port_GetAssetSizeExact(tiles);
+        if (size == 0 || size > CTR_TILE_BANK_BYTES)
+            size = CTR_TILE_BANK_BYTES;
+        tiles = Port_ResolveAssetPointerSized(tiles, size);
+    }
+    if (tiles == NULL || size == 0)
+    {
+        CtrLog_Write(CTR_LOG_GAME, "2D tile bank %u: the tileset's tiles could not be read", bank);
+        if (decompressed != NULL)
+            Free(decompressed);
+        return;
+    }
+    CtrVideo_SetTileBank(bank, tiles, size, palettes);
+    sBankTilesets[bank] = tileset;
+    if (decompressed != NULL)
+        Free(decompressed);
+    CtrLog_Write(CTR_LOG_GAME, "2D tile bank %u: %lu bytes of tiles, for map %u/%u, %.2f ms", bank, (unsigned long)size,
+                 gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum,
+                 (double)CtrPlatform_TickMs(CtrPlatform_Ticks() - started));
+}
+
+// Crossing into a map that a bank held: that bank is free from now on, and
+// the map left behind wants one, its secondary tileset still whole in VRAM
+// (the crossing loads the next one over it). Copied there, the bank is ready
+// without decompressing the tileset again, as crossing back and forth would.
+static void KeepOutgoingTileset(const struct MapHeader *incoming)
+{
+    const struct Tileset *outgoing = gMapHeader.mapLayout->secondaryTileset;
+    const struct Tileset *next;
+    u16 palettes[CTR_TILE_BANK_PALETTES * 16];
+    int bank;
+
+    if (incoming == NULL || incoming->mapLayout == NULL || outgoing == NULL)
+        return;
+    next = incoming->mapLayout->secondaryTileset;
+    if (next == outgoing || incoming->mapLayout->primaryTileset != gMapHeader.mapLayout->primaryTileset)
+        return;
+    for (bank = 0; bank < CTR_TILE_BANKS && sBankTilesets[bank] != next; bank++)
+        ;
+    if (bank == CTR_TILE_BANKS || !ReadTileBankPalettes(outgoing, palettes))
+        return;
+    CtrVideo_SetTileBank(bank, (const void *)(BG_VRAM + NUM_TILES_IN_PRIMARY * TILE_SIZE_4BPP),
+                         CTR_TILE_BANK_BYTES, palettes);
+    sBankTilesets[bank] = outgoing;
+    CtrLog_Write(CTR_LOG_GAME, "2D tile bank %u: kept from VRAM, leaving map %u/%u", bank,
+                 gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum);
+}
+
+// The banks for the maps placed: a map drawn with other tilesets than the
+// current map's - the same primary, another secondary - takes the bank of its
+// secondary tileset, nearest maps first, as many tilesets as there are banks.
+// A tileset keeps the bank it already holds, so crossing back and forth
+// loads only the one the current map gave up.
+static void AssignCameraBanks(void)
+{
+    const struct Tileset *wanted[CTR_TILE_BANKS];
+    u8 slot[CTR_TILE_BANKS];
+    bool8 held[CTR_TILE_BANKS] = {FALSE};
+    int count = 0, i, w, s;
+
+    if (sCameraBanksGeneration == sCameraMapsGeneration)
+        return;
+    sCameraBanksGeneration = sCameraMapsGeneration;
+    for (i = 1; i < sCameraMapCount; i++)
+    {
+        struct CameraMap *map = &sCameraMaps[i];
+        const struct MapLayout *layout = map->header->mapLayout;
+
+        map->bank = 0;
+        if (layout->primaryTileset != gMapHeader.mapLayout->primaryTileset
+         || layout->secondaryTileset == NULL
+         || layout->secondaryTileset == gMapHeader.mapLayout->secondaryTileset)
+            continue;
+        for (w = 0; w < count && wanted[w] != layout->secondaryTileset; w++)
+            ;
+        if (w == count)
+        {
+            if (count == CTR_TILE_BANKS)
+                continue;
+            wanted[count++] = layout->secondaryTileset;
+        }
+        map->bank = w + 1;
+    }
+    for (w = 0; w < count; w++)
+    {
+        slot[w] = CTR_TILE_BANKS;
+        for (s = 0; s < CTR_TILE_BANKS; s++)
+            if (!held[s] && sBankTilesets[s] == wanted[w])
+            {
+                slot[w] = s;
+                held[s] = TRUE;
+                break;
+            }
+    }
+    for (w = 0; w < count; w++)
+    {
+        if (slot[w] != CTR_TILE_BANKS)
+            continue;
+        for (s = 0; s < CTR_TILE_BANKS && held[s]; s++)
+            ;
+        slot[w] = s;
+        held[s] = TRUE;
+        sBankTilesets[s] = NULL;
+        LoadCameraTileBank(s, wanted[w]);
+    }
+    for (i = 1; i < sCameraMapCount; i++)
+    {
+        struct CameraMap *map = &sCameraMaps[i];
+
+        // A bank that could not be loaded leaves its maps as they were.
+        if (map->bank != 0)
+            map->bank = sBankTilesets[slot[map->bank - 1]] == wanted[map->bank - 1] ? slot[map->bank - 1] + 1 : 0;
+    }
+}
+
+u8 MapGridGetCameraBankAt(int x, int y, const struct MapLayout **layout)
+{
+    int i;
+
+    x -= MAP_OFFSET;
+    y -= MAP_OFFSET;
+    if (x >= 0 && x < gMapHeader.mapLayout->width && y >= 0 && y < gMapHeader.mapLayout->height)
+        return 0;
+    UpdateCameraMaps();
+    AssignCameraBanks();
+    for (i = 1; i < sCameraMapCount; i++)
+    {
+        const struct CameraMap *map = &sCameraMaps[i];
+        const struct MapLayout *mapLayout = map->header->mapLayout;
+        int mapX = x - map->x;
+        int mapY = y - map->y;
+
+        if (mapX >= 0 && mapX < mapLayout->width && mapY >= 0 && mapY < mapLayout->height)
+        {
+            if (map->bank == 0)
+                return 0;
+            *layout = mapLayout;
+            return map->bank;
+        }
+    }
+    return 0;
+}
+
+u16 GetMetatileAttributesFromLayout(const struct MapLayout *layout, u16 metatile)
+{
+    const struct Tileset *tileset = metatile < NUM_METATILES_IN_PRIMARY ? layout->primaryTileset
+                                                                         : layout->secondaryTileset;
+    const u16 *attributes;
+
+    if (metatile >= NUM_METATILES_TOTAL || tileset == NULL)
+        return 0;
+    if (metatile >= NUM_METATILES_IN_PRIMARY)
+        metatile -= NUM_METATILES_IN_PRIMARY;
+    attributes = Port_ResolveAssetPointer(tileset->metatileAttributes);
+    return attributes != NULL ? attributes[metatile] : 0;
+}
+#endif
+
 // x, y in backup-layout coordinates, outside the ground the backup holds.
-static u16 GetCameraConnectionBlockAt(int x, int y)
+// The camera draws a map with a bank of its own too (camera); the game's own
+// lookups see only the maps drawn with the current tilesets, as before.
+static u16 GetCameraConnectionBlockAt(int x, int y, bool8 camera)
 {
     int i;
 
     x -= MAP_OFFSET;
     y -= MAP_OFFSET;
     UpdateCameraMaps();
+#ifdef PLATFORM_3DS
+    if (camera)
+        AssignCameraBanks();
+#endif
     for (i = 1; i < sCameraMapCount; i++)
     {
         const struct CameraMap *map = &sCameraMaps[i];
         const struct MapLayout *layout = map->header->mapLayout;
         int mapX = x - map->x;
         int mapY = y - map->y;
+        bool8 drawn = map->drawn;
 
-        if (map->drawn && mapX >= 0 && mapX < layout->width && mapY >= 0 && mapY < layout->height)
+#ifdef PLATFORM_3DS
+        if (camera && map->bank != 0)
+            drawn = TRUE;
+#endif
+        if (drawn && mapX >= 0 && mapX < layout->width && mapY >= 0 && mapY < layout->height)
         {
             const u16 *blocks = Port_ResolveAssetPointer(layout->map);
             return blocks[mapY * layout->width + mapX];
@@ -657,7 +885,7 @@ u32 MapGridGetMetatileIdForCameraAt(int x, int y)
         : MAPGRID_UNDEFINED;
 
     if (block == MAPGRID_UNDEFINED)
-        block = GetCameraConnectionBlockAt(x, y);
+        block = GetCameraConnectionBlockAt(x, y, TRUE);
     return UNPACK_METATILE(block);
 }
 
@@ -668,7 +896,7 @@ u32 MapGridGetMetatileIdAt(int x, int y)
 #ifdef PORT_BRIDGE
     u16 block = AreCoordsWithinMapGridBounds(x, y)
         ? gBackupMapLayout.map[x + gBackupMapLayout.width * y]
-        : GetCameraConnectionBlockAt(x, y);
+        : GetCameraConnectionBlockAt(x, y, FALSE);
 #else
     u16 block = GetMapGridBlockAt(x, y);
 #endif
@@ -1027,6 +1255,9 @@ bool8 CameraMove(int x, int y)
         old_y = gSaveBlock1Ptr->pos.y;
         connection = GetIncomingConnection(direction, gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y);
         SetPositionFromConnection(connection, direction, x, y);
+#ifdef PLATFORM_3DS
+        KeepOutgoingTileset(connection != NULL ? GetMapHeaderFromConnection(connection) : NULL);
+#endif
         LoadMapFromCameraTransition(connection->mapGroup, connection->mapNum);
         PORT_PROF("LoadMapFromCameraTransition");
         gCamera.active = TRUE;

@@ -5,6 +5,7 @@
 #if defined(PLATFORM_3DS)
 #include "3ds_video.h"
 bool8 FieldEffect_IsMachineSprite(const struct Sprite *sprite);   /* field_effect.c */
+bool8 FieldEffect_IsFlySprite(const struct Sprite *sprite);       /* field_effect.c */
 #endif
 #if defined(PLATFORM_3DS)
 #include "field_weather.h"
@@ -544,7 +545,7 @@ static bool8 IsFogSprite(const struct Sprite *sprite)
 }
 #endif
 
-#if defined(PLATFORM_3DS) && CTR_VOXEL_ENABLED
+#if defined(PLATFORM_3DS)
 /* OAM is sorted by subpriority, so weather cannot be identified by a fixed
  * index. Tag the entries as the original sprite sorter writes them. */
 static bool8 IsVoxelWeatherSprite(const struct Sprite *sprite)
@@ -597,6 +598,19 @@ bool8 CtrSprite_IsVoxelWeather(const struct Sprite *sprite)
 {
     return IsVoxelWeatherSprite(sprite);
 }
+
+/* A cloud of WEATHER_SUNNY_CLOUDS: shown through the water only. */
+bool8 CtrSprite_IsVoxelCloud(const struct Sprite *sprite)
+{
+    unsigned i;
+
+    if (gWeatherPtr->currWeather != WEATHER_SUNNY_CLOUDS)
+        return FALSE;
+    for (i = 0; i < NUM_CLOUD_SPRITES; ++i)
+        if (gWeatherPtr->sprites.s1.cloudSprites[i] == sprite)
+            return TRUE;
+    return FALSE;
+}
 #endif
 
 void AddSpritesToOamBuffer(void)
@@ -610,7 +624,7 @@ void AddSpritesToOamBuffer(void)
     CtrVideo_ClearFogOam();
     CtrVideo_ClearExtPaletteOam();
 #endif
-#if defined(PLATFORM_3DS) && CTR_VOXEL_ENABLED
+#if defined(PLATFORM_3DS)
     CtrVideo_ClearVoxelWeatherOam();
 #endif
     while (i < MAX_SPRITES)
@@ -630,6 +644,8 @@ void AddSpritesToOamBuffer(void)
                 CtrVideo_MarkScreenOam(first, oamIndex);
                 if (FieldEffect_IsMachineSprite(sprite))
                     CtrVideo_MarkMachineOam(first, oamIndex);
+                else if (FieldEffect_IsFlySprite(sprite))
+                    CtrVideo_MarkFlyOam(first, oamIndex);
             }
             if (IsFogSprite(sprite))
                 CtrVideo_MarkFogOam(first, oamIndex);
@@ -647,9 +663,11 @@ void AddSpritesToOamBuffer(void)
             if (sSpriteExtPalettes[sSpriteOrder[i]])
                 CtrVideo_MarkExtPaletteOam(first, oamIndex, sSpriteExtPalettes[sSpriteOrder[i]] - 1);
 #endif
-#if defined(PLATFORM_3DS) && CTR_VOXEL_ENABLED
+#if defined(PLATFORM_3DS)
             if (IsVoxelWeatherSprite(sprite))
                 CtrVideo_MarkVoxelWeatherOam(first, oamIndex);
+            if (CtrSprite_IsVoxelCloud(sprite))
+                CtrVideo_MarkVoxelCloudOam(first, oamIndex);
 #else
             (void)first;
 #endif

@@ -119,6 +119,12 @@ void TintPalette_GrayScale(u16 *palette, u16 count);
 void TintPalette_GrayScale2(u16 *palette, u16 count);
 void TintPalette_SepiaTone(u16 *palette, u16 count);
 void TintPalette_CustomTone(u16 *palette, u16 count, u16 rTone, u16 gTone, u16 bTone);
+#ifdef PORT_BRIDGE
+// Port: TRUE while a normal fade must wait, as on one of its delay frames,
+// for a picture the port has not shown yet (the 3DS voxel field's warm-up:
+// 3ds_port/src/3ds_game_full.c). A weak FALSE in palette.c otherwise.
+bool8 Port_HoldPaletteFade(void);
+#endif
 
 static inline void SetBackdropFromColor(u16 color)
 {

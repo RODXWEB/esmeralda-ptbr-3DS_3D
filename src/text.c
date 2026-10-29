@@ -297,7 +297,12 @@ bool16 AddTextPrinter(struct TextPrinterTemplate *printerTemplate, u8 speed, voi
 #endif
     sTempTextPrinter.callback = callback;
     sTempTextPrinter.minLetterSpacing = 0;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+    // The Japanese game's text is all in the Japanese glyph set.
+    sTempTextPrinter.japanese = TRUE;
+#else
     sTempTextPrinter.japanese = 0;
+#endif
 
     GenerateFontHalfRowLookupTable(printerTemplate->fgColor, printerTemplate->bgColor, printerTemplate->shadowColor);
     if (speed != TEXT_SKIP_DRAW && speed != 0)
@@ -357,6 +362,44 @@ bool16 IsTextPrinterActive(u8 id)
 {
     return sTextPrinters[id].active;
 }
+
+#ifdef PLATFORM_3DS
+// For the 3DS bottom screen, which shows a message a page at a time: the page
+// (counted by \p) the printer of windowId shows of str; -1 when it is not
+// printing str.
+s16 CtrText_PrinterPage(u8 windowId, const u8 *str)
+{
+    const struct TextPrinter *printer;
+    const u8 *p;
+    s16 page = 0;
+
+    if (windowId >= WINDOWS_MAX || str == NULL || !sTextPrinters[windowId].active)
+        return -1;
+    printer = &sTextPrinters[windowId];
+    str = ResolveTextString(str);
+    if (printer->printerTemplate.currentChar < str || printer->printerTemplate.currentChar - str > 0x400)
+        return -1;
+    for (p = str; p < printer->printerTemplate.currentChar; p++)
+    {
+        if (*p == EOS)
+            return -1;
+        if (*p == EXT_CTRL_CODE_BEGIN)
+        {
+            if (p[1] == EOS)
+                return -1;
+            p += GetExtCtrlCodeLength(p[1]);
+        }
+        else if (*p == CHAR_PROMPT_CLEAR)
+        {
+            page++;
+        }
+    }
+    // Waiting at a \p, the page before it is still on show.
+    if (printer->state == RENDER_STATE_CLEAR && page > 0)
+        page--;
+    return page;
+}
+#endif
 
 static u32 RenderFont(struct TextPrinter *textPrinter)
 {
@@ -1145,7 +1188,12 @@ static u16 RenderText(struct TextPrinter *textPrinter)
                 textPrinter->japanese = TRUE;
                 return RENDER_REPEAT;
             case EXT_CTRL_CODE_ENG:
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+                // no English glyph set: names keep the Japanese one
+                textPrinter->japanese = TRUE;
+#else
                 textPrinter->japanese = FALSE;
+#endif
                 return RENDER_REPEAT;
             }
             break;
@@ -1390,7 +1438,11 @@ s32 GetStringWidth(u8 fontId, const u8 *str, s16 letterSpacing)
     int glyphWidth;
     s32 width;
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+    isJapanese = 1;
+#else
     isJapanese = 0;
+#endif
     minGlyphWidth = 0;
 
     func = GetFontWidthFunc(fontId);
@@ -1501,7 +1553,11 @@ s32 GetStringWidth(u8 fontId, const u8 *str, s16 letterSpacing)
                 isJapanese = 1;
                 break;
             case EXT_CTRL_CODE_ENG:
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
+                isJapanese = 1;
+#else
                 isJapanese = 0;
+#endif
                 break;
             case EXT_CTRL_CODE_RESET_FONT:
             case EXT_CTRL_CODE_PAUSE_UNTIL_PRESS:

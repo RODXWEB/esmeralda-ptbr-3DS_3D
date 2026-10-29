@@ -105,6 +105,13 @@ static const u8 sTextColors[2][3] =
 #else
 #define BERRY_TAG_SPANISH 0
 #endif
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+// German: a wider name window (the name is the item's, BEERE included),
+// metric sizes and a description indented as in the German ROM.
+#define BERRY_TAG_GERMAN 1
+#else
+#define BERRY_TAG_GERMAN 0
+#endif
 
 static const struct WindowTemplate sWindowTemplates[] =
 {
@@ -112,10 +119,10 @@ static const struct WindowTemplate sWindowTemplates[] =
         .bg = 1,
         .tilemapLeft = 11,
         .tilemapTop = 4,
-        .width = 8,
+        .width = BERRY_TAG_GERMAN ? 13 : 8,
         .height = 2,
         .paletteNum = 15,
-        .baseBlock = BERRY_TAG_SPANISH ? 72 : 69,
+        .baseBlock = (BERRY_TAG_SPANISH || BERRY_TAG_GERMAN) ? 72 : 69,
     },
     [WIN_SIZE_FIRM] = {
         .bg = 1,
@@ -124,16 +131,16 @@ static const struct WindowTemplate sWindowTemplates[] =
         .width = 18,
         .height = 4,
         .paletteNum = 15,
-        .baseBlock = BERRY_TAG_SPANISH ? 88 : 85,
+        .baseBlock = BERRY_TAG_GERMAN ? 98 : BERRY_TAG_SPANISH ? 88 : 85,
     },
     [WIN_DESC] = {
         .bg = 1,
-        .tilemapLeft = BERRY_TAG_SPANISH ? 3 : 4,
+        .tilemapLeft = (BERRY_TAG_SPANISH || BERRY_TAG_GERMAN) ? 3 : 4,
         .tilemapTop = 14,
-        .width = BERRY_TAG_SPANISH ? 27 : 25,
+        .width = (BERRY_TAG_SPANISH || BERRY_TAG_GERMAN) ? 27 : 25,
         .height = 4,
         .paletteNum = 15,
-        .baseBlock = BERRY_TAG_SPANISH ? 160 : 157,
+        .baseBlock = BERRY_TAG_GERMAN ? 170 : BERRY_TAG_SPANISH ? 160 : 157,
     },
     [WIN_BERRY_TAG] = {
         .bg = 0,
@@ -142,7 +149,7 @@ static const struct WindowTemplate sWindowTemplates[] =
         .width = 8,
         .height = 2,
         .paletteNum = 15,
-        .baseBlock = BERRY_TAG_SPANISH ? 268 : 257,
+        .baseBlock = BERRY_TAG_GERMAN ? 278 : BERRY_TAG_SPANISH ? 268 : 257,
     },
     DUMMY_WIN_TEMPLATE
 };
@@ -410,7 +417,11 @@ static void PrintBerryNumberAndName(void)
 {
     const struct Berry *berry = GetBerryInfo(sBerryTag->berryId);
     ConvertIntToDecimalStringN(gStringVar1, sBerryTag->berryId, STR_CONV_MODE_LEADING_ZEROS, 2);
+#if BERRY_TAG_GERMAN
+    StringCopy(gStringVar2, GetItemName(sBerryTag->berryId + FIRST_BERRY_INDEX - 1));
+#else
     StringCopy(gStringVar2, berry->name);
+#endif
     StringExpandPlaceholders(gStringVar4, gText_NumberVar1Var2);
     PrintTextInBerryTagScreen(WIN_BERRY_NAME, gStringVar4, 0, 1, 0, 0);
 }
@@ -421,6 +432,10 @@ static void PrintBerrySize(void)
     AddTextPrinterParameterized(WIN_SIZE_FIRM, FONT_NORMAL, gText_SizeSlash, 0, 1, TEXT_SKIP_DRAW, NULL);
     if (berry->size != 0)
     {
+#if BERRY_TAG_GERMAN
+        ConvertIntToDecimalStringN(gStringVar1, berry->size / 10, STR_CONV_MODE_LEFT_ALIGN, 2);
+        ConvertIntToDecimalStringN(gStringVar2, berry->size % 10, STR_CONV_MODE_LEFT_ALIGN, 2);
+#else
         u32 inches, fraction;
 
         inches = 1000 * berry->size / 254;
@@ -431,6 +446,7 @@ static void PrintBerrySize(void)
 
         ConvertIntToDecimalStringN(gStringVar1, inches, STR_CONV_MODE_LEFT_ALIGN, 2);
         ConvertIntToDecimalStringN(gStringVar2, fraction, STR_CONV_MODE_LEFT_ALIGN, 2);
+#endif
         StringExpandPlaceholders(gStringVar4, gText_Var1DotVar2);
         AddTextPrinterParameterized(WIN_SIZE_FIRM, FONT_NORMAL, gStringVar4, 0x28, 1, 0, NULL);
     }
@@ -453,13 +469,13 @@ static void PrintBerryFirmness(void)
 static void PrintBerryDescription1(void)
 {
     const struct Berry *berry = GetBerryInfo(sBerryTag->berryId);
-    AddTextPrinterParameterized(WIN_DESC, FONT_NORMAL, berry->description1, 0, 1, 0, NULL);
+    AddTextPrinterParameterized(WIN_DESC, FONT_NORMAL, berry->description1, BERRY_TAG_GERMAN ? 5 : 0, 1, 0, NULL);
 }
 
 static void PrintBerryDescription2(void)
 {
     const struct Berry *berry = GetBerryInfo(sBerryTag->berryId);
-    AddTextPrinterParameterized(WIN_DESC, FONT_NORMAL, berry->description2, 0, 0x11, 0, NULL);
+    AddTextPrinterParameterized(WIN_DESC, FONT_NORMAL, berry->description2, BERRY_TAG_GERMAN ? 5 : 0, 0x11, 0, NULL);
 }
 
 static void CreateBerrySprite(void)

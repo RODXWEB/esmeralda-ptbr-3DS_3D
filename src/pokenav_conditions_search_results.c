@@ -442,7 +442,11 @@ static u32 LoopedTask_OpenConditionSearchResults(s32 state)
         SetBgTilemapBuffer(1, gfx->buff);
         CopyToBgTilemapBuffer(1, sConditionSearchResultTilemap, 0, 0);
         CopyBgTilemapBufferToVram(1);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        CopyPaletteIntoBufferUnfaded(sConditionSearchResultFramePal, BG_PLTT_ID(1), 0x20);
+#else
         CopyPaletteIntoBufferUnfaded(sConditionSearchResultFramePal, BG_PLTT_ID(1), sizeof(sConditionSearchResultFramePal));
+#endif
         CopyBgTilemapBufferToVram(1);
         return LT_INC_AND_PAUSE;
     case 1:
@@ -687,8 +691,13 @@ static void CreateSearchResultsList(void)
     template.count = GetSearchResultsMonListCount();
     template.itemSize = sizeof(struct PokenavListItem);
     template.startIndex = GetSearchResultsCurrentListIndex();
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    template.item_X = 12;
+    template.windowWidth = 18;
+#else
     template.item_X = 13;
     template.windowWidth = 17;
+#endif
     template.listTop = 1;
     template.maxShowed = 8;
     template.fillValue = 2;

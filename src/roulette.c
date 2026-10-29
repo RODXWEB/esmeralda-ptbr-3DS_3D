@@ -456,12 +456,24 @@ static const struct WindowTemplate sWindowTemplates[] =
 {
     {
         .bg = 0,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .tilemapLeft = 2,
+#else
         .tilemapLeft = 3,
+#endif
         .tilemapTop = 15,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .width = 26,
+#else
         .width = 24,
+#endif
         .height = 4,
         .paletteNum = 15,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .baseBlock = 0xBD
+#else
         .baseBlock = 0xC5
+#endif
     },
     #ifdef UBFIX
     DUMMY_WIN_TEMPLATE,

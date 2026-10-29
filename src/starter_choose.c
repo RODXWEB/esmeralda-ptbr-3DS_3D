@@ -26,6 +26,7 @@
 
 #ifdef PORT_BRIDGE
 #include "port_platform.h"
+#include "3ds_randomizer.h" // seeded species randomizer (off by default)
 #endif
 
 #define STARTER_MON_COUNT   3
@@ -356,7 +357,13 @@ u16 GetStarterPokemon(u16 chosenStarterId)
 {
     if (chosenStarterId > STARTER_MON_COUNT)
         chosenStarterId = 0;
+#ifdef PORT_BRIDGE
+    // The label, the picture, the cry and the Pokemon given all come from
+    // here, so they agree (3ds_randomizer.h: itself unless the setting is on).
+    return CtrRandomizer_Species(CTR_RANDOMIZE_STARTERS, sStarterMon[chosenStarterId]);
+#else
     return sStarterMon[chosenStarterId];
+#endif
 }
 
 static void VblankCB_StarterChoose(void)

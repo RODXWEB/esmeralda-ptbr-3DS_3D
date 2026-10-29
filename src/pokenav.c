@@ -48,6 +48,15 @@ static void Task_RunLoopedTask_LinkMode(u8);
 static void Task_RunLoopedTask(u8);
 static void Task_Pokenav(u8);
 static void CB2_InitPokenavForTutorial(void);
+#ifdef PLATFORM_3DS
+// The bottom screen's dock may have chosen another screen to open instead.
+#define CTR_LEAVE_TO(cb) CtrBottom_LeaveTo(cb)
+MainCallback CtrBottom_LeaveTo(MainCallback field);
+bool32 CtrPokenav_WaitForLeaveFade(void);
+static bool8 sCtrLeave;
+#else
+#define CTR_LEAVE_TO(cb) (cb)
+#endif
 
 const struct PokenavCallbacks PokenavMenuCallbacks[15] =
 {
@@ -322,6 +331,9 @@ void CB2_InitPokeNav(void)
     else
     {
         InitPokenavResources(gPokenavResources);
+#ifdef PLATFORM_3DS
+        sCtrLeave = FALSE;
+#endif
         ResetTasks();
         SetVBlankCallback(NULL);
         CreateTask(Task_Pokenav, 0);
@@ -454,6 +466,20 @@ static void Task_Pokenav(u8 taskId)
             break;
         tState = 3;
     case 3:
+#ifdef PLATFORM_3DS
+        // The bottom screen's dock chose another screen: the PokéNav goes
+        // off from the menu on show, not back through the menus before it.
+        if (sCtrLeave)
+        {
+            sCtrLeave = FALSE;
+            if (gPokenavResources->mode == POKENAV_MODE_NORMAL)
+            {
+                ShutdownPokenav();
+                tState = 6;
+                break;
+            }
+        }
+#endif
         menuId = GetCurrentMenuCB();
         if (menuId == POKENAV_MENU_FUNC_EXIT)
         {
@@ -495,9 +521,20 @@ static void Task_Pokenav(u8 taskId)
             if (calledFromScript)
                 SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
             else
-                SetMainCallback2(CB2_ReturnToFieldWithOpenMenu);
+                SetMainCallback2(CTR_LEAVE_TO(CB2_ReturnToFieldWithOpenMenu));
         }
         break;
+#ifdef PLATFORM_3DS
+    case 6:
+        if (!CtrPokenav_WaitForLeaveFade())
+        {
+            PokenavMenuCallbacks[gPokenavResources->currentMenuIndex].free2();
+            PokenavMenuCallbacks[gPokenavResources->currentMenuIndex].free1();
+            FreePokenavResources();
+            SetMainCallback2(CTR_LEAVE_TO(CB2_ReturnToFieldWithOpenMenu));
+        }
+        break;
+#endif
     }
 }
 
@@ -590,6 +627,13 @@ bool32 CanViewRibbonsMenu(void)
 }
 
 #ifdef PLATFORM_3DS
+// The dock's other screens: the PokéNav closes for them (Task_Pokenav).
+void CtrPokenav_Leave(void)
+{
+    if (gPokenavResources != NULL)
+        sCtrLeave = TRUE;
+}
+
 // The 3DS bottom screen shows the PokéNav while it runs.
 bool8 CtrPokenav_IsOpen(void)
 {

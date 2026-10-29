@@ -1680,11 +1680,11 @@ static void GetObjectEventWindow(s16 *left, s16 *right, s16 *top, s16 *bottom)
 {
     s16 playerX = gSaveBlock1Ptr->pos.x + MAP_OFFSET;
     s16 playerY = gSaveBlock1Ptr->pos.y + MAP_OFFSET;
-    int sideways, north, south;
+    int west, east, north, south;
 
-    CtrFieldView_Window(CtrFieldView_Current(), OBJECT_EVENT_VIEW_MARGIN, &sideways, &north, &south);
-    *left = playerX - sideways;
-    *right = playerX + sideways;
+    CtrFieldView_Window(CtrFieldView_Current(), OBJECT_EVENT_VIEW_MARGIN, &west, &east, &north, &south);
+    *left = playerX - west;
+    *right = playerX + east;
     *top = playerY - north;
     *bottom = playerY + south;
 }
@@ -1872,7 +1872,7 @@ static void RemoveObjectEventIfOutsideView(struct ObjectEvent *objectEvent)
 }
 
 // The view changed under a still camera (the 2D/voxel option, the voxel
-// camera's pitch or zoom): the people it now reaches, or no longer does,
+// camera's pitch or zoom, the camera easing to or from a map's edge): the people it now reaches, or no longer does,
 // are brought in or let go as a step would (field_camera.c).
 void UpdateObjectEventsForViewChange(void)
 {

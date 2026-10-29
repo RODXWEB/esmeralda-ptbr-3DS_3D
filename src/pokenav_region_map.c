@@ -138,7 +138,11 @@ static const struct WindowTemplate sMapSecInfoWindowTemplate =
     .bg = 1,
     .tilemapLeft = 17,
     .tilemapTop = 4,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    .width = 13,
+#else
     .width = 12,
+#endif
     .height = 13,
     .paletteNum = 1,
     .baseBlock = 0x4C
@@ -537,7 +541,17 @@ static void UpdateMapSecInfoWindow(struct Pokenav_RegionMapGfx *state)
     {
     case MAPSECTYPE_CITY_CANFLY:
         FillWindowPixelBuffer(state->infoWindowId, PIXEL_FILL(1));
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        PutWindowRectTilemap(
+            state->infoWindowId,
+            0,
+            0,
+            13,
+            2
+        );
+#else
         PutWindowRectTilemap(state->infoWindowId, 0, 0, 12, 2);
+#endif
         AddTextPrinterParameterized(state->infoWindowId, FONT_NARROW, regionMap->mapSecName, 0, 1, TEXT_SKIP_DRAW, NULL);
         DrawCityMap(state, regionMap->mapSecId, regionMap->posWithinMapSec);
         CopyWindowToVram(state->infoWindowId, COPYWIN_FULL);
@@ -545,9 +559,31 @@ static void UpdateMapSecInfoWindow(struct Pokenav_RegionMapGfx *state)
         break;
     case MAPSECTYPE_CITY_CANTFLY:
         FillWindowPixelBuffer(state->infoWindowId, PIXEL_FILL(1));
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        PutWindowRectTilemap(
+            state->infoWindowId,
+            0,
+            0,
+            13,
+            2
+        );
+#else
         PutWindowRectTilemap(state->infoWindowId, 0, 0, 12, 2);
+#endif
         AddTextPrinterParameterized(state->infoWindowId, FONT_NARROW, regionMap->mapSecName, 0, 1, TEXT_SKIP_DRAW, NULL);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        FillBgTilemapBufferRect(
+            1,
+            0x1041,
+            17,
+            6,
+            13,
+            11,
+            17
+        );
+#else
         FillBgTilemapBufferRect(1, 0x1041, 17, 6, 12, 11, 17);
+#endif
         CopyWindowToVram(state->infoWindowId, COPYWIN_FULL);
         SetCityZoomTextInvisibility(TRUE);
         break;
@@ -560,8 +596,21 @@ static void UpdateMapSecInfoWindow(struct Pokenav_RegionMapGfx *state)
         CopyWindowToVram(state->infoWindowId, COPYWIN_FULL);
         SetCityZoomTextInvisibility(TRUE);
         break;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    case MAPSECTYPE_NONE:
+        FillBgTilemapBufferRect(
+            1,
+            0x1041,
+            17,
+            4,
+            13,
+            13,
+            17
+        );
+#else
     case MAPSECTYPE_NONE:
         FillBgTilemapBufferRect(1, 0x1041, 17, 4, 12, 13, 17);
+#endif
         CopyBgTilemapBufferToVram(1);
         SetCityZoomTextInvisibility(TRUE);
         break;
@@ -643,7 +692,18 @@ static void DrawCityMap(struct Pokenav_RegionMapGfx *state, int mapSecId, int po
     if (i == NUM_CITY_MAPS)
         return;
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    FillBgTilemapBufferRect_Palette0(
+        1,
+        0x1041,
+        17,
+        6,
+        13,
+        11
+    );
+#else
     FillBgTilemapBufferRect_Palette0(1, 0x1041, 17, 6, 12, 11);
+#endif
     CopyToBgTilemapBufferRect(1, state->cityZoomPics[i], 18, 6, 10, 10);
 }
 
@@ -656,7 +716,16 @@ static void PrintLandmarkNames(struct Pokenav_RegionMapGfx *state, int mapSecId,
         if (!landmarkName)
             break;
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        StringCopyPadded(
+            gStringVar1,
+            landmarkName,
+            CHAR_SPACE,
+            13
+        );
+#else
         StringCopyPadded(gStringVar1, landmarkName, CHAR_SPACE, 12);
+#endif
         AddTextPrinterParameterized(state->infoWindowId, FONT_NARROW, gStringVar1, 0, i * 16 + 17, TEXT_SKIP_DRAW, NULL);
         i++;
     }
@@ -741,16 +810,22 @@ static void SetCityZoomTextInvisibility(bool32 invisible)
         state->cityZoomTextSprites[i]->invisible = invisible;
 }
 
-#ifdef PLATFORM_3DS
-bool8 CtrPokenav_IsOpen(void);
-
-// The background of the map's info window, for the 3DS bottom screen: it
-// keeps the window on the help bar while the map is zoomed out, as the GBA
-// screen does. -1 without the map.
-int CtrPokenavRegionMap_InfoBg(void)
+#ifdef PORT_BRIDGE
+// DrawCityMap's picture, for the bottom screen's map.
+const u32 *CtrPokenav_CityMap(u16 mapSecId, u8 posWithinMapSec)
 {
-    if (!CtrPokenav_IsOpen() || GetSubstructPtr(POKENAV_SUBSTRUCT_REGION_MAP_ZOOM) == NULL)
-        return -1;
-    return sMapSecInfoWindowTemplate.bg;
+    int i;
+
+    for (i = 0; i < NUM_CITY_MAPS; i++)
+    {
+        if (sPokenavCityMaps[i].mapSecId == mapSecId && sPokenavCityMaps[i].index == posWithinMapSec)
+            return sPokenavCityMaps[i].tilemap;
+    }
+    return NULL;
+}
+
+const u32 *CtrPokenav_CityZoomTiles(void)
+{
+    return sRegionMapCityZoomTiles_Gfx;
 }
 #endif

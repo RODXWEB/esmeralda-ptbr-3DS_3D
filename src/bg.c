@@ -6,6 +6,9 @@
 #ifdef PORT_BRIDGE
 #include "port_platform.h"
 #endif
+#ifdef PLATFORM_3DS
+#include "3ds_video.h"
+#endif
 
 #include "gpu_regs.h"
 
@@ -198,6 +201,11 @@ u8 LoadBgVram(u8 bg, const void *src, u16 size, u16 destOffset, u8 mode)
         cursor = RequestDma3Copy(src, (void *)(offset + BG_VRAM), size, 0);
         if (cursor == -1)
             return -1;
+#ifdef PLATFORM_3DS
+        // The banks of the field's cells go with its tilemap (3ds_tile_banks.h),
+        // once the copy is on its way: a full queue leaves VRAM as it was.
+        CtrVideo_TilemapRequested(offset, src, size);
+#endif
         break;
     default:
         cursor = -1;

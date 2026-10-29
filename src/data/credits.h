@@ -1,6 +1,12 @@
 enum
 {
     PAGE_TITLE,
+#if CTR_LANG_PT_BR
+    // The Portuguese translation and the 3DS port, first, before the crew's
+    // pages, which players often skip.
+    PAGE_PTBR_TRANSLATION,
+    PAGE_PTBR_PORT,
+#endif
     PAGE_DIRECTOR,
     PAGE_ART_DIRECTOR,
     PAGE_WORLD_DIRECTOR,
@@ -65,6 +71,13 @@ enum
 static const u8 sCreditsText_EmptyString[]                    = _("");
 static const u8 sCreditsText_PkmnEmeraldVersion[]             = _("POKéMON EMERALD VERSION");
 static const u8 sCreditsText_Credits[]                        = _("Credits");
+#if CTR_LANG_PT_BR
+static const u8 sCreditsText_PtbrTranslation[]                = _("Tradução PT-BR");
+static const u8 sCreditsText_PtbrTranslator[]                 = _("Carlos Mozart");
+static const u8 sCreditsText_PtbrAllGenWiki[]                 = _("AllGenWiki");
+static const u8 sCreditsText_PtbrPort[]                       = _("Port para Nintendo 3DS");
+static const u8 sCreditsText_PtbrPortAuthor[]                 = _("Daniel Cazalla");
+#endif
 static const u8 sCreditsText_ExecutiveDirector[]              = _("Executive Director");
 static const u8 sCreditsText_Director[]                       = _("Director");
 static const u8 sCreditsText_ArtDirector[]                    = _("Art Director");
@@ -224,6 +237,13 @@ static const u8 sCreditsText_ErikJohnson[]                    = _("Erik Johnson"
 static const struct CreditsEntry sCreditsEntry_EmptyString                      = { 0, FALSE, sCreditsText_EmptyString};
 static const struct CreditsEntry sCreditsEntry_PkmnEmeraldVersion               = { 7,  TRUE, sCreditsText_PkmnEmeraldVersion};
 static const struct CreditsEntry sCreditsEntry_Credits                          = {11,  TRUE, sCreditsText_Credits};
+#if CTR_LANG_PT_BR
+static const struct CreditsEntry sCreditsEntry_PtbrTranslation                  = { 0,  TRUE, sCreditsText_PtbrTranslation};
+static const struct CreditsEntry sCreditsEntry_PtbrTranslator                   = { 0, FALSE, sCreditsText_PtbrTranslator};
+static const struct CreditsEntry sCreditsEntry_PtbrAllGenWiki                   = { 0, FALSE, sCreditsText_PtbrAllGenWiki};
+static const struct CreditsEntry sCreditsEntry_PtbrPort                         = { 0,  TRUE, sCreditsText_PtbrPort};
+static const struct CreditsEntry sCreditsEntry_PtbrPortAuthor                   = { 0, FALSE, sCreditsText_PtbrPortAuthor};
+#endif
 static const struct CreditsEntry sCreditsEntry_ExecutiveDirector                = { 8,  TRUE, sCreditsText_ExecutiveDirector};
 static const struct CreditsEntry sCreditsEntry_Director                         = {12,  TRUE, sCreditsText_Director};
 static const struct CreditsEntry sCreditsEntry_ArtDirector                      = {10,  TRUE, sCreditsText_ArtDirector};
@@ -391,6 +411,22 @@ static const struct CreditsEntry *const sCreditsEntryPointerTable[PAGE_COUNT][EN
         _,
         _
     },
+#if CTR_LANG_PT_BR
+    [PAGE_PTBR_TRANSLATION] = {
+        _,
+        &sCreditsEntry_PtbrTranslation,
+        &sCreditsEntry_PtbrTranslator,
+        &sCreditsEntry_PtbrAllGenWiki,
+        _,
+    },
+    [PAGE_PTBR_PORT] = {
+        _,
+        &sCreditsEntry_PtbrPort,
+        &sCreditsEntry_PtbrPortAuthor,
+        _,
+        _,
+    },
+#endif
     [PAGE_DIRECTOR] = {
         _,
         &sCreditsEntry_Director,

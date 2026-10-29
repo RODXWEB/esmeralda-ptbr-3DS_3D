@@ -1,52 +1,51 @@
 gText_WouldYouLikeToRestYourPkmn::
-	.string "Olá, e seja bem-vindo ao\n"
+	.string "Olá, e boas-vindas ao\n"
 	.string "CENTRO POKéMON.\p"
-	.string "Nós restauramos seus POKéMONs\n"
-	.string "cansados para a saúde completa.\p"
-	.string "Você gostaria de descansar\n"
-	.string "seu POKéMON?$"
+	.string "Nós recuperamos totalmente os seus\n"
+	.string "POKéMON cansados.\p"
+	.string "Gostaria de deixar os seus POKéMON?$"
 
 gText_IllTakeYourPkmn::
-	.string "Certo, vou pegar seu POKéMON\n"
+	.string "Certo, vou levar os seus POKéMON\n"
 	.string "por alguns segundos.$"
 
 gText_RestoredPkmnToFullHealth::
-	.string "Obrigado por esperar.\p"
-	.string "Restauramos seu POKéMON\n"
-	.string "para a saúde completa.$"
+	.string "Obrigada por esperar.\p"
+	.string "Os seus POKéMON estão\n"
+	.string "totalmente recuperados.$"
 
 gText_WeHopeToSeeYouAgain::
-	.string "Esperamos vê-lo novamente!$"
+	.string "Esperamos te ver de novo!$"
 
 gText_WelcomeCutShort::
-	.string "Olá, e seja bem-vindo ao\n"
+	.string "Olá, e boas-vindas ao\n"
 	.string "CENTRO POKéMON.\p"
-	.string "Nós restauramos seus POKéMONs\n"
-	.string "cansados para a saúde completa.\p"
-	.string "Você gostaria de…\n"
+	.string "Nós recuperamos totalmente os seus\n"
+	.string "POKéMON cansados.\p"
+	.string "Gostaria de…$"
 
 gText_NoticesGoldCard::
-	.string "E-e-es-sa carta…\n"
-	.string "Será… O CARTäO DE OURO?!\p"
-	.string "Oh, a cor dourada é brilhante!\n"
-	.string "As quatro estrelas parecem brilhar!\p"
+	.string "E-esse cartão…\n"
+	.string "Será que é… O CARTÃO DE OURO?!\p"
+	.string "Oh, que dourado brilhante!\n"
+	.string "As quatro estrelas parecem cintilar!\p"
 	.string "Já vi vários TREINADORES com um\n"
-	.string "CARTäO DE PRATA antes, mas, {JOGADOR},\l"
-	.string "você é o primeiro TREINADOR que eu já\l"
-	.string "vi com um CARTäO DE OURO!\p"
-	.string "Ok, {JOGADOR}, por favor, permita-me\n"
-	.string "a honra de descansar seus POKéMON!$"
+	.string "CARTÃO DE PRATA, mas, {PLAYER},\l"
+	.string "é a primeira vez que vejo alguém\l"
+	.string "com um CARTÃO DE OURO!\p"
+	.string "Certo, {PLAYER}, me conceda a honra\n"
+	.string "de cuidar dos seus POKéMON!$"
 
 gText_YouWantTheUsual::
-	.string "Estou encantado em vê-lo, {JOGADOR}!\n"
-	.string "Você quer o de sempre, certo?$"
+	.string "Que alegria te ver, {PLAYER}!\n"
+	.string "O de sempre, não é?$"
 
 gText_IllTakeYourPkmn2::
-	.string "Certo, vou pegar seus POKéMON\n"
+	.string "Certo, vou levar os seus POKéMON\n"
 	.string "por alguns segundos.$"
 
 gText_ThankYouForWaiting::
-	.string "Obrigado por esperar.$"
+	.string "Obrigada por esperar.$"
 
 gText_WeHopeToSeeYouAgain2::
-	.string "Esperamos vê-lo novamente!$"
+	.string "Esperamos te ver de novo!$"

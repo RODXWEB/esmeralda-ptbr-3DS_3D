@@ -344,6 +344,13 @@ static void Task_HandleSelectionMenuInput(u8);
 static void CB2_ShowPokemonSummaryScreen(void);
 static void UpdatePartyToBattleOrder(void);
 static void CB2_ReturnToPartyMenuFromSummaryScreen(void);
+#ifdef PLATFORM_3DS
+// The bottom screen's dock may have chosen another screen to open instead.
+#define CTR_LEAVE_TO(cb) CtrBottom_LeaveTo(cb)
+MainCallback CtrBottom_LeaveTo(MainCallback field);
+#else
+#define CTR_LEAVE_TO(cb) (cb)
+#endif
 static void SlidePartyMenuBoxOneStep(u8);
 static void Task_SlideSelectedSlotsOffscreen(u8);
 static void SwitchPartyMon(void);
@@ -505,9 +512,19 @@ s8 CtrMenu_Choose(s8 entry, bool8 sound);
 #define PARTY_AB_NEW() (JOY_NEW(A_BUTTON | B_BUTTON) || CtrMenu_TakeAck())
 // A yes/no box: YES or NO tapped is chosen, a tap away from it is B.
 #define Menu_ProcessInputNoWrapClearOnChoose CtrMenu_YesNoInput
-// The column asked the party menu to close (CtrParty_Close): B once, or B
+// The dock asked the party menu to close (CtrParty_Close): B once, or B
 // every time the mon list takes input until the menu is gone (leaving).
 static bool8 sCtrCloseAsked, sCtrLeaving;
+// What the bottom screen's own view reads (CtrParty_GetView): the prompt
+// shown, the message printed (all of it, the view takes the page on show)
+// and whether it is still up, each box's description.
+#include "3ds_game_views.h"
+static bool8 sCtrMessageUp;
+static u8 sCtrPrompt[CTR_VIEW_TEXT], sCtrMessage[0x200];
+static const u8 *sCtrMessageSrc;
+static u8 sCtrDesc[PARTY_SIZE];
+static void CtrParty_CopyText(u8 *dst, const u8 *src, u16 size);
+s16 CtrText_PrinterPage(u8 windowId, const u8 *str);
 #else
 #define PARTY_AB_NEW() JOY_NEW(A_BUTTON | B_BUTTON)
 #endif
@@ -519,6 +536,10 @@ static void InitPartyMenu(u8 menuType, u8 layout, u8 partyAction, bool8 keepCurs
 
 #ifdef PLATFORM_3DS
     sCtrCloseAsked = sCtrLeaving = FALSE;
+    sCtrMessageUp = FALSE;
+    sCtrPrompt[0] = sCtrMessage[0] = EOS;
+    sCtrMessageSrc = NULL;
+    memset(sCtrDesc, CTR_PARTY_DESC_NONE, sizeof(sCtrDesc));
 #endif
     ResetPartyMenu();
     sPartyMenuInternal = Alloc(sizeof(struct PartyMenuInternal));
@@ -866,6 +887,9 @@ static void RenderPartyMenuBox(u8 slot)
     }
     else
     {
+#ifdef PLATFORM_3DS
+        sCtrDesc[slot] = CTR_PARTY_DESC_NONE;
+#endif
         if (GetMonData(&gPlayerParty[slot], MON_DATA_SPECIES) == SPECIES_NONE)
         {
             DrawEmptySlot(sPartyMenuBoxes[slot].windowId);
@@ -1279,7 +1303,7 @@ static void Task_ClosePartyMenuAndSetCB2(u8 taskId)
         if (sPartyMenuInternal->exitCallback != NULL)
             SetMainCallback2(sPartyMenuInternal->exitCallback);
         else
-            SetMainCallback2(gPartyMenu.exitCallback);
+            SetMainCallback2(CTR_LEAVE_TO(gPartyMenu.exitCallback));
 
         ResetSpriteData();
         FreePartyPointers();
@@ -1400,6 +1424,210 @@ static s8 CtrParty_MenuTouch(void)
         return MENU_B_PRESSED;
     CtrMenu_Choose(entry, TRUE);
     return entry;
+}
+
+// A string as the bottom screen shows it: its placeholders expanded, cut to
+// size.
+static void CtrParty_CopyText(u8 *dst, const u8 *src, u16 size)
+{
+    static u8 sExpanded[0x200];
+    u16 i;
+
+    if (src != gStringVar4)
+    {
+        StringExpandPlaceholders(sExpanded, src);
+        src = sExpanded;
+    }
+    for (i = 0; i < size - 1 && src[i] != EOS; i++)
+        dst[i] = src[i];
+    dst[i] = EOS;
+}
+
+// The page of the message the window shows (the last once it is printed),
+// as the view's text: the bottom screen has room for a page, and the last
+// one is the question over a yes/no.
+static void CtrParty_MessagePage(u8 *dst)
+{
+    s16 page = CtrText_PrinterPage(WIN_MSG, sCtrMessageSrc);
+    u16 i, j, start = 0, size = sizeof(sCtrMessage);
+
+    for (i = 0; i < size && sCtrMessage[i] != EOS && page != 0; i++)
+    {
+        if (sCtrMessage[i] == EXT_CTRL_CODE_BEGIN && i + 1 < size && sCtrMessage[i + 1] != EOS)
+        {
+            i += GetExtCtrlCodeLength(sCtrMessage[i + 1]);
+        }
+        else if (sCtrMessage[i] == CHAR_PROMPT_CLEAR && i + 1 < size && sCtrMessage[i + 1] != EOS)
+        {
+            start = i + 1;
+            page--;
+        }
+    }
+    // Up to the next \p, a control code only whole.
+    for (i = start, j = 0; i < size && sCtrMessage[i] != EOS && sCtrMessage[i] != CHAR_PROMPT_CLEAR;)
+    {
+        u16 len = 1;
+
+        if (sCtrMessage[i] == EXT_CTRL_CODE_BEGIN && i + 1 < size && sCtrMessage[i + 1] != EOS)
+            len += GetExtCtrlCodeLength(sCtrMessage[i + 1]);
+        if (j + len > CTR_VIEW_TEXT - 1 || i + len > size)
+            break;
+        memcpy(&dst[j], &sCtrMessage[i], len);
+        i += len;
+        j += len;
+    }
+    dst[j] = EOS;
+}
+
+static void Task_HandleSelectionMenuInput(u8 taskId);
+static void Task_HandleWhichMoveInput(u8 taskId);
+
+// Where the party menu is, for the bottom screen to draw it itself
+// (3ds_game_views.h). FALSE while there is no menu to read (coming in,
+// going out): the bottom screen keeps what it showed. A state NONE is one
+// it does not draw: a window it has no view of (a level up's stats), a
+// menu other than the field's.
+// The party menu in the bottom screen's window, drawn natively or not: the
+// field's, and a battle's own (SWITCH, an item used on a mon); a contest's,
+// a facility's or a trade's has the whole screen.
+bool8 CtrParty_InWindow(void)
+{
+    return gMain.inBattle ? gPartyMenu.menuType == PARTY_MENU_TYPE_IN_BATTLE
+                          : gPartyMenu.menuType == PARTY_MENU_TYPE_FIELD;
+}
+
+bool8 CtrParty_GetView(struct CtrPartyView *view)
+{
+    u8 i;
+
+    memset(view, 0, sizeof(*view));
+    view->moving = view->chosen = -1;
+    if (sPartyMenuInternal == NULL)
+        return FALSE;
+    if (!CtrParty_InWindow() || sPartyMenuInternal->chooseHalf)
+        return TRUE;
+    view->cursor = *GetCurrentPartySlotPtr();
+    if (gPartyMenu.action == PARTY_ACTION_SWITCH || gPartyMenu.action == PARTY_ACTION_SOFTBOILED)
+        view->moving = gPartyMenu.slotId;
+    memcpy(view->desc, sCtrDesc, sizeof(view->desc));
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        u8 spriteId = sPartyMenuBoxes ? sPartyMenuBoxes[i].monSpriteId : SPRITE_NONE;
+
+        // The frame UpdateMonIconFrame copied last: the command before the
+        // one it is on (the first again once it has looped).
+        if (spriteId < MAX_SPRITES && gSprites[spriteId].inUse && gSprites[spriteId].anims)
+        {
+            struct Sprite *sprite = &gSprites[spriteId];
+            u8 cmd = sprite->animCmdIndex ? sprite->animCmdIndex - 1 : 1;
+            s16 frame = sprite->anims[sprite->animNum][cmd].frame.imageValue;
+
+            view->iconFrame[i] = frame == 1;
+            if (sprite->callback == SpriteCB_BouncePartyMonIcon)
+                view->iconLift[i] = sprite->y2;
+        }
+    }
+    view->message = sCtrMessageUp;
+    view->yesNo = CtrMenu_YesNoOpen();
+    view->cancelEntry = -1;
+    if (sCtrMessageUp)
+        CtrParty_MessagePage(view->msg);
+    if (sPartyMenuInternal->windowId[1] != WINDOW_NONE)
+        memcpy(view->prompt, sCtrPrompt, sizeof(view->prompt));
+    // A short message the game puts in the prompt's box and waits on (a
+    // field move that can't be used here): the message box, so it is seen,
+    // a tap on it going on as A.
+    if (!sCtrMessageUp && FuncIsActiveTask(Task_CancelAfterAorBPress) && view->prompt[0] != EOS)
+    {
+        view->message = TRUE;
+        memcpy(view->msg, view->prompt, sizeof(view->msg));
+        view->prompt[0] = EOS;
+    }
+    if (FuncIsActiveTask(Task_HandleSelectionMenuInput))
+    {
+        view->state = CTR_PARTY_VIEW_MENU;
+        view->chosen = gPartyMenu.slotId;
+        view->numEntries = sPartyMenuInternal->numActions < CTR_VIEW_ENTRIES ? sPartyMenuInternal->numActions
+                                                                             : CTR_VIEW_ENTRIES;
+        for (i = 0; i < view->numEntries; i++)
+        {
+            view->entries[i] = sCursorOptions[sPartyMenuInternal->actions[i]].text;
+            if (sPartyMenuInternal->actions[i] >= MENU_FIELD_MOVES)
+                view->fieldMove |= 1 << i;
+            else if (sPartyMenuInternal->actions[i] == MENU_CANCEL1 || sPartyMenuInternal->actions[i] == MENU_CANCEL2)
+                view->cancelEntry = i;
+        }
+        view->entryCursor = Menu_GetCursorPos();
+        return TRUE;
+    }
+    if (FuncIsActiveTask(Task_HandleWhichMoveInput))
+    {
+        view->state = CTR_PARTY_VIEW_MENU;
+        view->chosen = gPartyMenu.slotId;
+        for (i = 0; i < MAX_MON_MOVES; i++)
+        {
+            u16 move = GetMonData(&gPlayerParty[gPartyMenu.slotId], MON_DATA_MOVE1 + i);
+
+            if (move == MOVE_NONE)
+                break;
+            view->entries[i] = gMoveNames[move];
+        }
+        view->numEntries = i;
+        view->entryCursor = Menu_GetCursorPos();
+        return TRUE;
+    }
+    // A level up's stats (a Rare Candy): what each rose by, then what it is,
+    // each waiting for A (a tap, CtrMenu_PostAck).
+    if (sPartyMenuInternal->windowId[0] != WINDOW_NONE
+     && (FuncIsActiveTask(Task_DisplayLevelUpStatsPg2) || FuncIsActiveTask(Task_TryLearnNewMoves)))
+    {
+        view->state = CTR_PARTY_VIEW_STATS;
+        view->chosen = gPartyMenu.slotId;
+        view->statsPage = FuncIsActiveTask(Task_DisplayLevelUpStatsPg2) ? 0 : 1;
+        for (i = 0; i < NUM_STATS; i++)
+        {
+            view->statsBefore[i] = sPartyMenuInternal->data[i];
+            view->statsAfter[i] = sPartyMenuInternal->data[NUM_STATS + i];
+        }
+        return TRUE;
+    }
+    // Any other window of its own is only there for a moment.
+    if (sPartyMenuInternal->windowId[0] != WINDOW_NONE)
+        return TRUE;
+    view->state = CTR_PARTY_VIEW_LIST;
+    return TRUE;
+}
+
+// A box tapped on the bottom screen's view: the tap the game's own takes
+// there (CtrParty_Touch), its window's middle; CANCEL's place for CANCEL.
+void CtrParty_TapSlot(s8 slot)
+{
+    u8 windowId;
+
+    if (sPartyMenuBoxes == NULL)
+        return;
+    if (slot < 0 || slot >= PARTY_SIZE)
+    {
+        CtrMenu_PostTap(220, 152);
+        return;
+    }
+    windowId = sPartyMenuBoxes[slot].windowId;
+    if (windowId == WINDOW_NONE)
+        return;
+    CtrMenu_PostTap(GetWindowAttribute(windowId, WINDOW_TILEMAP_LEFT) * 8 + GetWindowAttribute(windowId, WINDOW_WIDTH) * 4,
+                    GetWindowAttribute(windowId, WINDOW_TILEMAP_TOP) * 8 + GetWindowAttribute(windowId, WINDOW_HEIGHT) * 4);
+}
+
+// The field's party menu being built (its fade in still to come): the
+// bottom screen draws it from the start.
+bool8 CtrParty_Building(void)
+{
+    return gMain.callback2 == CB2_InitPartyMenu && sPartyMenuInternal != NULL && CtrParty_InWindow();
+}
+
+const u8 *CtrParty_DescText(u8 desc)
+{
+    return desc < ARRAY_COUNT(sDescriptionStringTable) ? sDescriptionStringTable[desc] : NULL;
 }
 #endif
 
@@ -1875,6 +2103,9 @@ static void Task_PrintAndWaitForText(u8 taskId)
         {
             ClearStdWindowAndFrameToTransparent(WIN_MSG, FALSE);
             ClearWindowTilemap(WIN_MSG);
+#ifdef PLATFORM_3DS
+            sCtrMessageUp = FALSE;
+#endif
         }
         DestroyTask(taskId);
     }
@@ -1902,6 +2133,9 @@ static void Task_ReturnToChooseMonAfterText(u8 taskId)
     {
         ClearStdWindowAndFrameToTransparent(WIN_MSG, FALSE);
         ClearWindowTilemap(WIN_MSG);
+#ifdef PLATFORM_3DS
+        sCtrMessageUp = FALSE;
+#endif
         if (MenuHelpers_IsLinkActive() == TRUE)
         {
             gTasks[taskId].func = Task_WaitForLinkAndReturnToChooseMon;
@@ -2598,6 +2832,10 @@ static void DisplayPartyPokemonHPBar(u16 hp, u16 maxhp, struct PartyMenuBox *men
 
 static void DisplayPartyPokemonDescriptionText(u8 stringID, struct PartyMenuBox *menuBox, u8 c)
 {
+#ifdef PLATFORM_3DS
+    if (menuBox >= sPartyMenuBoxes && menuBox < sPartyMenuBoxes + PARTY_SIZE)
+        sCtrDesc[menuBox - sPartyMenuBoxes] = c == 2 ? CTR_PARTY_DESC_NONE : stringID;
+#endif
     if (c)
     {
         int width = ((menuBox->infoRects->descTextLeft % 8) + menuBox->infoRects->descTextWidth + 7) / 8;
@@ -2660,6 +2898,9 @@ void DisplayPartyMenuStdMessage(u32 stringId)
         }
         DrawStdFrameWithCustomTileAndPalette(*windowPtr, FALSE, 0x4F, 13);
         StringExpandPlaceholders(gStringVar4, sActionStringTable[stringId]);
+#ifdef PLATFORM_3DS
+        CtrParty_CopyText(sCtrPrompt, gStringVar4, sizeof(sCtrPrompt));
+#endif
         AddTextPrinterParameterized(*windowPtr, FONT_NORMAL, gStringVar4, 0, 1, 0, 0);
         ScheduleBgCopyTilemapToVram(2);
     }
@@ -2728,6 +2969,11 @@ static u8 DisplaySelectionWindow(u8 windowType)
 
 static void PrintMessage(const u8 *text)
 {
+#ifdef PLATFORM_3DS
+    sCtrMessageUp = TRUE;
+    sCtrMessageSrc = text;
+    CtrParty_CopyText(sCtrMessage, text, sizeof(sCtrMessage));
+#endif
     DrawStdFrameWithCustomTileAndPalette(WIN_MSG, FALSE, 0x4F, 13);
     gTextFlags.canABSpeedUpPrint = TRUE;
     AddTextPrinterParameterized2(WIN_MSG, FONT_NORMAL, text, GetPlayerTextSpeedDelay(), 0, TEXT_COLOR_DARK_GRAY, TEXT_COLOR_WHITE, TEXT_COLOR_LIGHT_GRAY);
@@ -2908,6 +3154,15 @@ static void Task_HandleSelectionMenuInput(u8 taskId)
         s16 *data = gTasks[taskId].data;
 
 #ifdef PLATFORM_3DS
+        // Left for another screen from the dock with a mon's menu up: the
+        // party menu closes from here (its windows go with it), not back to
+        // the list first.
+        if (sCtrCloseAsked && sCtrLeaving)
+        {
+            sCtrCloseAsked = FALSE;
+            Task_ClosePartyMenu(taskId);
+            return;
+        }
         input = CtrParty_MenuTouch();
         if (input == MENU_NOTHING_CHOSEN)
 #endif
@@ -3919,7 +4174,13 @@ static void CursorCb_FieldMove(u8 taskId)
                 sPartyMenuInternal->data[0] = fieldMove;
                 break;
             case FIELD_MOVE_FLY:
+#ifdef PLATFORM_3DS
+                // the bottom screen's map is the Fly map (3ds_bottom_ui.c)
+                CtrBottom_OpenFlyMap(gPartyMenu.slotId, FALSE);
+                gPartyMenu.exitCallback = CB2_ReturnToField;
+#else
                 gPartyMenu.exitCallback = CB2_OpenFlyMap;
+#endif
                 Task_ClosePartyMenu(taskId);
                 break;
             default:
@@ -6609,3 +6870,18 @@ void IsLastMonThatKnowsSurf(void)
             gSpecialVar_Result = TRUE;
     }
 }
+
+#ifdef PORT_BRIDGE
+/*
+ * FLY picked on the bottom screen's map (3ds_bottom_ui.c), with nothing under
+ * way on the field: the destination CB_ExitFlyMap sets, then the flight as
+ * FieldCallback_UseFly starts it - from the field as it is, nothing to fade
+ * back in from. The player is held from here on.
+ */
+void CtrParty_Fly(u8 slot, u16 mapSecId, u8 posWithinMapSec)
+{
+    gPartyMenu.slotId = slot;
+    CtrRegionMap_SetFlyDestination(mapSecId, posWithinMapSec);
+    CtrFly_Start();
+}
+#endif

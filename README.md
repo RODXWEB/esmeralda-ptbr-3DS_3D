@@ -1,43 +1,36 @@
-# Pokémon Esmeralda (PT-BR) — Emerald3DS
+# Pokémon Esmeralda PT-BR — Emerald3DS
 
-Tradução em Português do Brasil do Pokémon Esmeralda aplicada ao port nativo
-para Nintendo 3DS **[Emerald 3DS / Pokémon Emerald 3Ds Dual Screen](https://github.com/ZallaxDev/emerald-3ds)** (v0.4.0):
-tela dupla, interface de toque na tela de baixo e mundo voxel 3D opcional.
+Tradução em Português do Brasil **completa** aplicada ao port nativo para
+Nintendo 3DS **[Emerald 3DS / Pokémon Emerald 3Ds Dual Screen](https://github.com/ZallaxDev/emerald-3ds)**
+(tela dupla, interface de toque na tela de baixo e mundo voxel 3D opcional).
 
-Este repositório é a árvore completa já mesclada: decomplicação do jogo +
-port 3DS + tradução. Não contém ROM nem save.
+Esta árvore já está localizada para PT-BR e pronta para compilar. Não contém
+ROM nem save.
 
-## Origem do código
+## Origem
 
 | Parte | Origem |
 | :--- | :--- |
 | Motor (decomp) | [pret/pokeemerald](https://github.com/pret/pokeemerald) no commit `76463dac` |
-| Port 3DS | [ZallaxDev/emerald-3ds](https://github.com/ZallaxDev/emerald-3ds) v0.4.0 (`patches/pokeemerald/0001`–`0056`) |
-| Tradução | [lucmsilva651/esmeralda-ptbr](https://github.com/lucmsilva651/esmeralda-ptbr) no commit `16899178` |
+| Port 3DS | [ZallaxDev/emerald-3ds](https://github.com/ZallaxDev/emerald-3ds), branch `dev` (sync de 2026-10-29) |
+| Tradução | Carlos Mozart (AllGenWiki), ~14.300 textos, aplicada com `--port-lang pt_br` |
 
-O merge que juntou os dois está no commit `389957db`.
+A tradução inclui diálogos de todos os mapas, treinadores, batalhas, menus,
+POKéDEX, PC, lojas, POKéNAV, concursos, Fronteira de Batalha, FALA FÁCIL e a
+interface da tela de baixo (MAPA, OPÇÕES, MELHORIAS, TRAPAÇAS).
 
-## O que foi alterado
+## Onde ficam os textos
 
-- **Textos do jogo em PT-BR** vindos da tradução do lucmsilva: diálogos de
-  mapas (`data/maps/*/scripts.inc`), textos gerais (`data/text/`,
-  `data/scripts/`, `data/event_scripts.s`), menus e mensagens do motor
-  (`src/strings.c`), FALA FÁCIL/ritmo (`src/data/easy_chat`,
-  `src/data/bard_music`) e a arte do título
-  (`graphics/title_screen/emerald_version.png`).
-- **Conflito resolvido** apenas em `src/strings.c`: foram mantidas as strings
-  PT-BR; as condicionais do port para o espanhol continuam existindo para as
-  outras variantes.
-- **`charmap.txt`**: a tradução renomeia o marcador do jogador para
-  `{JOGADOR}`. Foi adicionado `PLAYER` como alias (`FD 01`) para que os textos
-  que o port adiciona (que ainda usam `{PLAYER}`) continuem compilando.
-- **Nada do port foi removido**: `3ds_port/`, `builder/` e `tools/` estão
-  incluídos como no upstream.
-
-Observações da tradução original: caracteres com `~` (Ã, Õ etc.) aparecem como
-trema `¨`, e a cobertura é a do repositório de origem (parte dos textos pode
-continuar em inglês). A interface do port na tela de baixo permanece em inglês
-nesta versão (v0.4.0).
+- `tools/locales/pt_br/` — catálogos por arquivo de origem
+  (`data/text/*.inc.txt`, `data/maps/**/scripts.inc.txt`,
+  `data/scripts/*`, `data/event_scripts.s.txt`, `src/strings.c.txt`,
+  `src/data/...`). Cada entrada é `[label] <hash>` + texto.
+- `tools/localize_portuguese.py` aplica os catálogos na árvore.
+- Interface do port: `3ds_port/src/3ds_bottom_ui.c` via
+  `CTR_TEXT(...)`/`CTR_TEXT_PT(...)` de `3ds_port/include/3ds_locale.h`.
+- Gráficos com palavras: `3ds_port/src/3ds_icons_ptbr.c`.
+- Patches de suporte: `patches/pokeemerald/0057`–`0065` (til, ordem nas
+  batalhas, nomes de tipo etc.).
 
 ## Instalar no 3DS
 
@@ -54,20 +47,18 @@ Requisitos: 3DS/2DS com CFW (Luma3DS) e Homebrew Launcher.
 2. Garanta `SD:/3ds/dspfirm.cdc` (sem ele o jogo fica sem som).
 3. Abra o Homebrew Launcher e inicie **Emerald 3DS**.
 
-O save fica em `SD:/3ds/emerald3ds/emerald3ds.sav` e não é alterado por
-atualizações do executável/PAK (use sempre o `.3dsx` e o `.pak` do mesmo
-build).
+Save: `SD:/3ds/emerald3ds/emerald3ds.sav` (compatível entre versões).
 
-Para um ícone na tela inicial, instale o forwarder `Emerald3DS-Forwarder.cia`
-com o FBI; ele abre `SD:/3ds/emerald3ds/Emerald3DS.3dsx`.
+Para um ícone na tela inicial, instale `Emerald3DS-Forwarder.cia` com o FBI;
+ele abre `SD:/3ds/emerald3ds/Emerald3DS.3dsx`.
 
 ## Compilar
 
 Requisitos:
 
 - devkitPro com devkitARM, libctru, citro2d, citro3d e 3dstools
-  (`pacman -S --needed libctru citro2d citro3d 3dstools`), incluindo `picasso`
-- compilador C/C++ nativo no host (`gcc`/`g++`)
+  (`pacman -S --needed libctru citro2d citro3d 3dstools`)
+- compilador C/C++ no host (`gcc`/`g++`)
 - Python 3.11+ com Pillow
 - `libpng-dev` e `zlib1g-dev`
 
@@ -76,13 +67,13 @@ Na raiz desta árvore:
 ```sh
 make tools
 make generated
-make -C 3ds_port -j8
+make -C 3ds_port -j8 PORT_LANG=pt_br
 ```
 
-Para gerar o executável de release (sem dados embutidos) e o PAK:
+Release (executável sem dados embutidos + PAK):
 
 ```sh
-make -C 3ds_port release pak -j8
+make -C 3ds_port release pak -j8 PORT_LANG=pt_br
 ```
 
 Saídas:
@@ -93,23 +84,24 @@ Saídas:
 3ds_port/build/emerald3ds.pak
 ```
 
-Exemplo com container (devkitPro + Pillow + libpng), sem instalar nada no host:
+Sempre distribua o `.3dsx` e o `.pak` do mesmo build.
 
-```sh
-podman run --rm -v "$PWD:/work:Z" -w /work e3ds-build bash -lc '
-  export DEVKITPRO=/opt/devkitpro
-  export PATH="/opt/devkitpro/tools/bin:$PATH"
-  make tools CC=gcc CXX=g++ AR=ar
-  make generated CC=gcc CXX=g++ AR=ar
-  make -C 3ds_port release pak -j8 PYTHON=python3'
-```
+## Correções presentes nesta versão
+
+- POKéDEX: a tela de registro de um POKéMON novo é composta como tela GBA
+  centralizada (VBlank próprio), sem cortar a descrição
+  (`src/pokedex.c`).
+- Golpes de campo em tela toda (SURF, CUT, FLY): o banner é desenhado na
+  largura toda de 400 px (`src/field_effect.c`,
+  `CtrVideo_SetFieldBanner`).
+- Cura no CENTRO POKéMON: os sprites da máquina seguem o mapa/câmera
+  (`3ds_port/src/3ds_video.c`, `PlaceScreenObject`).
 
 ## Créditos e aviso legal
 
-- Tradução PT-BR: Lucas Gabriel ([lucmsilva651](https://github.com/lucmsilva651)), 2024.
-- Port 3DS: [ZallaxDev](https://github.com/ZallaxDev/emerald-3ds).
+- Tradução PT-BR: Carlos Mozart (AllGenWiki).
+- Port 3DS: Daniel Cazalla / [ZallaxDev](https://github.com/ZallaxDev/emerald-3ds).
 - Decomplicação: [pret](https://github.com/pret/pokeemerald).
 
 Projeto de fãs, sem vínculo com Nintendo, Game Freak, Creatures ou The Pokémon
-Company. Use uma cópia legítima da sua própria ROM. Representantes das
-detentoras dos direitos: leiam [LEGAL.md](LEGAL.md).
+Company. Use uma cópia legítima da sua própria ROM.

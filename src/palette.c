@@ -76,6 +76,17 @@ EWRAM_DATA struct PaletteFadeControl gPaletteFade = {0};
 static EWRAM_DATA u32 sFiller = 0;
 static EWRAM_DATA u32 sPlttBufferTransferPending = 0;
 EWRAM_DATA u8 ALIGNED(2) gPaletteDecompressionBuffer[PLTT_BUFFER_ALLOC_BYTES] = {0};
+#ifdef PORT_BRIDGE
+// Port: inside BeginNormalPaletteFade's own first step, which the port's
+// hold never delays: that step blends the start of the fade, which goes to
+// PLTT at once.
+static bool8 sPortFadeStarting = FALSE;
+
+bool8 __attribute__((weak)) Port_HoldPaletteFade(void)
+{
+    return FALSE;
+}
+#endif
 
 static const struct PaletteStructTemplate sDummyPaletteStructTemplate = {
     .id = 0xFFFF,
@@ -321,7 +332,13 @@ bool8 BeginNormalPaletteFade(u32 selectedPalettes, s8 delay, u8 startY, u8 targe
         else
             gPaletteFade.yDec = 1;
 
+#ifdef PORT_BRIDGE
+        sPortFadeStarting = TRUE;
         UpdatePaletteFade();
+        sPortFadeStarting = FALSE;
+#else
+        UpdatePaletteFade();
+#endif
 
         temp = gPaletteFade.bufferTransferDisabled;
         gPaletteFade.bufferTransferDisabled = FALSE;
@@ -557,6 +574,13 @@ static u8 UpdateNormalPaletteFade(void)
     {
         if (!gPaletteFade.objPaletteToggle)
         {
+#ifdef PORT_BRIDGE
+            // Port: held as a delay frame, between two whole steps (BG and
+            // OBJ blended alike). Under PORT_BRIDGE UpdatePaletteFade does
+            // not wait for the last step's transfer, so this is the gate.
+            if (!sPortFadeStarting && Port_HoldPaletteFade())
+                return PALETTE_FADE_STATUS_DELAY;
+#endif
             if (gPaletteFade.delayCounter < gPaletteFade_delay)
             {
                 gPaletteFade.delayCounter++;

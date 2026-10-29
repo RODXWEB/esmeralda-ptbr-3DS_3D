@@ -1234,7 +1234,11 @@ void Task_WaitForLinkPlayerConnection(u8 taskId)
     struct Task *task = &gTasks[taskId];
 
     task->tTimer++;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    if (task->tTimer > 480)
+#else
     if (task->tTimer > 300)
+#endif
     {
         CloseLink();
         SetMainCallback2(CB2_LinkError);

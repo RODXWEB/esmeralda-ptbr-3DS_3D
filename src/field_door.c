@@ -370,45 +370,70 @@ static void DrawClosedDoorTiles(const struct DoorGraphics *gfx, u32 x, u32 y)
 }
 
 #ifdef PORT_BRIDGE
-// The door standing open, for the voxel view (voxel_entities.c): the frames
-// below are drawn on the tilemap, which that view does not show.
+// The door's frame, for the voxel view (voxel_entities.c): the frames below
+// are drawn on the tilemap, which that view does not show.
 static struct
 {
+    const struct DoorGraphics *gfx;
+    u16 offset;             // the frame's, 0xFFFF for the door shut
     s16 x, y;
-    u8 width, level;
+    s16 twinX, twinY;       // the multi corridor's second door
+    bool8 twin;
     s8 mapGroup, mapNum;
 } sPortDoor;
 
-// Its cell (map grid), its width in cells and how far open, 1 to 3.
-bool8 PortDoor_Get(s16 *x, s16 *y, u8 *width, u8 *level)
+// Its cell (map grid), its width in cells, and the frame it shows: 8 tiles
+// a column of the door (4bpp, the top metatile's TL TR BL BR, then the
+// bottom one's), as DrawCurrentDoorAnimFrame lays them, and the palette of
+// each of a column's 8.
+bool8 PortDoor_Get(s16 *x, s16 *y, u8 *width, const u8 **tiles, const u8 **palettes)
 {
-    if (sPortDoor.level == 0
+    if (sPortDoor.gfx == NULL || sPortDoor.offset == 0xFFFF
      || sPortDoor.mapGroup != gSaveBlock1Ptr->location.mapGroup
      || sPortDoor.mapNum != gSaveBlock1Ptr->location.mapNum)
         return FALSE;
     *x = sPortDoor.x;
     *y = sPortDoor.y;
-    *width = sPortDoor.width;
-    *level = sPortDoor.level;
+    *width = sPortDoor.gfx->size == 2 ? 2 : 1;
+    *tiles = Port_ResolveAssetPointer(sPortDoor.gfx->tiles);
+    if (*tiles == NULL)
+        return FALSE;
+    *tiles += sPortDoor.offset;
+    *palettes = sPortDoor.gfx->palettes;
     return TRUE;
 }
 
-// For now only a sliding door (a Pokemon Center's, a Mart's, a gym's) is
-// shown open: the view draws an opening, not a swinging door's own frames.
-static bool8 PortDoor_Sliding(const struct DoorGraphics *gfx)
+// The same frame drawn on a second door (ShouldUseMultiCorridorDoor).
+bool8 PortDoor_GetTwin(s16 *x, s16 *y)
 {
-    return gfx->sound == DOOR_SOUND_SLIDING || gfx->metatileNum == METATILE_PetalburgGym_Door;
+    s16 ox, oy;
+    u8 width;
+    const u8 *tiles, *palettes;
+
+    if (!sPortDoor.twin || !PortDoor_Get(&ox, &oy, &width, &tiles, &palettes))
+        return FALSE;
+    *x = sPortDoor.twinX;
+    *y = sPortDoor.twinY;
+    return TRUE;
+}
+
+// The whole map view drawn again (field_camera.c) draws every door shut.
+void PortDoor_Forget(void)
+{
+    sPortDoor.gfx = NULL;
 }
 #endif
 
 static void DrawDoor(const struct DoorGraphics *gfx, const struct DoorAnimFrame *frame, u32 x, u32 y)
 {
 #ifdef PORT_BRIDGE
+    sPortDoor.gfx = gfx;
+    sPortDoor.offset = frame->offset;
     sPortDoor.x = x;
     sPortDoor.y = y;
-    sPortDoor.width = gfx->size == 2 ? 2 : 1;
-    sPortDoor.level = frame->offset == 0xFFFF || !PortDoor_Sliding(gfx) ? 0
-                    : frame->offset / (gfx->size == 2 ? 0x200 : 0x100) + 1;
+    sPortDoor.twin = ShouldUseMultiCorridorDoor();
+    sPortDoor.twinX = gSpecialVar_0x8004 + MAP_OFFSET;
+    sPortDoor.twinY = gSpecialVar_0x8005 + MAP_OFFSET;
     sPortDoor.mapGroup = gSaveBlock1Ptr->location.mapGroup;
     sPortDoor.mapNum = gSaveBlock1Ptr->location.mapNum;
 #endif

@@ -19,6 +19,21 @@
 #include "constants/region_map_sections.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
+#ifdef PLATFORM_3DS
+#include "3ds_game_views.h"
+// The Pokédex drawn by the bottom screen: its fades in one frame (pokedex.c).
+bool8 CtrDex_FadeInstant(void);
+static bool8 CtrArea_BeginFade(u32 palettes, s8 delay, u8 startY, u8 targetY, u16 colour)
+{
+    if (CtrDex_FadeInstant())
+    {
+        delay = 0;
+        startY = targetY;
+    }
+    return BeginNormalPaletteFade(palettes, delay, startY, targetY, colour);
+}
+#define BeginNormalPaletteFade CtrArea_BeginFade
+#endif
 
 // There are two types of indicators for the area screen to show where a Pokémon can occur:
 // - Area glows, which highlight any of the maps in MAP_GROUP_TOWNS_AND_ROUTES that have the species.
@@ -89,6 +104,11 @@ struct
     /*0xF70*/ u8 charBuffer[64];
     /*0xFB0*/ struct Sprite *areaUnknownSprites[3];
     /*0xFBC*/ u8 areaUnknownGraphicsBuffer[0x600];
+#ifdef PLATFORM_3DS
+    // The bottom screen's cells where the mon lives, found once.
+    bool8 ctrAreaRowsFound;
+    u32 ctrAreaRows[CTR_DEX_AREA_ROWS];
+#endif
 } static EWRAM_DATA *sPokedexAreaScreen = NULL;
 
 static void FindMapsWithMon(u16);
@@ -808,3 +828,41 @@ static void CreateAreaUnknownSprites(void)
         }
     }
 }
+
+#ifdef PLATFORM_3DS
+// The bottom screen's own view of the area page (3ds_game_views.h): the
+// region map's cells where the mon lives, as BuildAreaGlowTilemap finds
+// them, and the places marked, as CreateAreaMarkerSprites puts them. FALSE
+// while the page comes in or goes out.
+bool8 CtrPokedexArea_GetView(struct CtrDexView *view)
+{
+    u16 i, x, y;
+
+    if (sPokedexAreaScreen == NULL || !FuncIsActiveTask(Task_HandlePokedexAreaScreenInput))
+        return FALSE;
+    if (!sPokedexAreaScreen->ctrAreaRowsFound)
+    {
+        for (i = 0; i < sPokedexAreaScreen->numOverworldAreas; i++)
+            for (y = 0; y < AREA_SCREEN_HEIGHT && y < CTR_DEX_AREA_ROWS; y++)
+                for (x = 0; x < AREA_SCREEN_WIDTH; x++)
+                    if (GetRegionMapSecIdAt(x, y) == sPokedexAreaScreen->overworldAreasWithMons[i].regionMapSectionId)
+                        sPokedexAreaScreen->ctrAreaRows[y] |= 1u << x;
+        sPokedexAreaScreen->ctrAreaRowsFound = TRUE;
+    }
+    memcpy(view->areaRows, sPokedexAreaScreen->ctrAreaRows, sizeof(view->areaRows));
+    for (i = 0; i < sPokedexAreaScreen->numSpecialAreas && view->marks < CTR_DEX_AREA_MARKS; i++)
+    {
+        u16 mapSecId = sPokedexAreaScreen->specialAreaRegionMapSectionIds[i];
+
+        if (mapSecId >= MAPSEC_NONE)
+            continue;
+        // The middle of its place on the map, in cells (MAPCURSOR_X_MIN 1,
+        // MAPCURSOR_Y_MIN 2 as region_map.c counts them).
+        view->markX[view->marks] = gRegionMapEntries[mapSecId].x + 1;
+        view->markY[view->marks] = gRegionMapEntries[mapSecId].y + 2;
+        view->marks++;
+    }
+    view->areaUnknown = sPokedexAreaScreen->numOverworldAreas == 0 && sPokedexAreaScreen->numSpecialAreas == 0;
+    return TRUE;
+}
+#endif

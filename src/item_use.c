@@ -814,9 +814,9 @@ static void UseFieldHmFromBag(u8 taskId)
     gPartyMenu.slotId = FieldHmUser(ItemIdToBattleMoveId(gSpecialVar_ItemId));
     if (gSpecialVar_ItemId == ITEM_HM02)
     {
-        // cancelled, the Fly map goes back to the Bag (region_map.c)
-        gFlyMapFromBag = TRUE;
-        gBagMenu->newScreenCallback = CB2_OpenFlyMap;
+        // the bottom screen's map is the Fly map (3ds_bottom_ui.c)
+        CtrBottom_OpenFlyMap(gPartyMenu.slotId, TRUE);
+        gBagMenu->newScreenCallback = CB2_ReturnToField;
         Task_FadeAndCloseBagMenu(taskId);
     }
     else if (SetUpFieldMove_Flash())
@@ -847,6 +847,8 @@ static const u8 sText_UseFieldHmNow[] = _("¿Usar {STR_VAR_1} ahora?");
 static const u8 sText_UseFieldHmNow[] = _("Utiliser {STR_VAR_1} maintenant?");
 #elif GAME_LANGUAGE == LANGUAGE_ITALIAN
 static const u8 sText_UseFieldHmNow[] = _("Usare {STR_VAR_1} ora?");
+#elif GAME_LANGUAGE == LANGUAGE_GERMAN
+static const u8 sText_UseFieldHmNow[] = _("{STR_VAR_1} jetzt einsetzen?");
 #else
 static const u8 sText_UseFieldHmNow[] = _("Use {STR_VAR_1} now?");
 #endif
@@ -974,6 +976,8 @@ const u8 gText_UseAnotherRepel[] = _("¿Usar otro {STR_VAR_1}?");
 const u8 gText_UseAnotherRepel[] = _("Utiliser un autre {STR_VAR_1}?");
 #elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
 const u8 gText_UseAnotherRepel[] = _("Usare un altro {STR_VAR_1}?");
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+const u8 gText_UseAnotherRepel[] = _("Noch einen {STR_VAR_1} benutzen?");
 #else
 const u8 gText_UseAnotherRepel[] = _("Use another {STR_VAR_1}?");
 #endif

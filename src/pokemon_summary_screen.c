@@ -5,6 +5,9 @@
 #include "main.h"
 #include "battle.h"
 #include "battle_anim.h"
+#ifdef PLATFORM_3DS
+#include "3ds_game_views.h"
+#endif
 #include "frontier_util.h"
 #include "battle_message.h"
 #include "battle_tent.h"
@@ -660,10 +663,18 @@ static const struct WindowTemplate sPageInfoTemplate[] =
         .bg = 0,
         .tilemapLeft = 11,
         .tilemapTop = 14,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .width = 19,
+#else
         .width = 18,
+#endif
         .height = 6,
         .paletteNum = 6,
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        .baseBlock = 561,
+#else
         .baseBlock = 557,
+#endif
     },
 };
 static const struct WindowTemplate sPageSkillsTemplate[] =
@@ -793,6 +804,9 @@ static const u8 sStatsLeftColumnLayoutIvEv[] = _("{DYNAMIC 0}\n{DYNAMIC 2}\n{DYN
 #if GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN
 static const u8 sText_SkillsIVs[] = _("IV  (0-31)");
 static const u8 sText_SkillsEVs[] = _("EV  (0-255)");
+#elif GAME_LANGUAGE == LANGUAGE_GERMAN
+static const u8 sText_SkillsIVs[] = _("IS  (0-31)");
+static const u8 sText_SkillsEVs[] = _("FP  (0-255)");
 #else
 static const u8 sText_SkillsIVs[] = _("IVs  (0-31)");
 static const u8 sText_SkillsEVs[] = _("EVs  (0-255)");
@@ -1149,6 +1163,18 @@ static const struct SpriteTemplate sSpriteTemplate_StatusCondition =
 static const u16 sMarkings_Pal[] = INCBIN_U16("graphics/summary_screen/markings.gbapal");
 
 // code
+#ifdef PLATFORM_3DS
+// The dock chose another screen: closing goes there (CloseSummaryScreen).
+static bool8 sCtrLeave;
+// A tab's page reached in one slide (CtrSummary_ChangePageTo).
+static bool8 sCtrPageJumped;
+static void CtrSummary_ChangePageTo(u8 taskId, s8 target);
+MainCallback CtrBottom_LeaveTo(MainCallback field);
+bool8 CtrBottom_LeavePending(void);
+bool8 CtrSummary_InWindow(void);
+void CB2_ReturnToFieldWithOpenMenu(void);
+#endif
+
 void ShowPokemonSummaryScreen(u8 mode, void *mons, u8 monIndex, u8 maxMonIndex, void (*callback)(void))
 {
     sMonSummaryScreen = AllocZeroed(sizeof(*sMonSummaryScreen));
@@ -1157,6 +1183,10 @@ void ShowPokemonSummaryScreen(u8 mode, void *mons, u8 monIndex, u8 maxMonIndex, 
     sMonSummaryScreen->curMonIndex = monIndex;
     sMonSummaryScreen->maxMonIndex = maxMonIndex;
     sMonSummaryScreen->callback = callback;
+#ifdef PLATFORM_3DS
+    sCtrLeave = FALSE;
+    sCtrPageJumped = FALSE;
+#endif
 
     if (mode == SUMMARY_MODE_BOX)
         sMonSummaryScreen->isBoxMon = TRUE;
@@ -1224,8 +1254,11 @@ static const u8 sText_Category[] = _("CATÉG.");
 #elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
 // Shortened the same way: CATEGORIA is wider than the label column.
 static const u8 sText_Category[] = _("CATEG.");
+#elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+// Shortened the same way: KATEGORIE is wider than the label column.
+static const u8 sText_Category[] = _("KATEG.");
 #else
-static const u8 sText_Category[] = _("CATEGORY");
+static const u8 sText_Category[] = _("CATEG.");
 #endif
 // The icon's left edge in the window, in the middle of the value column.
 #define CATEGORY_ICON_X 43
@@ -1438,7 +1471,8 @@ static void MainCB2(void)
 {
     RunTasks();
 #ifdef PLATFORM_3DS
-    if (sShowCategory)
+    // The tasks just run may have closed the summary (FreeSummaryScreen).
+    if (sShowCategory && sMonSummaryScreen != NULL)
     {
         UpdateNicknameUnderEffectWindow();
         UpdateEffectTopRowsOnContestPage();
@@ -1807,6 +1841,10 @@ static void FreeSummaryScreen(void)
 {
     FreeAllWindowBuffers();
     Free(sMonSummaryScreen);
+#ifdef PLATFORM_3DS
+    // The bottom screen asks for the summary every frame (CtrSummary_InWindow).
+    sMonSummaryScreen = NULL;
+#endif
 }
 
 static void BeginCloseSummaryScreen(u8 taskId)
@@ -1819,6 +1857,21 @@ static void CloseSummaryScreen(u8 taskId)
 {
     if (MenuHelpers_ShouldWaitForLinkRecv() != TRUE && !gPaletteFade.active)
     {
+#ifdef PLATFORM_3DS
+        // Left for another screen from the bottom screen's dock: not back to
+        // the party menu, which has freed all it had, but where it would go
+        // as it closes - the screen chosen, or the field (CtrBottom_LeaveTo).
+        // Its cursor stays on the mon, as on the way back.
+        // A leave the bottom screen has dropped by now (its tap not taken
+        // at once) is not one: back to the party menu, as B.
+        if (sCtrLeave && CtrBottom_LeavePending() && CtrSummary_InWindow()
+         && gPartyMenu.exitCallback == CB2_ReturnToFieldWithOpenMenu)
+        {
+            gPartyMenu.slotId = sMonSummaryScreen->curMonIndex;
+            SetMainCallback2(CtrBottom_LeaveTo(gPartyMenu.exitCallback));
+        }
+        else
+#endif
         SetMainCallback2(sMonSummaryScreen->callback);
         gLastViewedMonIndex = sMonSummaryScreen->curMonIndex;
         SummaryScreen_DestroyAnimDelayTask();
@@ -1851,6 +1904,8 @@ void CtrSummary_Tap(s16 x, s16 y)
     sCtrTap.y = y;
     sCtrTap.frame = gMain.vblankCounter1;
 }
+
+static bool8 CtrSummary_TurnToTarget(u8 taskId);
 
 // The tap waiting, if it is still fresh and on the picture.
 static bool8 CtrSummary_TakeTap(s16 *x, s16 *y)
@@ -1941,7 +1996,7 @@ static u8 CtrSummary_ReplaceTouch(u8 taskId, s16 *data)
     s8 row;
 
     if (!CtrSummary_TakeTap(&x, &y))
-        return CTR_TOUCH_NONE;
+        return CtrSummary_TurnToTarget(taskId) ? CTR_TOUCH_HANDLED : CTR_TOUCH_NONE;
     if (CtrSummary_OnCancel(x, y))
         return CTR_TOUCH_B;
     if (CtrSummary_PageTouch(taskId, x, y))
@@ -1964,6 +2019,227 @@ static bool8 CtrSummary_AnyTap(void)
 
     return CtrSummary_TakeTap(&x, &y);
 }
+
+// The bottom screen's own view of the summary (3ds_game_views.h): the memo
+// as the INFO page printed it (for the mon it was printed for), an egg's
+// state, the page a tab asked for.
+static u8 sCtrMemo[CTR_VIEW_TEXT];
+static u32 sCtrMemoPid;
+static const u8 *sCtrEggState;
+static s8 sCtrPageTarget = -1;
+// A move tapped on a moves page: its selection opens on it (index + 1).
+static u8 sCtrOpenMove;
+
+static void CtrSummary_KeepMemo(const u8 *text)
+{
+    u16 i;
+
+    for (i = 0; i < CTR_VIEW_TEXT - 1 && text[i] != EOS; i++)
+        sCtrMemo[i] = text[i];
+    sCtrMemo[i] = EOS;
+    sCtrMemoPid = sMonSummaryScreen->summary.pid;
+}
+
+// A tab asked for another page: straight to it (CtrSummary_ChangePageTo).
+// FALSE when there is none to turn.
+static bool8 CtrSummary_TurnToTarget(u8 taskId)
+{
+    s8 target = sCtrPageTarget;
+
+    if (target < 0)
+        return FALSE;
+    // An egg's page never turns (ChangePage), so neither does a tab's.
+    if (sMonSummaryScreen->summary.isEgg
+     || target == sMonSummaryScreen->currPageIndex || target < sMonSummaryScreen->minPageIndex
+     || target > sMonSummaryScreen->maxPageIndex)
+    {
+        sCtrPageTarget = -1;
+        return FALSE;
+    }
+    CtrSummary_ChangePageTo(taskId, target);
+    return TRUE;
+}
+
+// The mon's sprite as the GBA shows it this frame: the tiles in its OBJ
+// VRAM (the frame its animation is on, Spinda's spots), its colours, its
+// offset and its matrix while it is scaled or turned. Copied, so a view
+// kept after the summary has gone still has them.
+static void CtrSummary_ViewPic(struct CtrSummaryView *view)
+{
+    static u8 sTiles[MON_PIC_SIZE] __attribute__((aligned(4)));
+    static u16 sPal[16];
+    u8 spriteId = sMonSummaryScreen->spriteIds[SPRITE_ARR_ID_MON];
+    const struct Sprite *sprite;
+    u32 sum = 0;
+    u16 i;
+
+    // Changing mon: the new one's frame goes to VRAM in a VBlank after its
+    // sprite is made, the old one's still there until then; its still
+    // picture in the meantime.
+    if (FuncIsActiveTask(Task_ChangeSummaryMon))
+        return;
+    if (spriteId == SPRITE_NONE || spriteId >= MAX_SPRITES)
+        return;
+    sprite = &gSprites[spriteId];
+    if (!sprite->inUse || sprite->oam.shape != SPRITE_SHAPE(64x64) || sprite->oam.size != SPRITE_SIZE(64x64))
+        return;
+    memcpy(sTiles, (const u8 *)(OBJ_VRAM0 + sprite->oam.tileNum * TILE_SIZE_4BPP), sizeof(sTiles));
+    memcpy(sPal, &gPlttBufferUnfaded[OBJ_PLTT_ID(sprite->oam.paletteNum)], sizeof(sPal));
+    for (i = 0; i < sizeof(sTiles) / 4; i++)
+        sum = sum * 31 + ((const u32 *)sTiles)[i];
+    for (i = 0; i < 16; i++)
+        sum = sum * 31 + sPal[i];
+    view->picTiles = sTiles;
+    view->picPal = sPal;
+    view->picSum = sum;
+    view->picX = sprite->x2;
+    view->picY = sprite->y2;
+    view->picHFlip = sprite->oam.matrixNum >> 3 & 1;
+    view->picAffine = sprite->oam.affineMode;
+    if (sprite->oam.affineMode & ST_OAM_AFFINE_ON_MASK)
+    {
+        view->picHFlip = FALSE;
+        view->picMatrix[0] = gOamMatrices[sprite->oam.matrixNum].a;
+        view->picMatrix[1] = gOamMatrices[sprite->oam.matrixNum].b;
+        view->picMatrix[2] = gOamMatrices[sprite->oam.matrixNum].c;
+        view->picMatrix[3] = gOamMatrices[sprite->oam.matrixNum].d;
+    }
+}
+
+// The summary in the bottom screen's window: the field party menu's, and a
+// battle's own (its moves locked); from the boxes it has the whole screen.
+bool8 CtrSummary_InWindow(void)
+{
+    if (sMonSummaryScreen == NULL || sMonSummaryScreen->isBoxMon || sMonSummaryScreen->monList.mons != gPlayerParty)
+        return FALSE;
+    return gMain.inBattle ? sMonSummaryScreen->mode == SUMMARY_MODE_LOCK_MOVES
+                          : gPartyMenu.menuType == PARTY_MENU_TYPE_FIELD;
+}
+
+// Where the summary is, for the bottom screen to draw it (3ds_game_views.h).
+bool8 CtrSummary_GetView(struct CtrSummaryView *view)
+{
+    struct PokeSummary *sum;
+    struct Pokemon *mon;
+    u8 i;
+
+    memset(view, 0, sizeof(*view));
+    if (sMonSummaryScreen == NULL)
+    {
+        sCtrPageTarget = -1;
+        return FALSE;
+    }
+    if (!CtrSummary_InWindow())
+        return TRUE;
+    view->state = CTR_SUM_VIEW_PAGE;
+    view->page = sMonSummaryScreen->currPageIndex;
+    view->minPage = sMonSummaryScreen->minPageIndex;
+    view->maxPage = sMonSummaryScreen->maxPageIndex;
+    if (gMain.callback2 == CB2_InitSummaryScreen && gMain.state <= 10)
+    {
+        view->loading = TRUE;
+        return TRUE;
+    }
+    sum = &sMonSummaryScreen->summary;
+    mon = &sMonSummaryScreen->currentMon;
+    view->canChangeMon = sMonSummaryScreen->maxMonIndex > 0 && sMonSummaryScreen->mode != SUMMARY_MODE_SELECT_MOVE;
+    view->firstMove = sMonSummaryScreen->firstMoveIndex;
+    view->secondMove = sMonSummaryScreen->secondMoveIndex;
+    if (FuncIsActiveTask(Task_HandleInput_MoveSelect))
+        view->movesMode = CTR_SUM_MOVES_CHOOSE;
+    else if (FuncIsActiveTask(Task_HandleInput_MovePositionSwitch))
+        view->movesMode = CTR_SUM_MOVES_SWITCH;
+    else if (FuncIsActiveTask(Task_HandleInputCantForgetHMsMoves))
+        view->movesMode = CTR_SUM_MOVES_HM;
+    else if (sMonSummaryScreen->mode == SUMMARY_MODE_SELECT_MOVE)
+        view->movesMode = CTR_SUM_MOVES_REPLACE;
+    view->isEgg = sum->isEgg;
+    view->species = sum->species;
+    view->picSpecies = sum->species2;
+    view->pid = sum->pid;
+    view->shiny = IsMonShiny(mon);
+    CtrSummary_ViewPic(view);
+    view->level = sum->level;
+    view->gender = sum->isEgg ? MON_GENDERLESS : GetMonGender(mon);
+    view->ailment = sum->ailment;
+    view->ball = GetMonData(mon, MON_DATA_POKEBALL);
+    view->item = sum->item;
+    view->dexNum = SpeciesToPokedexNum(sum->species);
+    view->otId = sum->OTID & 0xFFFF;
+    view->exp = sum->exp;
+    if (sum->level < MAX_LEVEL && !sum->isEgg)
+        view->toNextLevel = gExperienceTables[gSpeciesInfo[sum->species].growthRate][sum->level + 1] - sum->exp;
+    view->hp = sum->currentHP;
+    view->maxHp = sum->maxHP;
+    view->stats[0] = sum->atk;
+    view->stats[1] = sum->def;
+    view->stats[2] = sum->spatk;
+    view->stats[3] = sum->spdef;
+    view->stats[4] = sum->speed;
+    memcpy(view->ivs, sum->ivs, sizeof(view->ivs));
+    memcpy(view->evs, sum->evs, sizeof(view->evs));
+    view->statsMode = sMonSummaryScreen->statsMode;
+    view->ppBonuses = sum->ppBonuses;
+    for (i = 0; i < MAX_MON_MOVES; i++)
+    {
+        view->moves[i] = sum->moves[i];
+        view->pp[i] = sum->pp[i];
+    }
+    if (view->movesMode == CTR_SUM_MOVES_REPLACE || view->movesMode == CTR_SUM_MOVES_HM)
+        view->moves[MAX_MON_MOVES] = sMonSummaryScreen->newMove;
+    if (!sum->isEgg)
+    {
+        view->types[0] = gSpeciesInfo[sum->species].types[0];
+        view->types[1] = gSpeciesInfo[sum->species].types[1];
+        i = GetAbilityBySpecies(sum->species, sum->abilityNum);
+        view->abilityName = gAbilityNames[i];
+        view->abilityDesc = gAbilityDescriptionPointers[i];
+    }
+    else
+    {
+        view->types[0] = view->types[1] = TYPE_MYSTERY;
+        view->abilityDesc = sCtrEggState;
+    }
+    GetMonData(mon, MON_DATA_NICKNAME, view->nick);
+    StringGet_Nickname(view->nick);
+    for (i = 0; i < ARRAY_COUNT(view->ot) - 1 && sum->OTName[i] != EOS; i++)
+        view->ot[i] = sum->OTName[i];
+    view->ot[i] = EOS;
+    if (sCtrMemoPid == sum->pid)
+        memcpy(view->memo, sCtrMemo, sizeof(view->memo));
+    return TRUE;
+}
+
+// A tap on the bottom screen's view, as the tap on the game's own picture
+// that does it (or, for a tab, the pages turned towards it).
+void CtrSummary_NativeTap(u8 kind, u8 index)
+{
+    switch (kind)
+    {
+    case CTR_SUM_TAP_PAGE:
+        sCtrPageTarget = index;
+        break;
+    case CTR_SUM_TAP_MON:
+        CtrSummary_Tap(40, index ? 120 : 40);
+        break;
+    case CTR_SUM_TAP_MOVE:
+        if (FuncIsActiveTask(Task_HandleInput))
+            sCtrOpenMove = index + 1;
+        else
+            CtrSummary_Tap(CTR_MOVE_LEFT + 8, CTR_MOVE_TOP + index * CTR_MOVE_ROW + CTR_MOVE_ROW / 2);
+        break;
+    case CTR_SUM_TAP_BACK:
+        CtrSummary_Tap(200, 8);
+        break;
+    case CTR_SUM_TAP_LEAVE:
+        sCtrLeave = TRUE;
+        CtrSummary_Tap(200, 8);
+        break;
+    case CTR_SUM_TAP_STATS:
+        CtrSummary_Tap(120, 80);
+        break;
+    }
+}
 #define CTR_ANY_TAP() CtrSummary_AnyTap()
 #else
 #define CTR_ANY_TAP() FALSE
@@ -1974,8 +2250,25 @@ static bool8 CtrSummary_TouchInput(u8 taskId)
 {
     s16 x, y;
 
+    if (sCtrOpenMove)
+    {
+        u8 move = sCtrOpenMove - 1;
+
+        sCtrOpenMove = 0;
+        if ((sMonSummaryScreen->currPageIndex == PSS_PAGE_BATTLE_MOVES
+             || sMonSummaryScreen->currPageIndex == PSS_PAGE_CONTEST_MOVES)
+         && move < MAX_MON_MOVES && sMonSummaryScreen->summary.moves[move] != MOVE_NONE)
+        {
+            // Opened on it: the selector moves there as a tap on its row would.
+            PlaySE(SE_SELECT);
+            SwitchToMoveSelection(taskId);
+            if (move != 0)
+                CtrSummary_Tap(CTR_MOVE_LEFT + 8, CTR_MOVE_TOP + move * CTR_MOVE_ROW + CTR_MOVE_ROW / 2);
+            return TRUE;
+        }
+    }
     if (!CtrSummary_TakeTap(&x, &y))
-        return FALSE;
+        return CtrSummary_TurnToTarget(taskId);
 
     if (y < 16 && x >= 176)
     {
@@ -2283,6 +2576,56 @@ static void ChangePage(u8 taskId, s8 delta)
     HidePageSpecificSprites();
 }
 
+#ifdef PLATFORM_3DS
+// A tab of the bottom screen's view: its page in one slide, the pages
+// between not turned (ChangePage turns one). The layers keep what a turn of
+// one page leaves: the page on show on top at 0x10000, under it the page
+// before it (or nothing at 0, over INFO's BG3). Going left, the layer under
+// takes the target before the top slides off it; going right, the one left
+// under is set to the target's page before it at the end (PssScrollRightEnd).
+static void CtrSummary_ChangePageTo(u8 taskId, s8 target)
+{
+    s16 *data = gTasks[taskId].data;
+    s8 from = sMonSummaryScreen->currPageIndex;
+
+    if (sMonSummaryScreen->summary.isEgg || target == from
+     || target < sMonSummaryScreen->minPageIndex || target > sMonSummaryScreen->maxPageIndex)
+        return;
+    if (target == from + 1 || target == from - 1)
+    {
+        ChangePage(taskId, target - from);
+        return;
+    }
+    PlaySE(SE_SELECT);
+    ClearPageWindowTilemaps(from);
+    sMonSummaryScreen->currPageIndex = target;
+    data[0] = 0;
+    if (target > from)
+    {
+        sCtrPageJumped = TRUE;
+        SetTaskFuncWithFollowupFunc(taskId, PssScrollRight, gTasks[taskId].func);
+    }
+    else
+    {
+        u8 lower = sMonSummaryScreen->bgDisplayOrder == 0 ? 1 : 2;
+
+        if (target > 0)
+        {
+            SetBgTilemapBuffer(lower, sMonSummaryScreen->bgTilemapBuffers[target][0]);
+            ChangeBgX(lower, 0x10000, BG_COORD_SET);
+        }
+        else
+        {
+            ChangeBgX(lower, 0, BG_COORD_SET);
+        }
+        ScheduleBgCopyTilemapToVram(lower);
+        SetTaskFuncWithFollowupFunc(taskId, PssScrollLeft, gTasks[taskId].func);
+    }
+    CreateTextPrinterTask(target);
+    HidePageSpecificSprites();
+}
+#endif
+
 static void PssScrollRight(u8 taskId) // Scroll right
 {
     s16 *data = gTasks[taskId].data;
@@ -2317,6 +2660,26 @@ static void PssScrollRightEnd(u8 taskId) // display right
 {
     s16 *data = gTasks[taskId].data;
     sMonSummaryScreen->bgDisplayOrder ^= 1;
+#ifdef PLATFORM_3DS
+    if (sCtrPageJumped)
+    {
+        // Jumped over pages: the layer under the new page shows the one
+        // before it, as a turn of one page leaves it, for the next turn left.
+        u8 lower = sMonSummaryScreen->bgDisplayOrder == 0 ? 1 : 2;
+
+        sCtrPageJumped = FALSE;
+        if (sMonSummaryScreen->currPageIndex > 1)
+        {
+            SetBgTilemapBuffer(lower, sMonSummaryScreen->bgTilemapBuffers[sMonSummaryScreen->currPageIndex - 1][0]);
+            ChangeBgX(lower, 0x10000, BG_COORD_SET);
+        }
+        else
+        {
+            ChangeBgX(lower, 0, BG_COORD_SET);
+        }
+        ScheduleBgCopyTilemapToVram(lower);
+    }
+#endif
     data[1] = 0;
     data[0] = 0;
     DrawPagination();
@@ -3742,6 +4105,9 @@ static void BufferMonTrainerMemo(void)
 
 static void PrintMonTrainerMemo(void)
 {
+#ifdef PLATFORM_3DS
+    CtrSummary_KeepMemo(gStringVar4);
+#endif
     PrintTextOnWindow(AddWindowFromTemplateList(sPageInfoTemplate, PSS_DATA_WINDOW_INFO_MEMO), gStringVar4, 0, 1, 0, 0);
 }
 
@@ -3846,6 +4212,9 @@ static void PrintEggState(void)
     else
         text = gText_EggWillTakeALongTime;
 
+#ifdef PLATFORM_3DS
+    sCtrEggState = text;
+#endif
     PrintTextOnWindow(AddWindowFromTemplateList(sPageInfoTemplate, PSS_DATA_WINDOW_INFO_ABILITY), text, 0, 1, 0, 0);
 }
 
@@ -3870,6 +4239,9 @@ static void PrintEggMemo(void)
         text = gText_OddEggFoundByCouple;
     }
 
+#ifdef PLATFORM_3DS
+    CtrSummary_KeepMemo(text);
+#endif
     PrintTextOnWindow(AddWindowFromTemplateList(sPageInfoTemplate, PSS_DATA_WINDOW_INFO_MEMO), text, 0, 1, 0, 0);
 }
 
@@ -4360,7 +4732,11 @@ static void PrintNewMoveDetailsOrCancelText(void)
 static void AddAndFillMoveNamesWindow(void)
 {
     u8 windowId = AddWindowFromTemplateList(sPageMovesTemplate, PSS_DATA_WINDOW_MOVE_NAMES);
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    FillWindowPixelRect(windowId, PIXEL_FILL(0), 0, 65, 72, 15);
+#else
     FillWindowPixelRect(windowId, PIXEL_FILL(0), 0, 66, 72, 16);
+#endif
     CopyWindowToVram(windowId, COPYWIN_GFX);
 }
 

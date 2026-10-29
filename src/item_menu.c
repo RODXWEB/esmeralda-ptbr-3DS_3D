@@ -55,6 +55,8 @@
 #include "port_platform.h"
 #include "3ds_assets.h"
 #include "item_icon.h"
+#include "3ds_game_views.h"
+#include "3ds_locale.h"
 #endif
 
 #define TAG_POCKET_SCROLL_ARROW 110
@@ -148,6 +150,13 @@ static void PrintItemDescription(int);
 static void BagMenu_PrintCursorAtPos(u8, u8);
 static void BagMenu_Print(u8, u8, const u8 *, u8, u8, u8, u8, u8, u8);
 static void Task_CloseBagMenu(u8);
+#ifdef PLATFORM_3DS
+// The bottom screen's dock may have chosen another screen to open instead.
+#define CTR_LEAVE_TO(cb) CtrBottom_LeaveTo(cb)
+MainCallback CtrBottom_LeaveTo(MainCallback field);
+#else
+#define CTR_LEAVE_TO(cb) (cb)
+#endif
 static u8 AddItemMessageWindow(u8);
 static void RemoveItemMessageWindow(u8);
 static void ReturnToItemList(u8);
@@ -232,7 +241,10 @@ static bool8 CtrBag_ListTouch(u8 taskId, s32 *listPosition);
 static bool8 CtrBag_SwapTouch(u8 taskId);
 static bool8 CtrBag_ContextTouch(s8 *selection);
 static u8 CtrBag_QuantityTouch(s16 *count, u16 max, u8 windowType);
+static void CtrBag_StopTouch(void);
 static void CtrBag_Prefetch(void);
+static void CtrBag_CopyText(u8 *dst, const u8 *src);
+static u8 sCtrBagText[CTR_VIEW_TEXT], sCtrBagMsg[CTR_VIEW_TEXT];
 bool8 CtrMenu_TakeAck(void);
 #define BAG_ACK(keys) (JOY_NEW(keys) || CtrMenu_TakeAck())
 #define BAG_TOUCHED(what) (ctrTouch == CTR_QUANTITY_##what)
@@ -294,6 +306,11 @@ static const struct ListMenuTemplate sItemListMenu =
     .cursorKind = CURSOR_BLACK_ARROW
 };
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+// The German bag confirms with the short label; filled in by tools/localize_german.py.
+static const u8 gMenuText_Confirm2[] = _("");
+#endif
+
 static const struct MenuAction sItemMenuActions[] = {
     [ACTION_USE]               = {gMenuText_Use,      {ItemMenu_UseOutOfBattle}},
     [ACTION_TOSS]              = {gMenuText_Toss,     {ItemMenu_Toss}},
@@ -305,7 +322,11 @@ static const struct MenuAction sItemMenuActions[] = {
     [ACTION_WALK]              = {gMenuText_Walk,     {ItemMenu_UseOutOfBattle}},
     [ACTION_DESELECT]          = {gMenuText_Deselect, {ItemMenu_Register}},
     [ACTION_CHECK_TAG]         = {gMenuText_CheckTag, {ItemMenu_CheckTag}},
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    [ACTION_CONFIRM]           = {gMenuText_Confirm2, {Task_FadeAndCloseBagMenu}},
+#else
     [ACTION_CONFIRM]           = {gMenuText_Confirm,  {Task_FadeAndCloseBagMenu}},
+#endif
     [ACTION_SHOW]              = {gMenuText_Show,     {ItemMenu_Show}},
     [ACTION_GIVE_FAVOR_LADY]   = {gMenuText_Give2,    {ItemMenu_GiveFavorLady}},
     [ACTION_CONFIRM_QUIZ_LADY] = {gMenuText_Confirm,  {ItemMenu_ConfirmQuizLady}},
@@ -667,6 +688,9 @@ void GoToBagMenu(u8 location, u8 pocket, void ( *exitCallback)())
         gBagMenu->pocketSwitchArrowsTask = TASK_NONE;
         memset(gBagMenu->spriteIds, SPRITE_NONE, sizeof(gBagMenu->spriteIds));
         memset(gBagMenu->windowIds, WINDOW_NONE, sizeof(gBagMenu->windowIds));
+#ifdef PLATFORM_3DS
+        CtrBag_StopTouch();
+#endif
         SetMainCallback2(CB2_Bag);
     }
 }
@@ -1123,7 +1147,7 @@ static void Task_CloseBagMenu(u8 taskId)
         if (gBagMenu->newScreenCallback != NULL)
             SetMainCallback2(gBagMenu->newScreenCallback);
         else
-            SetMainCallback2(gBagPosition.exitCallback);
+            SetMainCallback2(CTR_LEAVE_TO(gBagPosition.exitCallback));
 
         BagDestroyPocketScrollArrowPair();
         ResetSpriteData();
@@ -1198,6 +1222,9 @@ void DisplayItemMessage(u8 taskId, u8 fontId, const u8 *str, void (*callback)(u8
     s16 *data = gTasks[taskId].data;
 
     tMsgWindowId = AddItemMessageWindow(ITEMWIN_MESSAGE);
+#ifdef PLATFORM_3DS
+    CtrBag_CopyText(sCtrBagMsg, str);
+#endif
     FillWindowPixelBuffer(tMsgWindowId, PIXEL_FILL(1));
     DisplayMessageAndContinueTask(taskId, tMsgWindowId, 10, 13, fontId, GetPlayerTextSpeedDelay(), str, callback);
     ScheduleBgCopyTilemapToVram(1);
@@ -1353,6 +1380,9 @@ static void SwitchBagPocket(u8 taskId, s16 deltaBagPocketId, bool16 skipEraseLis
     s16 *data = gTasks[taskId].data;
     u8 newPocket;
 
+#ifdef PLATFORM_3DS
+    CtrBag_StopTouch();
+#endif
     tPocketSwitchState = 0;
     tPocketSwitchTimer = 0;
     tPocketSwitchDir = deltaBagPocketId;
@@ -1571,6 +1601,9 @@ static void CancelItemSwap(u8 taskId)
 
 static void OpenContextMenu(u8 taskId)
 {
+#ifdef PLATFORM_3DS
+    CtrBag_StopTouch();
+#endif
     switch (gBagPosition.location)
     {
     case ITEMMENULOCATION_BATTLE:
@@ -2531,6 +2564,10 @@ static void LoadBagMenuTextWindows(void)
 
 static void BagMenu_Print(u8 windowId, u8 fontId, const u8 *str, u8 left, u8 top, u8 letterSpacing, u8 lineSpacing, u8 speed, u8 colorIndex)
 {
+#ifdef PLATFORM_3DS
+    if (windowId == WIN_DESCRIPTION)
+        CtrBag_CopyText(sCtrBagText, str);
+#endif
     AddTextPrinterParameterized4(windowId, fontId, left, top, letterSpacing, lineSpacing, sFontColorTable[colorIndex], speed, str);
 }
 
@@ -2542,6 +2579,11 @@ static u8 UNUSED BagMenu_GetWindowId(u8 windowType)
 static u8 BagMenu_AddWindow(u8 windowType)
 {
     u8 *windowId = &gBagMenu->windowIds[windowType];
+#ifdef PLATFORM_3DS
+    // How many: counted from 1, not from a touch or a button left over.
+    if (*windowId == WINDOW_NONE && (windowType == ITEMWIN_QUANTITY || windowType == ITEMWIN_QUANTITY_WIDE))
+        CtrBag_StopTouch();
+#endif
     if (*windowId == WINDOW_NONE)
     {
         *windowId = AddWindow(&sContextMenuWindowTemplates[windowType]);
@@ -2696,7 +2738,13 @@ static struct {
     s16 x0, y0, x, y;
     s16 applied; // steps of the drag already acted on
     u16 frames;  // held without moving
+    s16 lastY;   // where the finger was the frame before
+    s16 speed;   // how fast it went up, 1/16 pixel a frame (smoothed)
+    s32 fling;   // let go moving: how far the list has coasted, 1/16 pixels
+    bool8 coasting;
 } sCtrTouch;
+
+static s16 sCtrCountDelta;
 
 void CtrMenu_PostTap(s16 x, s16 y);
 bool8 CtrMenu_TakeTap(s16 *x, s16 *y);
@@ -2711,6 +2759,16 @@ bool8 CtrBag_IsOpen(void)
     return gBagMenu != NULL && gMain.callback2 == CB2_BagMenuRun;
 }
 
+// The bag in the bottom screen's window: from the field, from the field's
+// party menu (GIVE), or from a battle's own menu; from a shop, the PC or a
+// berry machine it has the whole screen.
+bool8 CtrBag_InWindow(void)
+{
+    return gBagPosition.location == ITEMMENULOCATION_FIELD
+        || gBagPosition.location == ITEMMENULOCATION_BATTLE
+        || (gBagPosition.location == ITEMMENULOCATION_PARTY && !gMain.inBattle);
+}
+
 void CtrBag_Touch(u8 phase, s16 x, s16 y)
 {
     switch (phase)
@@ -2719,13 +2777,15 @@ void CtrBag_Touch(u8 phase, s16 x, s16 y)
         memset(&sCtrTouch, 0, sizeof(sCtrTouch));
         sCtrTouch.held = TRUE;
         sCtrTouch.x0 = sCtrTouch.x = x;
-        sCtrTouch.y0 = sCtrTouch.y = y;
+        sCtrTouch.y0 = sCtrTouch.y = sCtrTouch.lastY = y;
         break;
     case CTR_BAG_TOUCH_MOVE:
         if (!sCtrTouch.held)
             break;
         sCtrTouch.x = x;
         sCtrTouch.y = y;
+        sCtrTouch.speed = (sCtrTouch.speed + (sCtrTouch.lastY - y) * 16) / 2;
+        sCtrTouch.lastY = y;
         if (x - sCtrTouch.x0 > 8 || sCtrTouch.x0 - x > 8 || y - sCtrTouch.y0 > 8 || sCtrTouch.y0 - y > 8)
             sCtrTouch.dragged = TRUE;
         break;
@@ -2735,6 +2795,12 @@ void CtrBag_Touch(u8 phase, s16 x, s16 y)
         sCtrTouch.held = FALSE;
         if (!sCtrTouch.dragged && !sCtrTouch.used)
             CtrMenu_PostTap(sCtrTouch.x, sCtrTouch.y);
+        // A flick: the list goes on, slowing down (CtrBag_DragList).
+        else if (sCtrTouch.dragged && (sCtrTouch.speed >= 24 || sCtrTouch.speed <= -24))
+        {
+            sCtrTouch.coasting = TRUE;
+            sCtrTouch.fling = 0;
+        }
         break;
     case CTR_BAG_TOUCH_CANCEL:
         sCtrTouch.held = FALSE;
@@ -2742,7 +2808,15 @@ void CtrBag_Touch(u8 phase, s16 x, s16 y)
     }
 }
 
-// The column's BAG button, while the list takes input: the bag closes, as B
+// A list let go coasting, a touch, a count the bottom screen's buttons asked
+// for: dropped when the bag opens, the pocket changes or a window comes up.
+static void CtrBag_StopTouch(void)
+{
+    memset(&sCtrTouch, 0, sizeof(sCtrTouch));
+    sCtrCountDelta = 0;
+}
+
+// The dock's BAG button, while the list takes input: the bag closes, as B
 // or CLOSE BAG closes it.
 bool8 CtrBag_Close(void)
 {
@@ -2765,7 +2839,9 @@ bool8 CtrBag_Close(void)
 // asked (down: fewer than 0).
 static s16 CtrBag_DragSteps(s16 step)
 {
-    s16 total = (sCtrTouch.y0 - sCtrTouch.y) / step;
+    // Rounded: a row moves once the finger is half way over it.
+    s16 up = sCtrTouch.y0 - sCtrTouch.y;
+    s16 total = (up + (up < 0 ? -step : step) / 2) / step;
     s16 steps = total - sCtrTouch.applied;
 
     sCtrTouch.applied = total;
@@ -2777,14 +2853,29 @@ static bool8 CtrBag_InList(s16 x, s16 y)
     return x >= CTR_LIST_LEFT && x < CTR_LIST_RIGHT && y >= CTR_LIST_TOP - 8 && y < CTR_LIST_BOTTOM + 8;
 }
 
-// Dragging the list scrolls it, a row a row's height. TRUE while it does.
+// Dragging the list scrolls it a row for each row's height the finger goes,
+// so the rows follow it; let go moving, it coasts on and slows down. TRUE
+// while the finger drags it.
 static bool8 CtrBag_DragList(u8 listTaskId)
 {
+    s16 rowH = GetFontAttribute(sItemListMenu.fontId, FONTATTR_MAX_LETTER_HEIGHT) + sItemListMenu.itemVerticalPadding;
     s16 steps;
 
+    if (sCtrTouch.coasting && !sCtrTouch.held)
+    {
+        sCtrTouch.fling += sCtrTouch.speed;
+        sCtrTouch.speed = sCtrTouch.speed * 7 / 8;
+        steps = sCtrTouch.fling / (rowH * 16);
+        sCtrTouch.fling -= steps * rowH * 16;
+        if (steps != 0)
+            CtrListMenu_Scroll(listTaskId, steps);
+        if (sCtrTouch.speed < 12 && sCtrTouch.speed > -12)
+            sCtrTouch.coasting = FALSE;
+        return FALSE;
+    }
     if (!sCtrTouch.held || !sCtrTouch.dragged || !CtrBag_InList(sCtrTouch.x0, sCtrTouch.y0))
         return FALSE;
-    steps = CtrBag_DragSteps(GetFontAttribute(FONT_NARROW, FONTATTR_MAX_LETTER_HEIGHT));
+    steps = CtrBag_DragSteps(rowH);
     if (steps != 0)
         CtrListMenu_Scroll(listTaskId, steps);
     return TRUE;
@@ -2823,7 +2914,9 @@ static bool8 CtrBag_ListTouch(u8 taskId, s32 *listPosition)
         }
         return FALSE;
     }
-    if (!CtrMenu_TakeTap(&x, &y))
+    // (-1, -1) is an answer the bottom screen meant for a message or a box
+    // that has just closed: not a tap on the list.
+    if (!CtrMenu_TakeTap(&x, &y) || x < 0 || y < 0)
         return FALSE;
     // The pocket name: its left half is the previous pocket, its right the next.
     if (y < CTR_POCKET_BOTTOM && x < CTR_POCKET_RIGHT)
@@ -2909,6 +3002,22 @@ static u8 CtrBag_QuantityTouch(s16 *count, u16 max, u8 windowType)
     u8 windowId = gBagMenu->windowIds[windowType];
     s16 x, y, left, top, steps, value;
 
+    // The bottom screen's own buttons (CtrBag_AddCount): so many more or
+    // fewer, kept within 1 and the most there are.
+    if (sCtrCountDelta != 0)
+    {
+        value = *count + sCtrCountDelta;
+        sCtrCountDelta = 0;
+        if (value > (s16)max)
+            value = max;
+        if (value < 1)
+            value = 1;
+        if (value == *count)
+            return CTR_QUANTITY_NONE;
+        *count = value;
+        PlaySE(SE_SELECT);
+        return CTR_QUANTITY_CHANGED;
+    }
     if (sCtrTouch.held)
     {
         if (!sCtrTouch.dragged || (steps = CtrBag_DragSteps(8)) == 0)
@@ -2985,5 +3094,221 @@ static void CtrBag_Prefetch(void)
         if (read)
             return;
     }
+}
+
+//------------------------------------------------------------------------------
+//  The bottom screen's own view of the bag (3ds_game_views.h). It reads the
+//  bag as it is: the pocket, the rows the list shows, the windows open (the
+//  item's menu, how many, a question, a message) and what the description
+//  window says. Its taps are the bag's own: posted where the game's tap code
+//  takes them, or (the list) handed to CtrBag_Touch at the list's rows.
+//------------------------------------------------------------------------------
+
+static void CtrBag_CopyText(u8 *dst, const u8 *src)
+{
+    static u8 sExpanded[0x200];
+    u16 i;
+
+    if (src != gStringVar4)
+    {
+        StringExpandPlaceholders(sExpanded, src);
+        src = sExpanded;
+    }
+    for (i = 0; i < CTR_VIEW_TEXT - 1 && src[i] != EOS; i++)
+        dst[i] = src[i];
+    dst[i] = EOS;
+}
+
+/* A list entry's name for the bottom screen, which has no text printer: the
+ * gaps the game leaves after a TM's or a berry's number become a space, and
+ * an HM, its number drawn after the bag's HM mark, is spelt as the mark and
+ * the number, then its move ("HM01 CUT"). */
+static void CtrBag_RowName(u8 *dest, const u8 *src, u16 item)
+{
+    u16 j = 0;
+
+    if (item >= ITEM_HM01 && item <= ITEM_HM08)
+    {
+        const char *mark = CTR_TEXT("HM", "MO", "CS", "MN", "MO", "VM", "HM");
+
+        dest[0] = CHAR_A + (mark[0] - 'A');
+        dest[1] = CHAR_A + (mark[1] - 'A');
+        j = ConvertIntToDecimalStringN(dest + 2, item - ITEM_HM01 + 1, STR_CONV_MODE_LEADING_ZEROS, 2) - dest;
+        dest[j++] = CHAR_SPACE;
+        src = gMoveNames[ItemIdToBattleMoveId(item)];
+    }
+    while (*src != EOS && j < CTR_BAG_NAME - 1)
+    {
+        if (*src == EXT_CTRL_CODE_BEGIN && src[1] != EOS)
+        {
+            if ((src[1] == EXT_CTRL_CODE_CLEAR || src[1] == EXT_CTRL_CODE_CLEAR_TO) && j != 0)
+                dest[j++] = CHAR_SPACE;
+            src += 1 + GetExtCtrlCodeLength(src[1]);
+            continue;
+        }
+        dest[j++] = *src++;
+    }
+    dest[j] = EOS;
+}
+
+static void CtrBag_ViewRows(struct CtrBagView *view)
+{
+    u8 pocket = gBagPosition.pocket;
+    u16 i;
+
+    view->scroll = gBagPosition.scrollPosition[pocket];
+    view->cursor = gBagPosition.cursorPosition[pocket];
+    view->total = gBagMenu->numItemStacks[pocket];
+    view->numRows = min(gBagMenu->numShownItems[pocket], CTR_BAG_ROWS);
+    view->swapRow = -1;
+    if (gBagMenu->toSwapPos != NOT_SWAPPING && gBagMenu->toSwapPos >= view->scroll
+     && gBagMenu->toSwapPos < view->scroll + view->numRows)
+        view->swapRow = gBagMenu->toSwapPos - view->scroll;
+    for (i = 0; i < view->numRows; i++)
+    {
+        u16 index = view->scroll + i, item = ITEM_NONE;
+
+        if (gBagMenu->hideCloseBagText || index != view->total - 1)
+            item = BagGetItemIdByPocketPosition(pocket + 1, index);
+        view->items[i] = item;
+        view->counts[i] = item != ITEM_NONE ? BagGetQuantityByPocketPosition(pocket + 1, index) : 0;
+        view->flags[i] = 0;
+        if (item != ITEM_NONE)
+        {
+            if (pocket == BERRIES_POCKET || (pocket != KEYITEMS_POCKET && GetItemImportance(item) == FALSE))
+                view->flags[i] |= CTR_BAG_ROW_COUNT;
+            else if (gSaveBlock1Ptr->registeredItem == item)
+                view->flags[i] |= CTR_BAG_ROW_REGISTERED;
+        }
+        CtrBag_RowName(view->names[i], sListBuffer2->name[index], item);
+    }
+}
+
+// What a message shows last: the text after its last \p.
+static void CtrBag_LastPage(u8 *dst, const u8 *src)
+{
+    u16 i, page = 0;
+
+    for (i = 0; i < CTR_VIEW_TEXT && src[i] != EOS; i++)
+    {
+        if (src[i] == EXT_CTRL_CODE_BEGIN && i + 1 < CTR_VIEW_TEXT && src[i + 1] != EOS)
+            i += GetExtCtrlCodeLength(src[i + 1]);
+        else if (src[i] == CHAR_PROMPT_CLEAR)
+            page = i + 1;
+    }
+    for (i = 0; page < CTR_VIEW_TEXT - 1 && src[page] != EOS; i++)
+        dst[i] = src[page++];
+    dst[i] = EOS;
+}
+
+// Where the bag is, for the bottom screen to draw it itself. FALSE while
+// there is nothing to read (a pocket switching, the bag coming or going):
+// the bottom screen keeps what it showed. The bag from anywhere but the
+// field is not one it draws (state NONE).
+bool8 CtrBag_GetView(struct CtrBagView *view)
+{
+    u8 taskId;
+    bool8 list = FuncIsActiveTask(Task_BagMenu_HandleInput), swap = FuncIsActiveTask(Task_HandleSwappingItemsInput);
+
+    memset(view, 0, sizeof(*view));
+    if (!CtrBag_IsOpen() || sListBuffer1 == NULL || sListBuffer2 == NULL)
+        return FALSE;
+    if (!CtrBag_InWindow())
+        return TRUE;
+    view->pocket = gBagPosition.pocket;
+    view->bagFrame = CtrBag_SpriteFrame(gBagPosition.pocket);
+    view->female = gSaveBlock2Ptr->playerGender != MALE;
+    view->pocketSwitch = !gBagMenu->pocketSwitchDisabled;
+    view->item = gSpecialVar_ItemId;
+    memcpy(view->text, sCtrBagText, sizeof(view->text));
+    // A question asked in the message window (a TM's "Teach...?"): its
+    // last page is the yes/no's prompt.
+    if (CtrMenu_YesNoOpen())
+    {
+        view->state = CTR_BAG_VIEW_YESNO;
+        if (gBagMenu->windowIds[ITEMWIN_MESSAGE] != WINDOW_NONE)
+            CtrBag_LastPage(view->text, sCtrBagMsg);
+    }
+    else if (gBagMenu->windowIds[ITEMWIN_MESSAGE] != WINDOW_NONE)
+    {
+        view->state = CTR_BAG_VIEW_MESSAGE;
+        memcpy(view->msg, sCtrBagMsg, sizeof(view->msg));
+    }
+    else if (FuncIsActiveTask(Task_RemoveItemFromBag))
+    {
+        // "Threw away...", in the description window, waiting for A.
+        view->state = CTR_BAG_VIEW_MESSAGE;
+        memcpy(view->msg, sCtrBagText, sizeof(view->msg));
+    }
+    else if ((taskId = FindTaskIdByFunc(Task_ChooseHowManyToToss)) != TASK_NONE)
+    {
+        view->state = CTR_BAG_VIEW_QUANTITY;
+        view->count = gTasks[taskId].tItemCount;
+        view->max = gTasks[taskId].tQuantity;
+    }
+    else if (FuncIsActiveTask(Task_ItemContext_SingleRow) || FuncIsActiveTask(Task_ItemContext_MultipleRows))
+    {
+        u8 cursor = Menu_GetCursorPos(), i;
+
+        view->state = CTR_BAG_VIEW_ACTIONS;
+        view->entryCursor = -1;
+        for (i = 0; i < gBagMenu->contextMenuNumItems && view->numEntries < CTR_BAG_ENTRIES; i++)
+        {
+            u8 action = gBagMenu->contextMenuItemsPtr[i];
+
+            if (action == ACTION_DUMMY)
+                continue;
+            if (i == cursor)
+                view->entryCursor = view->numEntries;
+            view->entryPos[view->numEntries] = i;
+            view->entries[view->numEntries++] = sItemMenuActions[action].text;
+        }
+    }
+    else if (swap)
+        view->state = CTR_BAG_VIEW_SWAP;
+    else if (list)
+        view->state = CTR_BAG_VIEW_LIST;
+    else
+        return FALSE;
+    CtrBag_ViewRows(view);
+    if (view->state == CTR_BAG_VIEW_LIST)
+        view->item = view->cursor < view->numRows ? view->items[view->cursor] : ITEM_NONE;
+    else if (view->state == CTR_BAG_VIEW_SWAP && gBagMenu->toSwapPos != NOT_SWAPPING)
+        view->item = BagGetItemIdByPocketPosition(gBagPosition.pocket + 1, gBagMenu->toSwapPos);
+    return TRUE;
+}
+
+void CtrBag_ListPoint(s32 row256, s16 *x, s16 *y)
+{
+    s16 rowH = GetFontAttribute(sItemListMenu.fontId, FONTATTR_MAX_LETTER_HEIGHT) + sItemListMenu.itemVerticalPadding;
+
+    *x = GetWindowAttribute(WIN_ITEM_LIST, WINDOW_TILEMAP_LEFT) * 8 + GetWindowAttribute(WIN_ITEM_LIST, WINDOW_WIDTH) * 4;
+    *y = GetWindowAttribute(WIN_ITEM_LIST, WINDOW_TILEMAP_TOP) * 8 + sItemListMenu.upText_Y + row256 * rowH / 256;
+}
+
+void CtrBag_TapPocket(s8 dir)
+{
+    CtrMenu_PostTap(dir < 0 ? CTR_POCKET_SPLIT / 2 : (CTR_POCKET_SPLIT + CTR_POCKET_RIGHT) / 2, CTR_POCKET_BOTTOM / 2);
+}
+
+void CtrBag_AddCount(s16 delta)
+{
+    sCtrCountDelta += delta;
+}
+
+void CtrBag_TapCount(bool8 ok)
+{
+    u8 windowId = gBagMenu != NULL ? gBagMenu->windowIds[ITEMWIN_QUANTITY] : WINDOW_NONE;
+
+    if (ok && windowId != WINDOW_NONE)
+        CtrMenu_PostTap(GetWindowAttribute(windowId, WINDOW_TILEMAP_LEFT) * 8 + GetWindowAttribute(windowId, WINDOW_WIDTH) * 4,
+                        GetWindowAttribute(windowId, WINDOW_TILEMAP_TOP) * 8 + GetWindowAttribute(windowId, WINDOW_HEIGHT) * 4);
+    else
+        CtrMenu_PostTap(-1, -1);
+}
+
+void CtrBag_CancelSwap(void)
+{
+    CtrMenu_PostTap(-1, -1);
 }
 #endif

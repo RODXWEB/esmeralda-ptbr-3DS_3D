@@ -1022,6 +1022,19 @@ CableClub_Text_LocalOtherBuild:
 CableClub_Text_LocalFailed:
 	.string "Impossibile avviare la connessione\n"
 	.string "wireless. È attiva?$"
+#elif GAME_LANGUAGE == LANGUAGE_GERMAN
+CableClub_Text_LocalLooking:
+	.string "Suche nach Spielern in der Nähe…$"
+
+CableClub_Text_LocalOtherBuild:
+	.string "Der Spieler in der Nähe hat eine\n"
+	.string "andere Version des Spiels.\p"
+	.string "Beide Konsolen brauchen dieselbe\n"
+	.string "Version, um zusammen zu spielen.$"
+
+CableClub_Text_LocalFailed:
+	.string "Die Drahtlosverbindung konnte\n"
+	.string "nicht starten. Ist sie aktiv?$"
 #else
 CableClub_Text_LocalLooking:
 	.string "Looking for other players nearby…$"

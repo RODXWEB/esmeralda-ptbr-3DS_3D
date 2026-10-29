@@ -239,6 +239,18 @@ static void MonKey(char *key, u16 species, u32 personality)
     }
 }
 
+/* A sprite file read ahead (3ds_data.h), for a frame that will want it soon:
+ * read in that frame it is one read of the SD card, 10-30 ms on an Old 3DS. */
+static void PrefetchKey(const char *key)
+{
+    char path[40];
+
+    if (key[0] == ' ')
+        return;
+    snprintf(path, sizeof(path), "followers/mon/%s.bin", key);
+    CtrData_Prefetch(path);
+}
+
 /* The lead's: empty if none may follow. */
 static void LeadKey(char *key, u16 *species, bool8 *shiny)
 {
@@ -457,6 +469,19 @@ u8 FollowerMon_WildSprite(u32 slot, u16 species, u32 personality, bool8 shiny)
     StartSpriteAnim(&gSprites[spriteId], ANIM_STD_FACE_SOUTH);
     sWild[slot].file = file;
     return spriteId;
+}
+
+/* The files a species may be shown on (male or female, Unown A), read ahead
+ * for the visible wild ones of a map's tables. */
+void FollowerMon_WildPrefetch(u16 species)
+{
+    char key[8], other[8];
+
+    MonKey(key, species, 0);        /* female where it can be */
+    MonKey(other, species, 0xFC);   /* male where it can be; Unown A either way */
+    PrefetchKey(key);
+    if (strcmp(other, key) != 0)
+        PrefetchKey(other);
 }
 
 /* Which way it looks, walking or standing. */
@@ -847,6 +872,17 @@ void FollowerMon_Update(void)
         }
     }
 
+    /* Held back by a fade (a save loaded): a new lead's file read meanwhile. */
+    if (follower == NULL && !PalettesSettled())
+    {
+        char key[8];
+        u16 species = SPECIES_NONE;
+        bool8 shiny = FALSE;
+
+        LeadKey(key, &species, &shiny);
+        if (sFollower.file == NULL || strcmp(key, sFollower.key) != 0)
+            PrefetchKey(key);
+    }
     /* The lead changed (a swap, an evolution, it fainted): another sprite. */
     if (follower == NULL && !PalettesSettled() && ++sFollower.waitLog == 240)
         CtrLog_Write(CTR_LOG_GAME, "follower: waiting on the palettes (fade %d, weather state %d)",
@@ -869,6 +905,7 @@ void FollowerMon_Update(void)
             {
                 ShowBall(follower, FALSE);
                 sFollower.swapTimer = BALL_FRAMES;
+                PrefetchKey(key);   /* read while the ball closes */
             }
             else
             {
@@ -1074,6 +1111,8 @@ static const char *LanguageCode(void)
     return "fr";
 #elif GAME_LANGUAGE == LANGUAGE_ITALIAN
     return "it";
+#elif GAME_LANGUAGE == LANGUAGE_GERMAN
+    return "de";
 #else
     return "en";
 #endif

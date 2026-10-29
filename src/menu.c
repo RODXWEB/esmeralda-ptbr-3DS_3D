@@ -72,6 +72,7 @@ static EWRAM_DATA u16 sTileNum = 0;
 static EWRAM_DATA u8 sPaletteNum = 0;
 static EWRAM_DATA u8 sYesNoWindowId = 0;
 #ifdef PLATFORM_3DS
+#include "3ds_game_views.h"
 static bool8 sCtrYesNoOpen;
 #endif
 static EWRAM_DATA u8 sHofPCTopBarWindowId = 0;
@@ -936,6 +937,14 @@ static u8 InitMenu(u8 windowId, u8 fontId, u8 left, u8 top, u8 cursorHeight, u8 
     sMenu.fontId = fontId;
     sMenu.optionHeight = cursorHeight;
     sMenu.APressMuted = muteAPress;
+#ifdef PLATFORM_3DS
+    // A list, not a grid: a grid's columns left from the menu before (the
+    // bag's 2x2 actions) would have the taps read in two columns
+    // (CtrMenu_EntryAt, CtrMenu_PostEntry): every odd entry missed.
+    sMenu.columns = 0;
+    sMenu.rows = 0;
+    sMenu.optionWidth = 0;
+#endif
 
     pos = initialCursorPos;
 
@@ -1232,6 +1241,9 @@ static void CreateYesNoMenuAtPos(const struct WindowTemplate *window, u8 fontId,
     AddTextPrinter(&printer, TEXT_SKIP_DRAW, NULL);
 
     InitMenuNormal(sYesNoWindowId, fontId, left, top, GetFontAttribute(fontId, FONTATTR_MAX_LETTER_HEIGHT), 2, initialCursorPos);
+#ifdef PLATFORM_3DS
+    sCtrYesNoOpen = TRUE;
+#endif
 }
 
 static void UNUSED CreateYesNoMenuInTopLeft(const struct WindowTemplate *window, u8 fontId, u16 baseTileNum, u8 paletteNum)
@@ -1618,6 +1630,14 @@ u8 InitMenuInUpperLeftCorner(u8 windowId, u8 itemCount, u8 initialCursorPos, boo
     sMenu.fontId = FONT_NORMAL;
     sMenu.optionHeight = 16;
     sMenu.APressMuted = APressMuted;
+#ifdef PLATFORM_3DS
+    // A list, not a grid: a grid's columns left from the menu before (the
+    // bag's 2x2 actions) would have the taps read in two columns
+    // (CtrMenu_EntryAt, CtrMenu_PostEntry): every odd entry missed.
+    sMenu.columns = 0;
+    sMenu.rows = 0;
+    sMenu.optionWidth = 0;
+#endif
 
     pos = initialCursorPos;
 
@@ -1695,6 +1715,9 @@ void CreateYesNoMenu(const struct WindowTemplate *window, u16 baseTileNum, u8 pa
 
     AddTextPrinter(&printer, TEXT_SKIP_DRAW, NULL);
     InitMenuInUpperLeftCornerNormal(sYesNoWindowId, 2, initialCursorPos);
+#ifdef PLATFORM_3DS
+    sCtrYesNoOpen = TRUE;
+#endif
 }
 
 void PrintMenuGridTable(u8 windowId, u8 optionWidth, u8 columns, u8 rows, const struct MenuAction *menuActions)
@@ -1934,6 +1957,12 @@ void *malloc_and_decompress(const void *src, u32 *size)
 #endif
     if (ptr)
         LZ77UnCompWram(src, ptr);
+#if CTR_LANG_PT_BR
+    /* Decompressed from a copy, which the port cannot name: named here by
+     * the asset it was copied from (bios.c does it for the rest). */
+    if (ptr != NULL && compressed != NULL)
+        Port_TransformDecompressed(asset, ptr, *size);
+#endif
 #ifdef PORT_BRIDGE
     Free(compressed);
     if (assetPath != NULL && strstr(assetPath, "data/tilesets/") != NULL)
@@ -2277,7 +2306,9 @@ void BufferSaveMenuText(u8 textId, u8 *dest, u8 color)
 // The 3DS bottom screen offers YES/NO buttons while a yes/no box is open.
 bool8 CtrMenu_YesNoOpen(void)
 {
-    return sCtrYesNoOpen;
+    // A box closed some other way than EraseYesNoWindow is not open.
+    return sCtrYesNoOpen && sMenu.windowId == sYesNoWindowId && sYesNoWindowId != WINDOW_NONE
+        && gWindows[sYesNoWindowId].tileData != NULL;
 }
 
 // The entry of the open menu under (x, y), in pixels of the screen its window
@@ -2332,9 +2363,11 @@ s8 CtrMenu_Choose(s8 entry, bool8 sound)
 // A tap on a game screen shown on the 3DS bottom screen (the bag), in pixels
 // of that screen, for whatever waits for input there to take: a menu, a
 // yes/no box, a message waiting to go on. A tap nothing took for half a
-// second is dropped, so it does not act later on something else.
+// second is dropped, so it does not act later on something else. A tap on a
+// message (CtrMenu_PostAck) only goes on with a message: one left over when
+// the message has gone is dropped, not a B for the menu after it.
 static struct {
-    bool8 pending;
+    bool8 pending, ack;
     s16 x, y;
     u32 frame;
 } sCtrTap;
@@ -2342,6 +2375,7 @@ static struct {
 void CtrMenu_PostTap(s16 x, s16 y)
 {
     sCtrTap.pending = TRUE;
+    sCtrTap.ack = FALSE;
     sCtrTap.x = x;
     sCtrTap.y = y;
     sCtrTap.frame = gMain.vblankCounter1;
@@ -2352,19 +2386,49 @@ bool8 CtrMenu_TakeTap(s16 *x, s16 *y)
     if (!sCtrTap.pending)
         return FALSE;
     sCtrTap.pending = FALSE;
-    if (gMain.vblankCounter1 - sCtrTap.frame > 30)
+    if (sCtrTap.ack || gMain.vblankCounter1 - sCtrTap.frame > 30)
         return FALSE;
     *x = sCtrTap.x;
     *y = sCtrTap.y;
     return TRUE;
 }
 
+// The open menu's entry tapped, as the tap at its middle; -1 is a tap away
+// from the menu (B where the menu takes one).
+void CtrMenu_PostEntry(s8 entry)
+{
+    s16 left = GetWindowAttribute(sMenu.windowId, WINDOW_TILEMAP_LEFT) * 8;
+    s16 top = GetWindowAttribute(sMenu.windowId, WINDOW_TILEMAP_TOP) * 8 + sMenu.top;
+    s16 row = entry, column = 0;
+
+    if (entry < 0 || sMenu.optionHeight == 0)
+    {
+        CtrMenu_PostTap(-1, -1);
+        return;
+    }
+    if (sMenu.columns > 1)
+    {
+        row = entry / sMenu.columns;
+        column = entry % sMenu.columns;
+    }
+    CtrMenu_PostTap(left + sMenu.left + column * sMenu.optionWidth + (sMenu.columns > 1 ? sMenu.optionWidth / 2 : 1),
+                    top + row * sMenu.optionHeight + sMenu.optionHeight / 2);
+}
+
+// Off every picture, so a list that takes the tap late finds nothing there.
+void CtrMenu_PostAck(void)
+{
+    CtrMenu_PostTap(-1, -1);
+    sCtrTap.ack = TRUE;
+}
+
 // A message waiting for A or B: any tap goes on.
 bool8 CtrMenu_TakeAck(void)
 {
-    s16 x, y;
-
-    return CtrMenu_TakeTap(&x, &y);
+    if (!sCtrTap.pending)
+        return FALSE;
+    sCtrTap.pending = FALSE;
+    return gMain.vblankCounter1 - sCtrTap.frame <= 30;
 }
 
 // A yes/no box: YES or NO tapped is chosen, a tap away from it is B.

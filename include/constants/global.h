@@ -104,7 +104,12 @@
 #define WONDER_NEWS_TEXT_LENGTH 40
 #define WONDER_CARD_BODY_TEXT_LINES 4
 #define WONDER_NEWS_BODY_TEXT_LINES 10
+// 9 for the Portuguese names (TERRESTRE); the other builds keep 6.
+#if CTR_LANG_PT_BR
+#define TYPE_NAME_LENGTH 9
+#else
 #define TYPE_NAME_LENGTH 6
+#endif
 #define ABILITY_NAME_LENGTH 12
 #define TRAINER_NAME_LENGTH 10
 

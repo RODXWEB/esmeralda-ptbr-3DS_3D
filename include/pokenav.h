@@ -496,4 +496,11 @@ void CreateRibbonsSummaryLoopedTask(s32 id);
 u32 IsRibbonsSummaryLoopedTaskActive(void);
 void FreeRibbonsSummaryScreen2(void);
 
+#ifdef PORT_BRIDGE
+// The bottom screen's map (3ds_bottom_ui.c): a town's layout picture (LZ77,
+// 10x10 tiles of CtrPokenav_CityZoomTiles), NULL if it has none.
+const u32 *CtrPokenav_CityMap(u16 mapSecId, u8 posWithinMapSec);
+const u32 *CtrPokenav_CityZoomTiles(void);
+#endif
+
 #endif // GUARD_POKENAV_H

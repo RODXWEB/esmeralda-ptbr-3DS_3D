@@ -4315,8 +4315,15 @@ static u8 Task_GetInfoCardInput(u8 taskId)
 
 static void DisplayTrainerInfoOnCard(u8 flags, u8 trainerTourneyId)
 {
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    const u8 *trClassName;
+#endif
     struct TextPrinterTemplate textPrinter;
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    int i, j, k, trGender;
+#else
     int i, j, k;
+#endif
     int trainerId = 0;
     u8 nature = 0;
     int arrId = 0;
@@ -4399,14 +4406,32 @@ static void DisplayTrainerInfoOnCard(u8 flags, u8 trainerTourneyId)
     // Get class and trainer name
     i = 0;
     if (trainerId == TRAINER_PLAYER)
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        j = gFacilityClassToTrainerClass[FACILITY_CLASS_BRENDAN], trGender = gSaveBlock2Ptr->playerGender;
+#else
         j = gFacilityClassToTrainerClass[FACILITY_CLASS_BRENDAN];
+#endif
     else if (trainerId == TRAINER_FRONTIER_BRAIN)
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        j = GetDomeBrainTrainerClass(), trGender = -1;
+#else
         j = GetDomeBrainTrainerClass();
+#endif
     else
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+        j = GetFrontierOpponentClass(trainerId), trGender = IsFrontierTrainerFemale(trainerId);
+#else
         j = GetFrontierOpponentClass(trainerId);
+#endif
 
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    trClassName = GetTrainerClassNameGenderSpecific(j, trGender, NULL);
+    for (; *trClassName != EOS; trClassName++, i++)
+        gStringVar1[i] = *trClassName;
+#else
     for (;gTrainerClassNames[j][i] != EOS; i++)
         gStringVar1[i] = gTrainerClassNames[j][i];
+#endif
     gStringVar1[i] = CHAR_SPACE;
     gStringVar1[i + 1] = EOS;
 

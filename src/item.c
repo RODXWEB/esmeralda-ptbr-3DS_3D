@@ -109,7 +109,8 @@ void GetBerryCountString(u8 *dst, const u8 *berryName, u32 quantity)
     else
         berryString = gText_Berries;
 
-#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH)
+// Spanish, French and Portuguese put the word first: BAYA ATANIA, FRUTAS ORAN.
+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || CTR_LANG_PT_BR)
     txtPtr = StringCopy(dst, berryString);
     *txtPtr = CHAR_SPACE;
     StringCopy(txtPtr + 1, berryName);
@@ -118,9 +119,14 @@ void GetBerryCountString(u8 *dst, const u8 *berryName, u32 quantity)
     txtPtr = StringCopy(dst, berryString);
     StringCopy(txtPtr, berryName);
 #else
+#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
+    txtPtr = StringCopy(dst, berryName);
+    StringCopy(txtPtr, berryString);
+#else
     txtPtr = StringCopy(dst, berryName);
     *txtPtr = CHAR_SPACE;
     StringCopy(txtPtr + 1, berryString);
+#endif
 #endif
 }
 

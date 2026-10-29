@@ -101,6 +101,15 @@ static const union AnimCmd *const sBagSpriteAnimTable[] =
     [POCKET_KEY_ITEMS]  = sSpriteAnim_Bag_KeyItems,
 };
 
+#ifdef PLATFORM_3DS
+// The bag's picture for a pocket (gBagPosition.pocket), as its frame of
+// 64x64 in the bag's tiles: for the bottom screen's own bag.
+u8 CtrBag_SpriteFrame(u8 pocket)
+{
+    return sBagSpriteAnimTable[pocket + 1][0].frame.imageValue / 64;
+}
+#endif
+
 static const union AffineAnimCmd sSpriteAffineAnim_BagNormal[] =
 {
     AFFINEANIMCMD_FRAME(256, 256, 0, 0),
